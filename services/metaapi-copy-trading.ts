@@ -66,7 +66,7 @@ export class MetaApiCopyTradingService {
     try {
       const { data: adminAccount } = await supabase
         .from('mt5_accounts')
-        .select('*, brokers(*)')
+        .select('*')
         .eq('user_id', this.adminUserId!)
         .eq('is_active', true)
         .single()
@@ -79,8 +79,8 @@ export class MetaApiCopyTradingService {
       await this.metaApi.connectAccount({
         id: adminAccount.id,
         accountNumber: adminAccount.account_number,
-        broker: adminAccount.brokers.name,
-        serverAddress: adminAccount.brokers.server_address,
+        broker: adminAccount.broker_name || 'Unknown',
+        serverAddress: adminAccount.server_name || 'Unknown',
         password: Buffer.from(adminAccount.password_encrypted, 'base64').toString(),
       })
 
@@ -137,7 +137,7 @@ export class MetaApiCopyTradingService {
       .from('profiles')
       .select(`
         id,
-        mt5_accounts!inner(*, brokers(*)),
+        mt5_accounts!inner(*),
         trading_settings(*)
       `)
       .eq('is_admin', false)
@@ -201,8 +201,8 @@ export class MetaApiCopyTradingService {
         await this.metaApi.connectAccount({
           id: followerAccount.id,
           accountNumber: followerAccount.account_number,
-          broker: followerAccount.brokers.name,
-          serverAddress: followerAccount.brokers.server_address,
+          broker: followerAccount.broker_name || 'Unknown',
+          serverAddress: followerAccount.server_name || 'Unknown',
           password: Buffer.from(followerAccount.password_encrypted, 'base64').toString(),
         })
       }

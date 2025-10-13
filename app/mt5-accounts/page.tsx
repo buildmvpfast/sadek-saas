@@ -8,25 +8,29 @@ import Navbar from '@/components/Navbar'
 type Broker = {
   id: string
   name: string
-  server_address: string
+  servers?: string[]
 }
 
 type MT5Account = {
   id: string
   account_number: number
   is_active: boolean
-  brokers: Broker
+  broker_name: string
+  server_name: string
 }
 
 export default function MT5AccountsPage() {
   const [mt5Accounts, setMt5Accounts] = useState<MT5Account[]>([])
   const [brokers, setBrokers] = useState<Broker[]>([])
+  const [servers, setServers] = useState<string[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [loadingServers, setLoadingServers] = useState(false)
   const [error, setError] = useState('')
 
   const [formData, setFormData] = useState({
-    broker_id: '',
+    broker_name: '',
+    server_name: '',
     account_number: '',
     password: '',
     is_investor: false,
@@ -37,6 +41,7 @@ export default function MT5AccountsPage() {
 
   useEffect(() => {
     fetchData()
+    fetchBrokers()
   }, [])
 
   const fetchData = async () => {
@@ -51,16 +56,71 @@ export default function MT5AccountsPage() {
 
     const { data: accountsData } = await supabase
       .from('mt5_accounts')
-      .select('*, brokers(*)')
+      .select('*')
       .eq('user_id', session.user.id)
 
-    const { data: brokersData } = await supabase
-      .from('brokers')
-      .select('*')
-      .order('name')
+    if (accountsData) {
+      const formattedAccounts = accountsData.map((acc: any) => ({
+        id: acc.id,
+        account_number: acc.account_number,
+        is_active: acc.is_active,
+        broker_name: acc.broker_name || 'N/A',
+        server_name: acc.server_name || 'N/A',
+      }))
+      setMt5Accounts(formattedAccounts)
+    }
+  }
 
-    if (accountsData) setMt5Accounts(accountsData)
-    if (brokersData) setBrokers(brokersData)
+  const fetchBrokers = async () => {
+    try {
+      const response = await fetch('/api/metaapi/brokers')
+      const data = await response.json()
+      
+      if (data.success && data.brokers) {
+        setBrokers(data.brokers)
+      } else {
+        // Fallback si l'API ne marche pas
+        setBrokers(data.brokers || [])
+      }
+    } catch (err) {
+      console.error('Error fetching brokers:', err)
+      setError('Impossible de charger les brokers')
+    }
+  }
+
+  const fetchServers = async (brokerName: string) => {
+    setLoadingServers(true)
+    try {
+      const response = await fetch(`/api/metaapi/servers?broker=${encodeURIComponent(brokerName)}`)
+      const data = await response.json()
+      
+      if (data.success && data.servers) {
+        setServers(data.servers.map((s: any) => s.name))
+      } else {
+        // Fallback: utiliser les serveurs du broker sélectionné
+        const broker = brokers.find(b => b.name === brokerName)
+        setServers(broker?.servers || [])
+      }
+    } catch (err) {
+      console.error('Error fetching servers:', err)
+      const broker = brokers.find(b => b.name === brokerName)
+      setServers(broker?.servers || [])
+    } finally {
+      setLoadingServers(false)
+    }
+  }
+
+  const handleBrokerChange = (brokerName: string) => {
+    setFormData({ 
+      ...formData, 
+      broker_name: brokerName,
+      server_name: '' 
+    })
+    if (brokerName) {
+      fetchServers(brokerName)
+    } else {
+      setServers([])
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -80,7 +140,8 @@ export default function MT5AccountsPage() {
 
       const { error } = await supabase.from('mt5_accounts').insert({
         user_id: session.user.id,
-        broker_id: formData.broker_id,
+        broker_name: formData.broker_name,
+        server_name: formData.server_name,
         account_number: parseInt(formData.account_number),
         password_encrypted: passwordEncrypted,
         is_investor: formData.is_investor,
@@ -90,11 +151,13 @@ export default function MT5AccountsPage() {
 
       setShowAddForm(false)
       setFormData({
-        broker_id: '',
+        broker_name: '',
+        server_name: '',
         account_number: '',
         password: '',
         is_investor: false,
       })
+      setServers([])
       fetchData()
     } catch (err: any) {
       setError(err.message || 'Une erreur est survenue')
@@ -149,40 +212,89 @@ export default function MT5AccountsPage() {
             <h2 className="text-xl font-bold mb-4">Nouveau Compte MT5</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Broker</label>
+                <label className="block text-sm font-medium mb-2">Broker *</label>
                 <select
-                  value={formData.broker_id}
-                  onChange={(e) => setFormData({ ...formData, broker_id: e.target.value })}
+                  value={formData.broker_name}
+                  onChange={(e) => handleBrokerChange(e.target.value)}
                   className="input"
                   required
                 >
                   <option value="">Sélectionner un broker</option>
                   {brokers.map((broker) => (
-                    <option key={broker.id} value={broker.id}>
+                    <option key={broker.id} value={broker.name}>
                       {broker.name}
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {brokers.length > 0 
+                    ? `${brokers.length} brokers disponibles` 
+                    : 'Chargement des brokers...'}
+                </p>
               </div>
 
+              {formData.broker_name && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Serveur MT5 *</label>
+                  {loadingServers ? (
+                    <div className="input bg-gray-50">Chargement des serveurs...</div>
+                  ) : servers.length > 0 ? (
+                    <>
+                      <select
+                        value={formData.server_name}
+                        onChange={(e) => setFormData({ ...formData, server_name: e.target.value })}
+                        className="input"
+                        required
+                      >
+                        <option value="">Sélectionner un serveur</option>
+                        {servers.map((server) => (
+                          <option key={server} value={server}>
+                            {server}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {servers.length} serveurs disponibles
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        value={formData.server_name}
+                        onChange={(e) => setFormData({ ...formData, server_name: e.target.value })}
+                        className="input"
+                        placeholder="Ex: MonBroker-Live"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Entrez le nom exact du serveur (visible dans MT5)
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div>
-                <label className="block text-sm font-medium mb-2">Numéro de compte</label>
+                <label className="block text-sm font-medium mb-2">Numéro de compte MT5 *</label>
                 <input
                   type="number"
                   value={formData.account_number}
                   onChange={(e) => setFormData({ ...formData, account_number: e.target.value })}
                   className="input"
+                  placeholder="12345678"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Mot de passe</label>
+                <label className="block text-sm font-medium mb-2">Mot de passe MT5 *</label>
                 <input
                   type="password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="input"
+                  placeholder="Votre mot de passe MT5"
                   required
                 />
               </div>
@@ -197,21 +309,28 @@ export default function MT5AccountsPage() {
                 <label className="text-sm">Mot de passe investisseur (lecture seule)</label>
               </div>
 
-              <button type="submit" disabled={loading} className="btn btn-primary w-full">
-                {loading ? 'Ajout en cours...' : 'Ajouter'}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  💡 Les serveurs sont chargés automatiquement depuis MetaApi
+                </p>
+              </div>
+
+              <button type="submit" disabled={loading || !formData.server_name} className="btn btn-primary w-full">
+                {loading ? 'Ajout en cours...' : 'Ajouter le compte'}
               </button>
             </form>
           </div>
         )}
 
         <div className="space-y-4">
-          {mt5Accounts.map((account) => (
-            <div key={account.id} className="card">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-bold">{account.brokers.name}</h3>
-                  <p className="text-gray-600">Compte #{account.account_number}</p>
-                </div>
+            {mt5Accounts.map((account) => (
+              <div key={account.id} className="card">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-bold">{account.broker_name}</h3>
+                    <p className="text-gray-600">Compte #{account.account_number}</p>
+                    <p className="text-sm text-gray-500">{account.server_name}</p>
+                  </div>
                 
                 <div className="flex items-center space-x-4">
                   <span className={`px-3 py-1 rounded-full text-sm ${
