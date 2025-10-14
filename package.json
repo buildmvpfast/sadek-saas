@@ -7,18 +7,19 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "copy-trading": "ts-node scripts/start-copy-trading.ts"
+    "copy-trading": "ts-node scripts/start-copy-trading.ts",
+    "copy-trading-v2": "ts-node scripts/start-copy-trading-v2.ts"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.9.0",
     "@supabase/supabase-js": "^2.39.0",
     "date-fns": "^3.0.0",
+    "dotenv": "^16.3.1",
     "metaapi.cloud-sdk": "^29.3.1",
     "next": "14.0.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "stripe": "^14.10.0",
-    "zeromq": "^6.0.0-beta.19"
+    "stripe": "^14.10.0"
   },
   "devDependencies": {
     "@types/node": "^20",

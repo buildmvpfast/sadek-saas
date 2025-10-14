@@ -29,10 +29,16 @@ export default function Navbar({ isAdmin = false }: { isAdmin?: boolean }) {
                 <Link href="/admin/dashboard" className="text-white hover:text-primary-200 font-semibold px-3 py-2 rounded-lg transition-colors">
                   Dashboard
                 </Link>
-                <Link href="/admin/users" className="text-white hover:text-primary-200 font-semibold px-3 py-2 rounded-lg transition-colors">
+                <Link href="/admin/mt5-accounts" className="text-white hover:text-primary-200 font-semibold px-3 py-2 rounded-lg transition-colors">
+                  Comptes MT5
+                </Link>
+                <Link href="/admin/copy-trading" className="text-white hover:text-primary-200 font-semibold px-3 py-2 rounded-lg transition-colors">
+                  Copy Trading
+                </Link>
+                <Link href="/admin/users" className="text-white hover:text-primary-200 font-semibold px-3 py-2 rounded-lg transition-colors hidden lg:block">
                   Users
                 </Link>
-                <Link href="/admin/trades" className="text-white hover:text-primary-200 font-semibold px-3 py-2 rounded-lg transition-colors">
+                <Link href="/admin/trades" className="text-white hover:text-primary-200 font-semibold px-3 py-2 rounded-lg transition-colors hidden lg:block">
                   Trades
                 </Link>
               </>
