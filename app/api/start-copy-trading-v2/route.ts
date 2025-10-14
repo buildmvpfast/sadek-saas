@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
-import { MetaApiPositionMonitor } from '@/services/metaapi-position-monitor'
-import { createClient } from '@supabase/supabase-js'
 
-let monitor: MetaApiPositionMonitor | null = null
+let monitor: any = null
 
 export async function POST(request: Request) {
   try {
+    // Import dynamique pour éviter l'erreur au build
+    const { MetaApiPositionMonitor } = await import('@/services/metaapi-position-monitor')
+    const { createClient } = await import('@supabase/supabase-js')
+    
     // Vérifier que c'est un admin qui appelle
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -56,7 +58,7 @@ export async function POST(request: Request) {
 export async function DELETE() {
   try {
     if (monitor) {
-      monitor.stopMonitoring()
+      await monitor.stopMonitoring()
       monitor = null
     }
 
