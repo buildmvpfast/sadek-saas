@@ -309,12 +309,6 @@ export default function MT5AccountsPage() {
                 <label className="text-sm">Mot de passe investisseur (lecture seule)</label>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-800">
-                  💡 Les serveurs sont chargés automatiquement depuis MetaApi
-                </p>
-              </div>
-
               <button type="submit" disabled={loading || !formData.server_name} className="btn btn-primary w-full">
                 {loading ? 'Ajout en cours...' : 'Ajouter le compte'}
               </button>
