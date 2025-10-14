@@ -1,39 +1,11 @@
 import { NextResponse } from 'next/server'
-import MetaApi from 'metaapi.cloud-sdk'
 
 export async function GET() {
   try {
-    const metaApi = new MetaApi(process.env.METAAPI_TOKEN!)
+    // Pour l'instant, on retourne une liste statique de brokers
+    // MetaApi SDK a des problèmes d'import dans Next.js
+    const brokers = getStaticBrokers()
     
-    // Récupérer les provisions (infos sur les brokers disponibles)
-    const provisioningProfileApi = metaApi.provisioningProfileApi
-    const profiles = await provisioningProfileApi.getProvisioningProfiles()
-
-    // Liste des brokers populaires (MetaApi en a des centaines, on filtre les principaux)
-    const popularBrokers = [
-      'ICMarkets', 'XM', 'Pepperstone', 'Exness', 'FTMO', 
-      'Admiral Markets', 'FBS', 'RoboForex', 'Alpari', 'OctaFX',
-      'HotForex', 'FXGT', 'AvaTrade', 'ThinkMarkets', 'FPMarkets',
-      'Tickmill', 'FOREX.com', 'OANDA', 'CMC Markets', 'IG'
-    ]
-
-    // Formater pour le frontend
-    const brokers = profiles
-      .filter((profile: any) => {
-        const name = profile.name || ''
-        return popularBrokers.some(broker => 
-          name.toLowerCase().includes(broker.toLowerCase())
-        )
-      })
-      .map((profile: any) => ({
-        id: profile._id,
-        name: profile.name,
-        servers: profile.servers || [],
-        description: profile.description,
-        type: profile.type,
-      }))
-      .sort((a: any, b: any) => a.name.localeCompare(b.name))
-
     return NextResponse.json({ 
       success: true,
       brokers,
@@ -43,44 +15,134 @@ export async function GET() {
     console.error('Error fetching brokers:', error)
     return NextResponse.json(
       { 
-        success: false, 
-        error: error.message,
-        // Fallback: liste statique si l'API fail
-        brokers: getFallbackBrokers()
+        success: true, // On retourne quand même les brokers
+        brokers: getStaticBrokers(),
+        total: getStaticBrokers().length
       },
-      { status: 200 } // 200 pour permettre le fallback
+      { status: 200 }
     )
   }
 }
 
-// Liste de secours si MetaApi ne répond pas
-function getFallbackBrokers() {
+function getStaticBrokers() {
   return [
     {
       id: 'icmarkets',
       name: 'IC Markets',
-      servers: ['ICMarketsEU-Live', 'ICMarketsSC-Live', 'ICMarkets-Demo'],
+      servers: ['ICMarketsEU-Live', 'ICMarketsSC-Live', 'ICMarketsEU-MT5', 'ICMarkets-Demo'],
     },
     {
       id: 'xm',
       name: 'XM Global',
-      servers: ['XMGlobal-Real', 'XMGlobal-Demo'],
+      servers: ['XMGlobal-Real', 'XMGlobal-Real 2', 'XMGlobal-Real 3', 'XMGlobal-Demo'],
     },
     {
       id: 'pepperstone',
       name: 'Pepperstone',
-      servers: ['Pepperstone-Live', 'Pepperstone-Demo'],
+      servers: ['Pepperstone-Live', 'Pepperstone-Live02', 'Pepperstone-Demo'],
     },
     {
       id: 'exness',
       name: 'Exness',
-      servers: ['Exness-MT5Live', 'Exness-MT5Demo'],
+      servers: ['Exness-MT5Live', 'Exness-MT5Live2', 'Exness-MT5Real', 'Exness-MT5Demo'],
     },
     {
       id: 'ftmo',
       name: 'FTMO',
-      servers: ['FTMO-Server', 'FTMO-Demo'],
+      servers: ['FTMO-Server', 'FTMO-Server2', 'FTMO-Demo'],
+    },
+    {
+      id: 'admiral',
+      name: 'Admiral Markets',
+      servers: ['AdmiralMarkets-Live', 'AdmiralMarkets-Demo'],
+    },
+    {
+      id: 'fbs',
+      name: 'FBS',
+      servers: ['FBS-Real', 'FBS-Real-2', 'FBS-Demo'],
+    },
+    {
+      id: 'roboforex',
+      name: 'RoboForex',
+      servers: ['RoboForex-ECN', 'RoboForex-Pro', 'RoboForex-Demo'],
+    },
+    {
+      id: 'alpari',
+      name: 'Alpari',
+      servers: ['Alpari-MT5-Live', 'Alpari-MT5-Demo'],
+    },
+    {
+      id: 'octafx',
+      name: 'OctaFX',
+      servers: ['OctaFX-Real', 'OctaFX-Real2', 'OctaFX-Demo'],
+    },
+    {
+      id: 'hotforex',
+      name: 'HFM (HotForex)',
+      servers: ['HotForex-Live', 'HotForex-Real', 'HotForex-Demo'],
+    },
+    {
+      id: 'fxgt',
+      name: 'FXGT',
+      servers: ['FXGT-Live', 'FXGT-Demo'],
+    },
+    {
+      id: 'avatrade',
+      name: 'AvaTrade',
+      servers: ['AvaTrade-MT5Live', 'AvaTrade-MT5Demo'],
+    },
+    {
+      id: 'thinkmarkets',
+      name: 'ThinkMarkets',
+      servers: ['ThinkMarkets-Live', 'ThinkMarkets-Demo'],
+    },
+    {
+      id: 'fpmarkets',
+      name: 'FP Markets',
+      servers: ['FPMarkets-Live', 'FPMarkets-Demo'],
+    },
+    {
+      id: 'tickmill',
+      name: 'Tickmill',
+      servers: ['Tickmill-Live', 'Tickmill-Demo'],
+    },
+    {
+      id: 'forexcom',
+      name: 'Forex.com',
+      servers: ['FOREX.com-Live', 'FOREX.com-Demo'],
+    },
+    {
+      id: 'oanda',
+      name: 'OANDA',
+      servers: ['OANDA-v20-Live', 'OANDA-v20-Practice'],
+    },
+    {
+      id: 'igmarkets',
+      name: 'IG Markets',
+      servers: ['IG-Live', 'IG-Demo'],
+    },
+    {
+      id: 'cmcmarkets',
+      name: 'CMC Markets',
+      servers: ['CMCMarkets-Live', 'CMCMarkets-Demo'],
+    },
+    {
+      id: 'custom',
+      name: 'Autre (serveur personnalisé)',
+      servers: ['CUSTOM'],
     },
   ]
 }
+
+// Ancienne version avec MetaApi SDK (garde pour référence)
+/*
+export async function GET() {
+  try {
+    const metaApi = new MetaApi(process.env.METAAPI_TOKEN!)
+    
+    // Récupérer les provisions (infos sur les brokers disponibles)
+    const provisioningProfileApi = metaApi.provisioningProfileApi
+    const profiles = await provisioningProfileApi.getProvisioningProfiles()
+
+*/
 

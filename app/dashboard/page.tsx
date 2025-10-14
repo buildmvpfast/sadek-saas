@@ -44,49 +44,49 @@ export default async function DashboardPage() {
     .limit(10)
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen pattern-bg">
       <Navbar />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Bienvenue, {profile?.full_name || 'Utilisateur'}
+          <h1 className="text-4xl font-black text-white">
+            Bienvenue, {profile?.full_name || 'Trader'} 👋
           </h1>
-          <p className="text-gray-600 mt-2">
+          <p className="text-white text-opacity-90 mt-2 text-lg font-semibold">
             Gérez vos comptes MT5 et suivez vos trades
           </p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6 mb-8">
-          <div className="card">
-            <h3 className="text-sm font-medium text-gray-500">Statut Abonnement</h3>
-            <p className="text-2xl font-bold mt-2">
+          <div className="card-white">
+            <h3 className="text-sm font-bold uppercase tracking-wide" style={{ color: '#9b30a8' }}>Statut Abonnement</h3>
+            <p className="text-3xl font-black mt-3">
               {subscription?.status === 'active' ? (
-                <span className="text-green-600">Actif</span>
+                <span className="text-green-600">✓ Actif</span>
               ) : subscription?.status === 'trialing' ? (
-                <span className="text-blue-600">Essai</span>
+                <span className="text-blue-600">⏱ Essai</span>
               ) : (
-                <span className="text-red-600">Inactif</span>
+                <span className="text-red-600">✗ Inactif</span>
               )}
             </p>
           </div>
 
-          <div className="card">
-            <h3 className="text-sm font-medium text-gray-500">Comptes MT5 Actifs</h3>
-            <p className="text-2xl font-bold mt-2">{mt5Accounts?.length || 0}</p>
+          <div className="card-white">
+            <h3 className="text-sm font-bold uppercase tracking-wide" style={{ color: '#9b30a8' }}>Comptes MT5 Actifs</h3>
+            <p className="text-3xl font-black mt-3" style={{ color: '#9b30a8' }}>{mt5Accounts?.length || 0}</p>
           </div>
 
-          <div className="card">
-            <h3 className="text-sm font-medium text-gray-500">Trades Copiés</h3>
-            <p className="text-2xl font-bold mt-2">{copyTrades?.length || 0}</p>
+          <div className="card-white">
+            <h3 className="text-sm font-bold uppercase tracking-wide" style={{ color: '#9b30a8' }}>Trades Copiés</h3>
+            <p className="text-3xl font-black mt-3" style={{ color: '#9b30a8' }}>{copyTrades?.length || 0}</p>
           </div>
         </div>
 
         <div className="grid md:grid-cols-2 gap-6">
-          <div className="card">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Comptes MT5</h2>
-              <Link href="/mt5-accounts" className="btn btn-primary">
+          <div className="card-white">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-black" style={{ color: '#9b30a8' }}>Comptes MT5</h2>
+              <Link href="/mt5-accounts" className="btn btn-primary text-sm">
                 Gérer
               </Link>
             </div>
@@ -94,46 +94,46 @@ export default async function DashboardPage() {
             {mt5Accounts && mt5Accounts.length > 0 ? (
               <div className="space-y-3">
                 {mt5Accounts.map((account: any) => (
-                  <div key={account.id} className="border rounded-lg p-4">
+                  <div key={account.id} className="border-2 border-primary-200 rounded-2xl p-4 bg-gradient-to-r from-primary-50 to-white hover:shadow-lg transition-all">
                     <div className="flex justify-between items-center">
                       <div>
-                        <p className="font-semibold">{account.brokers.name}</p>
-                        <p className="text-sm text-gray-600">#{account.account_number}</p>
+                        <p className="font-bold" style={{ color: '#9b30a8' }}>{account.brokers.name}</p>
+                        <p className="text-sm opacity-75" style={{ color: '#9b30a8' }}>#{account.account_number}</p>
                       </div>
-                      <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
-                        Actif
+                      <span className="px-4 py-2 bg-green-500 text-white rounded-full text-sm font-bold shadow-lg">
+                        ✓ Actif
                       </span>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p>Aucun compte MT5 connecté</p>
-                <Link href="/mt5-accounts" className="text-primary-600 hover:underline mt-2 inline-block">
-                  Ajouter un compte
+              <div className="text-center py-8" style={{ color: '#9b30a8' }}>
+                <p className="font-semibold mb-3">Aucun compte MT5 connecté</p>
+                <Link href="/mt5-accounts" className="btn btn-primary text-sm">
+                  + Ajouter un compte
                 </Link>
               </div>
             )}
           </div>
 
-          <div className="card">
-            <h2 className="text-xl font-bold mb-4">Derniers Trades</h2>
+          <div className="card-white">
+            <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>Derniers Trades</h2>
             
             {copyTrades && copyTrades.length > 0 ? (
               <div className="space-y-3">
                 {copyTrades.slice(0, 5).map((trade: any) => (
-                  <div key={trade.id} className="border rounded-lg p-4">
+                  <div key={trade.id} className="border-2 border-primary-200 rounded-2xl p-4 bg-gradient-to-r from-primary-50 to-white hover:shadow-lg transition-all">
                     <div className="flex justify-between items-center">
                       <div>
-                        <p className="font-semibold">{trade.symbol}</p>
-                        <p className="text-sm text-gray-600">{trade.order_type} • {trade.volume} lots</p>
+                        <p className="font-bold text-lg" style={{ color: '#9b30a8' }}>{trade.symbol}</p>
+                        <p className="text-sm opacity-75" style={{ color: '#9b30a8' }}>{trade.order_type} • {trade.volume} lots</p>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-sm ${
-                        trade.status === 'opened' ? 'bg-blue-100 text-blue-800' :
-                        trade.status === 'closed' ? 'bg-green-100 text-green-800' :
-                        trade.status === 'failed' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
+                      <span className={`px-4 py-2 rounded-full text-sm font-bold shadow-md ${
+                        trade.status === 'opened' ? 'bg-blue-500 text-white' :
+                        trade.status === 'closed' ? 'bg-green-500 text-white' :
+                        trade.status === 'failed' ? 'bg-red-500 text-white' :
+                        'bg-gray-400 text-white'
                       }`}>
                         {trade.status}
                       </span>
@@ -142,8 +142,9 @@ export default async function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p>Aucun trade pour le moment</p>
+              <div className="text-center py-8" style={{ color: '#9b30a8' }}>
+                <p className="font-semibold">Aucun trade pour le moment</p>
+                <p className="text-sm opacity-75 mt-2">Les trades apparaîtront ici dès que l'admin tradra</p>
               </div>
             )}
           </div>

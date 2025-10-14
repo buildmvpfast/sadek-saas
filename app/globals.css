@@ -2,49 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+:root {
+  --brand-purple: #9b30a8;
+  --brand-magenta: #c026d3;
+  --brand-pink: #e5d0e8;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: linear-gradient(135deg, #9b30a8 0%, #c026d3 50%, #d946ef 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
 }
 
 @layer components {
   .btn {
-    @apply px-4 py-2 rounded-lg font-semibold transition-all;
+    @apply px-6 py-3 rounded-full font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg;
   }
   
   .btn-primary {
-    @apply bg-primary-600 text-white hover:bg-primary-700;
+    background-color: #9b30a8;
+    @apply text-white hover:bg-primary-800 shadow-xl;
   }
   
   .btn-secondary {
-    @apply bg-gray-200 text-gray-900 hover:bg-gray-300;
+    @apply bg-white hover:bg-primary-100 border-2 border-primary-600 text-primary-700;
   }
   
   .input {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+    @apply w-full px-5 py-3 border-2 border-primary-300 rounded-xl focus:ring-4 focus:ring-primary-300 focus:border-primary-600 bg-white transition-all;
   }
   
   .card {
-    @apply bg-white rounded-lg shadow-md p-6;
+    background-color: #e5d0e8;
+    @apply bg-opacity-95 rounded-3xl shadow-2xl p-8 backdrop-blur-sm;
+  }
+  
+  .card-white {
+    @apply bg-white bg-opacity-95 rounded-3xl shadow-2xl p-8 backdrop-blur-sm;
+  }
+  
+  .page-container {
+    @apply min-h-screen flex items-center justify-center p-4 sm:p-8;
+  }
+  
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-600 to-primary-800 bg-clip-text text-transparent;
+  }
+  
+  .pattern-bg {
+    background-image: 
+      radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+      radial-gradient(circle at 40% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
   }
 }
 
