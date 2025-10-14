@@ -373,7 +373,8 @@ export class MetaApiPositionMonitor {
     const openPositionIds = new Set(openPositions.map((p) => p.id))
 
     // Nettoyer les positions traitées qui ne sont plus ouvertes
-    for (const positionKey of this.processedPositions) {
+    const positionKeys = Array.from(this.processedPositions)
+    for (const positionKey of positionKeys) {
       if (positionKey.startsWith(`${account.metaapi_account_id}-`)) {
         const positionId = positionKey.split('-')[1]
         if (!openPositionIds.has(positionId)) {
@@ -491,7 +492,8 @@ export class MetaApiPositionMonitor {
    */
   stopMonitoring() {
     console.log('⏸️ Arrêt du monitoring...')
-    for (const [accountId, interval] of this.monitoringIntervals) {
+    const intervals = Array.from(this.monitoringIntervals.entries())
+    for (const [accountId, interval] of intervals) {
       clearInterval(interval)
       console.log(`✅ Monitoring arrêté pour compte ${accountId}`)
     }

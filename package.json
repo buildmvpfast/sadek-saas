@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "copy-trading": "ts-node scripts/start-copy-trading.ts",
-    "copy-trading-v2": "ts-node scripts/start-copy-trading-v2.ts"
+    "copy-trading": "ts-node scripts/start-copy-trading-v2.ts"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.9.0",
@@ -22,6 +21,7 @@
     "stripe": "^14.10.0"
   },
   "devDependencies": {
+    "@types/dotenv": "^6.1.1",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
