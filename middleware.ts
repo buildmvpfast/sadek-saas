@@ -10,25 +10,34 @@ export async function middleware(req: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession()
 
-  // Public routes
+  // Public routes (accessible sans connexion)
   const publicRoutes = ['/', '/auth/login', '/auth/signup']
   const isPublicRoute = publicRoutes.includes(req.nextUrl.pathname)
+  
+  // Routes accessibles même sans abonnement
+  const noSubscriptionRequiredRoutes = [
+    '/subscription-required',
+    '/subscription',
+    ...publicRoutes,
+  ]
+  const isNoSubscriptionRequired = noSubscriptionRequiredRoutes.some(route => 
+    req.nextUrl.pathname.startsWith(route)
+  )
 
   // Redirect to login if not authenticated
   if (!session && !isPublicRoute) {
     return NextResponse.redirect(new URL('/auth/login', req.url))
   }
 
-  // Skip subscription check for now (can re-enable later)
-  // Uncomment below to enable subscription checks
-  /*
-  if (session && !isPublicRoute && !req.nextUrl.pathname.startsWith('/admin')) {
+  // Check subscription for authenticated users (skip for admins)
+  if (session && !isNoSubscriptionRequired && !req.nextUrl.pathname.startsWith('/admin')) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('is_admin')
       .eq('id', session.user.id)
       .single()
 
+    // Les admins n'ont pas besoin d'abonnement
     if (!profile?.is_admin) {
       const { data: subscription } = await supabase
         .from('subscriptions')
@@ -36,14 +45,12 @@ export async function middleware(req: NextRequest) {
         .eq('user_id', session.user.id)
         .single()
 
+      // Rediriger vers le paywall si pas d'abonnement actif
       if (subscription?.status !== 'active' && subscription?.status !== 'trialing') {
-        if (req.nextUrl.pathname !== '/subscription') {
-          return NextResponse.redirect(new URL('/subscription', req.url))
-        }
+        return NextResponse.redirect(new URL('/subscription-required', req.url))
       }
     }
   }
-  */
 
   return res
 }
