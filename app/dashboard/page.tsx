@@ -144,7 +144,7 @@ export default async function DashboardPage() {
             ) : (
               <div className="text-center py-8" style={{ color: '#9b30a8' }}>
                 <p className="font-semibold">Aucun trade pour le moment</p>
-                <p className="text-sm opacity-75 mt-2">Les trades apparaîtront ici dès que l'admin tradra</p>
+                <p className="text-sm opacity-75 mt-2">Les trades apparaîtront ici dès qu'un trade est pris par le trader</p>
               </div>
             )}
           </div>

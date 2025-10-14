@@ -135,7 +135,32 @@ export default function MT5AccountsPage() {
 
       if (!session) throw new Error('Non authentifié')
 
-      // Encrypt password (in production, use proper encryption)
+      // Vérifier que l'utilisateur n'a pas déjà un compte
+      if (mt5Accounts.length > 0) {
+        throw new Error('Vous ne pouvez connecter qu\'un seul compte MT5. Supprimez votre compte actuel pour en ajouter un nouveau.')
+      }
+
+      // 1. Connecter le compte à MetaApi
+      const metaApiResponse = await fetch('/api/metaapi/connect-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `User - ${formData.broker_name} - ${formData.account_number}`,
+          login: formData.account_number,
+          password: formData.password,
+          server: formData.server_name,
+          platform: 'mt5',
+          magic: 0,
+        }),
+      })
+
+      const metaApiData = await metaApiResponse.json()
+
+      if (!metaApiData.success) {
+        throw new Error(metaApiData.error || 'Erreur lors de la connexion MetaApi')
+      }
+
+      // 2. Enregistrer dans Supabase avec le metaapi_account_id
       const passwordEncrypted = Buffer.from(formData.password).toString('base64')
 
       const { error } = await supabase.from('mt5_accounts').insert({
@@ -145,6 +170,9 @@ export default function MT5AccountsPage() {
         account_number: parseInt(formData.account_number),
         password_encrypted: passwordEncrypted,
         is_investor: formData.is_investor,
+        is_admin_account: false, // Compte user, pas admin
+        metaapi_account_id: metaApiData.accountId,
+        is_active: true,
       })
 
       if (error) throw error
@@ -192,13 +220,15 @@ export default function MT5AccountsPage() {
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Comptes MT5</h1>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="btn btn-primary"
-          >
-            {showAddForm ? 'Annuler' : 'Ajouter un compte'}
-          </button>
+          <h1 className="text-3xl font-bold text-gray-900">Mon Compte MT5</h1>
+          {mt5Accounts.length === 0 && (
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="btn btn-primary"
+            >
+              {showAddForm ? 'Annuler' : '+ Connecter mon compte'}
+            </button>
+          )}
         </div>
 
         {error && (
@@ -316,52 +346,66 @@ export default function MT5AccountsPage() {
           </div>
         )}
 
-        <div className="space-y-4">
+        {mt5Accounts.length > 0 ? (
+          <div className="space-y-6">
             {mt5Accounts.map((account) => (
               <div key={account.id} className="card">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="text-lg font-bold">{account.broker_name}</h3>
-                    <p className="text-gray-600">Compte #{account.account_number}</p>
-                    <p className="text-sm text-gray-500">{account.server_name}</p>
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex-1">
+                    <h3 className="text-xl font-bold text-gray-900 mb-1">
+                      {account.broker_name}
+                    </h3>
+                    <p className="text-gray-600 font-semibold">
+                      Serveur: {account.server_name}
+                    </p>
+                    <p className="text-gray-600 font-semibold">
+                      Compte: #{account.account_number}
+                    </p>
                   </div>
-                
-                <div className="flex items-center space-x-4">
-                  <span className={`px-3 py-1 rounded-full text-sm ${
+                  <span className={`px-4 py-2 rounded-full text-sm font-bold ${
                     account.is_active
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
+                      ? 'bg-green-500 text-white'
+                      : 'bg-gray-400 text-white'
                   }`}>
-                    {account.is_active ? 'Actif' : 'Inactif'}
+                    {account.is_active ? '✓ Actif' : '✗ Inactif'}
                   </span>
-                  
+                </div>
+                
+                <div className="flex gap-2 pt-4 border-t">
                   <button
                     onClick={() => toggleAccountStatus(account.id, account.is_active)}
-                    className="btn btn-secondary"
+                    className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition-all"
                   >
                     {account.is_active ? 'Désactiver' : 'Activer'}
                   </button>
                   
                   <button
                     onClick={() => deleteAccount(account.id)}
-                    className="btn bg-red-500 text-white hover:bg-red-600"
+                    className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-all"
                   >
                     Supprimer
                   </button>
                 </div>
               </div>
+            ))}
+            
+            <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4">
+              <p className="text-sm font-bold text-blue-800">
+                ℹ️ <strong>Limite:</strong> Vous ne pouvez connecter qu'un seul compte MT5. 
+                Pour en changer, supprimez d'abord votre compte actuel.
+              </p>
             </div>
-          ))}
-
-          {mt5Accounts.length === 0 && !showAddForm && (
-            <div className="card text-center py-12">
-              <p className="text-gray-500 mb-4">Aucun compte MT5 configuré</p>
-              <button onClick={() => setShowAddForm(true)} className="btn btn-primary">
-                Ajouter votre premier compte
-              </button>
-            </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="card text-center py-12">
+            <p className="text-xl font-bold text-gray-900 mb-2">
+              Aucun compte MT5 connecté
+            </p>
+            <p className="text-gray-600 mb-4">
+              Connectez votre compte MT5 pour recevoir automatiquement les signaux de trading
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
