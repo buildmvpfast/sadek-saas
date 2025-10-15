@@ -1,0 +1,1 @@
+-- Script SQL pour créer un abonnement inactif pour TOUS les utilisateurs
