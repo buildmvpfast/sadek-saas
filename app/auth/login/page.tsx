@@ -45,6 +45,31 @@ export default function LoginPage() {
     }
   }
 
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError('Veuillez entrer votre email d\'abord')
+      return
+    }
+
+    setError('')
+    setLoading(true)
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      })
+
+      if (error) throw error
+
+      setError('')
+      alert('Email de réinitialisation envoyé! Vérifiez votre boîte mail.')
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de l\'envoi de l\'email')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="page-container pattern-bg">
       <div className="card max-w-md w-full">
@@ -96,6 +121,15 @@ export default function LoginPage() {
           <Link href="/auth/signup" className="text-primary-700 hover:text-primary-800 underline">
             S'inscrire ici
           </Link>
+        </p>
+
+        <p className="mt-4 text-center text-sm">
+          <button
+            onClick={handleForgotPassword}
+            className="text-primary-700 hover:text-primary-800 underline"
+          >
+            Mot de passe oublié?
+          </button>
         </p>
         
         <div className="mt-4 text-center">
