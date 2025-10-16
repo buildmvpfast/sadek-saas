@@ -50,6 +50,9 @@ export default function Navbar({ isAdmin = false }: { isAdmin?: boolean }) {
                 <Link href="/mt5-accounts" className="text-white hover:text-primary-200 font-semibold px-3 py-2 rounded-lg transition-colors">
                   MT5
                 </Link>
+                <Link href="/telegram-channels" className="text-white hover:text-primary-200 font-semibold px-3 py-2 rounded-lg transition-colors">
+                  Canaux
+                </Link>
                 <Link href="/settings" className="text-white hover:text-primary-200 font-semibold px-3 py-2 rounded-lg transition-colors hidden sm:block">
                   Paramètres
                 </Link>
