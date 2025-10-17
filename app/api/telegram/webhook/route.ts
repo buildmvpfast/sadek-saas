@@ -27,7 +27,8 @@ export async function POST(request: NextRequest) {
 
     // Envoyer le message à l'API de parsing
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/telegram/parse-signal`, {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const response = await fetch(`${baseUrl}/api/telegram/parse-signal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
