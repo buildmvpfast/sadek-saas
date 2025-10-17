@@ -72,42 +72,8 @@ export async function GET(request: Request) {
       )
     }
 
-    // Essayer de récupérer depuis MetaApi d'abord
-    try {
-      const { default: MetaApi } = await import('metaapi.cloud-sdk')
-      const token = process.env.METAAPI_TOKEN
-
-      if (token) {
-        const api = new MetaApi(token)
-        const provisioningProfileApi = api.provisioningProfileApi
-        const profiles = await provisioningProfileApi.getProvisioningProfiles()
-        
-        // Filtrer par broker
-        const brokerProfiles = profiles.filter(profile => 
-          profile.name.toLowerCase().includes(brokerName.toLowerCase()) ||
-          profile.server.toLowerCase().includes(brokerName.toLowerCase())
-        )
-        
-        if (brokerProfiles.length > 0) {
-          const servers = brokerProfiles.map(profile => ({
-            name: profile.server,
-            type: profile.server.toLowerCase().includes('demo') ? 'demo' : 'live',
-            description: profile.name
-          }))
-          
-          return NextResponse.json({
-            success: true,
-            broker: brokerName,
-            servers,
-            source: 'metaapi'
-          })
-        }
-      }
-    } catch (metaApiError) {
-      console.log('MetaApi non disponible, utilisation des serveurs statiques:', metaApiError.message)
-    }
-
-    // Fallback: serveurs statiques
+    // Pour l'instant, on utilise les serveurs statiques
+    // TODO: Implémenter l'intégration MetaApi quand l'API sera clarifiée
     const broker = BROKERS_DATA.find((b) => 
       b.name.toLowerCase().includes(brokerName.toLowerCase())
     )

@@ -2,45 +2,8 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
   try {
-    // Essayer de récupérer depuis MetaApi d'abord
-    try {
-      const { default: MetaApi } = await import('metaapi.cloud-sdk')
-      const token = process.env.METAAPI_TOKEN
-
-      if (token) {
-        const api = new MetaApi(token)
-        const provisioningProfileApi = api.provisioningProfileApi
-        const profiles = await provisioningProfileApi.getProvisioningProfiles()
-        
-        // Extraire les brokers uniques
-        const brokerMap = new Map()
-        profiles.forEach(profile => {
-          const brokerName = extractBrokerName(profile.name)
-          if (brokerName && !brokerMap.has(brokerName)) {
-            brokerMap.set(brokerName, {
-              id: brokerName.toLowerCase().replace(/\s+/g, ''),
-              name: brokerName,
-              servers: []
-            })
-          }
-        })
-        
-        const brokers = Array.from(brokerMap.values())
-        
-        if (brokers.length > 0) {
-          return NextResponse.json({ 
-            success: true,
-            brokers,
-            total: brokers.length,
-            source: 'metaapi'
-          })
-        }
-      }
-    } catch (metaApiError) {
-      console.log('MetaApi non disponible, utilisation des brokers statiques:', metaApiError.message)
-    }
-
-    // Fallback: brokers statiques
+    // Pour l'instant, on utilise les brokers statiques
+    // TODO: Implémenter l'intégration MetaApi quand l'API sera clarifiée
     const brokers = getStaticBrokers()
     
     return NextResponse.json({ 
