@@ -52,26 +52,49 @@ export default function SubscriptionRequiredPage() {
 
       console.log('🚀 Activating subscription for user:', session.user.id)
 
-      // MODE TEST: Créer ou mettre à jour l'abonnement
-      const { data, error: upsertError } = await supabase
+      // MODE TEST: Mettre à jour l'abonnement existant
+      const { data, error: updateError } = await supabase
         .from('subscriptions')
-        .upsert({
-          user_id: session.user.id,
+        .update({
           status: 'active',
           current_period_start: new Date().toISOString(),
           current_period_end: new Date(
             Date.now() + (plan === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000
           ).toISOString(),
-          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
+        .eq('user_id', session.user.id)
         .select()
 
-      console.log('📊 Upsert result:', data, upsertError)
+      console.log('📊 Update result:', data, updateError)
 
-      if (upsertError) {
-        console.error('❌ Upsert error:', upsertError)
-        throw upsertError
+      if (updateError) {
+        console.error('❌ Update error:', updateError)
+        throw updateError
+      }
+
+      // Si aucun abonnement n'a été trouvé, en créer un nouveau
+      if (!data || data.length === 0) {
+        console.log('🆕 No existing subscription found, creating new one...')
+        const { data: newData, error: insertError } = await supabase
+          .from('subscriptions')
+          .insert({
+            user_id: session.user.id,
+            status: 'active',
+            current_period_start: new Date().toISOString(),
+            current_period_end: new Date(
+              Date.now() + (plan === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000
+            ).toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .select()
+
+        if (insertError) {
+          console.error('❌ Insert error:', insertError)
+          throw insertError
+        }
+        console.log('✅ New subscription created:', newData)
       }
 
       console.log('✅ Subscription activated! Redirecting...')
