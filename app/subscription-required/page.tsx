@@ -52,25 +52,26 @@ export default function SubscriptionRequiredPage() {
 
       console.log('🚀 Activating subscription for user:', session.user.id)
 
-      // MODE TEST: Activer l'abonnement existant
-      const { data, error: updateError } = await supabase
+      // MODE TEST: Créer ou mettre à jour l'abonnement
+      const { data, error: upsertError } = await supabase
         .from('subscriptions')
-        .update({
+        .upsert({
+          user_id: session.user.id,
           status: 'active',
           current_period_start: new Date().toISOString(),
           current_period_end: new Date(
             Date.now() + (plan === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000
           ).toISOString(),
+          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
-        .eq('user_id', session.user.id)
         .select()
 
-      console.log('📊 Update result:', data, updateError)
+      console.log('📊 Upsert result:', data, upsertError)
 
-      if (updateError) {
-        console.error('❌ Update error:', updateError)
-        throw updateError
+      if (upsertError) {
+        console.error('❌ Upsert error:', upsertError)
+        throw upsertError
       }
 
       console.log('✅ Subscription activated! Redirecting...')
