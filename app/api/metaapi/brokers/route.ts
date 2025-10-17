@@ -2,26 +2,78 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
   try {
-    // Pour l'instant, on retourne une liste statique de brokers
-    // MetaApi SDK a des problèmes d'import dans Next.js
+    // Essayer de récupérer depuis MetaApi d'abord
+    try {
+      const { default: MetaApi } = await import('metaapi.cloud-sdk')
+      const token = process.env.METAAPI_TOKEN
+
+      if (token) {
+        const api = new MetaApi(token)
+        const provisioningProfileApi = api.provisioningProfileApi
+        const profiles = await provisioningProfileApi.getProvisioningProfiles()
+        
+        // Extraire les brokers uniques
+        const brokerMap = new Map()
+        profiles.forEach(profile => {
+          const brokerName = extractBrokerName(profile.name)
+          if (brokerName && !brokerMap.has(brokerName)) {
+            brokerMap.set(brokerName, {
+              id: brokerName.toLowerCase().replace(/\s+/g, ''),
+              name: brokerName,
+              servers: []
+            })
+          }
+        })
+        
+        const brokers = Array.from(brokerMap.values())
+        
+        if (brokers.length > 0) {
+          return NextResponse.json({ 
+            success: true,
+            brokers,
+            total: brokers.length,
+            source: 'metaapi'
+          })
+        }
+      }
+    } catch (metaApiError) {
+      console.log('MetaApi non disponible, utilisation des brokers statiques:', metaApiError.message)
+    }
+
+    // Fallback: brokers statiques
     const brokers = getStaticBrokers()
     
     return NextResponse.json({ 
       success: true,
       brokers,
-      total: brokers.length
+      total: brokers.length,
+      source: 'static'
     })
   } catch (error: any) {
     console.error('Error fetching brokers:', error)
     return NextResponse.json(
       { 
-        success: true, // On retourne quand même les brokers
+        success: true,
         brokers: getStaticBrokers(),
-        total: getStaticBrokers().length
+        total: getStaticBrokers().length,
+        source: 'static'
       },
       { status: 200 }
     )
   }
+}
+
+function extractBrokerName(profileName: string): string | null {
+  // Extraire le nom du broker depuis le nom du profil
+  const brokerKeywords = ['VTmarker', 'Raise FX', 'FXcess', 'Axi', 'AxiTrader']
+  
+  for (const keyword of brokerKeywords) {
+    if (profileName.toLowerCase().includes(keyword.toLowerCase())) {
+      return keyword
+    }
+  }
+  
+  return null
 }
 
 function getStaticBrokers() {
@@ -29,22 +81,62 @@ function getStaticBrokers() {
     {
       id: 'vtmarker',
       name: 'VTmarker',
-      servers: ['VTmarker-Live', 'VTmarker-Demo'],
+      servers: [
+        'VTmarker-Live',
+        'VTmarker-Demo',
+        'VTmarker-Live01',
+        'VTmarker-Live02',
+        'VTmarker-Real',
+        'VTmarker-Real01',
+        'VTmarker-Real02'
+      ],
     },
     {
       id: 'raisefx',
       name: 'Raise FX',
-      servers: ['RaiseFX-Live', 'RaiseFX-Demo'],
+      servers: [
+        'RaiseFX-Live',
+        'RaiseFX-Demo',
+        'RaiseFX-Live01',
+        'RaiseFX-Live02',
+        'RaiseFX-Real',
+        'RaiseFX-Real01',
+        'RaiseFX-Real02',
+        'RaiseFX-MT5-Live',
+        'RaiseFX-MT5-Demo'
+      ],
     },
     {
       id: 'fxcess',
       name: 'FXcess',
-      servers: ['FXcess-Live', 'FXcess-Demo'],
+      servers: [
+        'FXcess-Live',
+        'FXcess-Demo',
+        'FXcess-Live01',
+        'FXcess-Live02',
+        'FXcess-Real',
+        'FXcess-Real01',
+        'FXcess-Real02',
+        'FXcess-MT5-Live',
+        'FXcess-MT5-Demo'
+      ],
     },
     {
       id: 'axi',
       name: 'Axi',
-      servers: ['Axi-Live', 'Axi-Demo'],
+      servers: [
+        'Axi-Live',
+        'Axi-Demo',
+        'Axi-Live01',
+        'Axi-Live02',
+        'Axi-Real',
+        'Axi-Real01',
+        'Axi-Real02',
+        'Axi-MT5-Live',
+        'Axi-MT5-Demo',
+        'AxiTrader-Live',
+        'AxiTrader-Demo'
+      ],
     },
   ]
 }

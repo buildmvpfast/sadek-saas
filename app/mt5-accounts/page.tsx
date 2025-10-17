@@ -41,6 +41,7 @@ export default function MT5AccountsPage() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingServers, setLoadingServers] = useState(false)
+  const [loadingSubmit, setLoadingSubmit] = useState(false)
   const [error, setError] = useState('')
 
   const [formData, setFormData] = useState({
@@ -164,7 +165,7 @@ export default function MT5AccountsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    setLoading(true)
+    setLoadingSubmit(true)
 
     try {
       const {
@@ -228,7 +229,7 @@ export default function MT5AccountsPage() {
     } catch (err: any) {
       setError(err.message || 'Une erreur est survenue')
     } finally {
-      setLoading(false)
+      setLoadingSubmit(false)
     }
   }
 
@@ -377,8 +378,8 @@ export default function MT5AccountsPage() {
                 <label className="text-sm">Mot de passe investisseur (lecture seule)</label>
               </div>
 
-              <button type="submit" disabled={loading || !formData.server_name} className="btn btn-primary w-full">
-                {loading ? 'Ajout en cours...' : 'Ajouter le compte'}
+              <button type="submit" disabled={loadingSubmit || !formData.server_name} className="btn btn-primary w-full">
+                {loadingSubmit ? 'Ajout en cours...' : 'Ajouter le compte'}
               </button>
             </form>
           </div>

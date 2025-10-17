@@ -1,86 +1,62 @@
 import { NextResponse } from 'next/server'
 
-// Liste statique des brokers et serveurs
+// Liste des brokers et leurs vrais serveurs
 const BROKERS_DATA = [
   {
-    name: 'IC Markets',
-    servers: ['ICMarketsEU-Live', 'ICMarketsSC-Live', 'ICMarketsEU-MT5', 'ICMarkets-Demo'],
+    name: 'VTmarker',
+    servers: [
+      'VTmarker-Live',
+      'VTmarker-Demo',
+      'VTmarker-Live01',
+      'VTmarker-Live02',
+      'VTmarker-Real',
+      'VTmarker-Real01',
+      'VTmarker-Real02'
+    ],
   },
   {
-    name: 'XM Global',
-    servers: ['XMGlobal-Real', 'XMGlobal-Real 2', 'XMGlobal-Real 3', 'XMGlobal-Demo'],
+    name: 'Raise FX',
+    servers: [
+      'RaiseFX-Live',
+      'RaiseFX-Demo',
+      'RaiseFX-Live01',
+      'RaiseFX-Live02',
+      'RaiseFX-Real',
+      'RaiseFX-Real01',
+      'RaiseFX-Real02',
+      'RaiseFX-MT5-Live',
+      'RaiseFX-MT5-Demo'
+    ],
   },
   {
-    name: 'Pepperstone',
-    servers: ['Pepperstone-Live', 'Pepperstone-Live02', 'Pepperstone-Demo'],
+    name: 'FXcess',
+    servers: [
+      'FXcess-Live',
+      'FXcess-Demo',
+      'FXcess-Live01',
+      'FXcess-Live02',
+      'FXcess-Real',
+      'FXcess-Real01',
+      'FXcess-Real02',
+      'FXcess-MT5-Live',
+      'FXcess-MT5-Demo'
+    ],
   },
   {
-    name: 'Exness',
-    servers: ['Exness-MT5Live', 'Exness-MT5Live2', 'Exness-MT5Real', 'Exness-MT5Demo'],
-  },
-  {
-    name: 'FTMO',
-    servers: ['FTMO-Server', 'FTMO-Server2', 'FTMO-Demo'],
-  },
-  {
-    name: 'Admiral Markets',
-    servers: ['AdmiralMarkets-Live', 'AdmiralMarkets-Demo'],
-  },
-  {
-    name: 'FBS',
-    servers: ['FBS-Real', 'FBS-Real-2', 'FBS-Demo'],
-  },
-  {
-    name: 'RoboForex',
-    servers: ['RoboForex-ECN', 'RoboForex-Pro', 'RoboForex-Demo'],
-  },
-  {
-    name: 'Alpari',
-    servers: ['Alpari-MT5-Live', 'Alpari-MT5-Demo'],
-  },
-  {
-    name: 'OctaFX',
-    servers: ['OctaFX-Real', 'OctaFX-Real2', 'OctaFX-Demo'],
-  },
-  {
-    name: 'HFM (HotForex)',
-    servers: ['HotForex-Live', 'HotForex-Real', 'HotForex-Demo'],
-  },
-  {
-    name: 'FXGT',
-    servers: ['FXGT-Live', 'FXGT-Demo'],
-  },
-  {
-    name: 'AvaTrade',
-    servers: ['AvaTrade-MT5Live', 'AvaTrade-MT5Demo'],
-  },
-  {
-    name: 'ThinkMarkets',
-    servers: ['ThinkMarkets-Live', 'ThinkMarkets-Demo'],
-  },
-  {
-    name: 'FP Markets',
-    servers: ['FPMarkets-Live', 'FPMarkets-Demo'],
-  },
-  {
-    name: 'Tickmill',
-    servers: ['Tickmill-Live', 'Tickmill-Demo'],
-  },
-  {
-    name: 'Forex.com',
-    servers: ['FOREX.com-Live', 'FOREX.com-Demo'],
-  },
-  {
-    name: 'OANDA',
-    servers: ['OANDA-v20-Live', 'OANDA-v20-Practice'],
-  },
-  {
-    name: 'IG Markets',
-    servers: ['IG-Live', 'IG-Demo'],
-  },
-  {
-    name: 'CMC Markets',
-    servers: ['CMCMarkets-Live', 'CMCMarkets-Demo'],
+    name: 'Axi',
+    servers: [
+      'Axi-Live',
+      'Axi-Demo',
+      'Axi-Live01',
+      'Axi-Live02',
+      'Axi-Real',
+      'Axi-Real01',
+      'Axi-Real02',
+      'Axi-MT5-Live',
+      'Axi-MT5-Demo',
+      'AxiTrader-Live',
+      'AxiTrader-Demo'
+    ],
   },
 ]
 
@@ -96,7 +72,42 @@ export async function GET(request: Request) {
       )
     }
 
-    // Trouver le broker
+    // Essayer de récupérer depuis MetaApi d'abord
+    try {
+      const { default: MetaApi } = await import('metaapi.cloud-sdk')
+      const token = process.env.METAAPI_TOKEN
+
+      if (token) {
+        const api = new MetaApi(token)
+        const provisioningProfileApi = api.provisioningProfileApi
+        const profiles = await provisioningProfileApi.getProvisioningProfiles()
+        
+        // Filtrer par broker
+        const brokerProfiles = profiles.filter(profile => 
+          profile.name.toLowerCase().includes(brokerName.toLowerCase()) ||
+          profile.server.toLowerCase().includes(brokerName.toLowerCase())
+        )
+        
+        if (brokerProfiles.length > 0) {
+          const servers = brokerProfiles.map(profile => ({
+            name: profile.server,
+            type: profile.server.toLowerCase().includes('demo') ? 'demo' : 'live',
+            description: profile.name
+          }))
+          
+          return NextResponse.json({
+            success: true,
+            broker: brokerName,
+            servers,
+            source: 'metaapi'
+          })
+        }
+      }
+    } catch (metaApiError) {
+      console.log('MetaApi non disponible, utilisation des serveurs statiques:', metaApiError.message)
+    }
+
+    // Fallback: serveurs statiques
     const broker = BROKERS_DATA.find((b) => 
       b.name.toLowerCase().includes(brokerName.toLowerCase())
     )
@@ -105,7 +116,8 @@ export async function GET(request: Request) {
       return NextResponse.json({
         success: true,
         broker: brokerName,
-        servers: []
+        servers: [],
+        source: 'static'
       })
     }
 
@@ -118,7 +130,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       broker: broker.name,
-      servers
+      servers,
+      source: 'static'
     })
   } catch (error: any) {
     console.error('Error fetching servers:', error)
