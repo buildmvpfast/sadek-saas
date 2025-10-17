@@ -1,9 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
+import { clientCache } from '@/lib/cache'
+
+// Lazy load des composants lourds
+const LoadingSpinner = lazy(() => import('@/components/LoadingSpinner'))
 
 type Broker = {
   id: string
@@ -43,6 +47,7 @@ export default function MT5AccountsPage() {
   const [loadingServers, setLoadingServers] = useState(false)
   const [loadingSubmit, setLoadingSubmit] = useState(false)
   const [error, setError] = useState('')
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const [formData, setFormData] = useState({
     broker_name: '',
@@ -76,36 +81,51 @@ export default function MT5AccountsPage() {
     }
   }
 
-  const fetchData = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (!session) {
-      router.push('/auth/login')
-      return
+  const fetchData = async (isRefresh = false) => {
+    if (isRefresh) {
+      setIsRefreshing(true)
+    } else {
+      setLoading(true)
     }
 
-    const { data: accountsData } = await supabase
-      .from('mt5_accounts')
-      .select('*')
-      .eq('user_id', session.user.id)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-    if (accountsData) {
-      const formattedAccounts = accountsData.map((acc: any) => ({
-        id: acc.id,
-        account_number: acc.account_number,
-        is_active: acc.is_active,
-        broker_name: acc.broker_name || 'N/A',
-        server_name: acc.server_name || 'N/A',
-        metaapi_account_id: acc.metaapi_account_id,
-      }))
-      setMt5Accounts(formattedAccounts)
-      
-      // Charger les positions du premier compte actif
-      const activeAccount = formattedAccounts.find((acc: any) => acc.is_active && acc.metaapi_account_id)
-      if (activeAccount?.metaapi_account_id) {
-        fetchPositions(activeAccount.metaapi_account_id)
+      if (!session) {
+        router.push('/auth/login')
+        return
+      }
+
+      const { data: accountsData } = await supabase
+        .from('mt5_accounts')
+        .select('id, account_number, is_active, broker_name, server_name, metaapi_account_id')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+
+      if (accountsData) {
+        const formattedAccounts = accountsData.map((acc: any) => ({
+          id: acc.id,
+          account_number: acc.account_number,
+          is_active: acc.is_active,
+          broker_name: acc.broker_name || 'N/A',
+          server_name: acc.server_name || 'N/A',
+          metaapi_account_id: acc.metaapi_account_id,
+        }))
+        setMt5Accounts(formattedAccounts)
+        
+        // Charger les positions du premier compte actif
+        const activeAccount = formattedAccounts.find((acc: any) => acc.is_active && acc.metaapi_account_id)
+        if (activeAccount?.metaapi_account_id) {
+          fetchPositions(activeAccount.metaapi_account_id)
+        }
+      }
+    } finally {
+      if (isRefresh) {
+        setIsRefreshing(false)
+      } else {
+        setLoading(false)
       }
     }
   }
@@ -260,14 +280,23 @@ export default function MT5AccountsPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Mon Compte MT5</h1>
-          {mt5Accounts.length === 0 && (
+          <div className="flex gap-2">
             <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="btn btn-primary"
+              onClick={() => fetchData(true)}
+              disabled={isRefreshing}
+              className="btn btn-secondary"
             >
-              {showAddForm ? 'Annuler' : '+ Connecter mon compte'}
+              {isRefreshing ? '🔄' : '↻'} Actualiser
             </button>
-          )}
+            {mt5Accounts.length === 0 && (
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="btn btn-primary"
+              >
+                {showAddForm ? 'Annuler' : '+ Connecter mon compte'}
+              </button>
+            )}
+          </div>
         </div>
 
         {error && (

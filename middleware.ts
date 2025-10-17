@@ -27,24 +27,24 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL('/auth/login', req.url))
   }
 
-  // Check subscription for authenticated users (skip for admins)
-  if (session && !isNoSubscriptionRequired && !req.nextUrl.pathname.startsWith('/admin')) {
+  // Check subscription for authenticated users (skip for admins and API routes)
+  if (session && !isNoSubscriptionRequired && !req.nextUrl.pathname.startsWith('/admin') && !req.nextUrl.pathname.startsWith('/api')) {
+    // Une seule requête pour récupérer profile + subscription
     const { data: profile } = await supabase
       .from('profiles')
-      .select('is_admin')
+      .select(`
+        is_admin,
+        subscriptions!inner(status)
+      `)
       .eq('id', session.user.id)
       .single()
 
     // Les admins n'ont pas besoin d'abonnement
     if (!profile?.is_admin) {
-      const { data: subscription } = await supabase
-        .from('subscriptions')
-        .select('status')
-        .eq('user_id', session.user.id)
-        .single()
-
+      const subscription = profile?.subscriptions?.[0]
+      
       // Rediriger vers le paywall si pas d'abonnement actif
-      if (!subscription || subscription?.status !== 'active' && subscription?.status !== 'trialing') {
+      if (!subscription || (subscription?.status !== 'active' && subscription?.status !== 'trialing')) {
         return NextResponse.redirect(new URL('/subscription-required', req.url))
       }
     }

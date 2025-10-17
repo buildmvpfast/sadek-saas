@@ -126,17 +126,29 @@ export default function TelegramChannelsPage() {
             <div key={channel.id} className="card">
               <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
-                    {channel.name}
-                  </h3>
-                  <p className="text-gray-600 mb-2">
-                    @{channel.username}
-                  </p>
+                  <div className="flex items-center mb-3">
+                    <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-lg mr-3">
+                      {channel.name.charAt(0)}
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900">
+                        {channel.name}
+                      </h3>
+                      <p className="text-gray-600">
+                        @{channel.username}
+                      </p>
+                    </div>
+                  </div>
                   {channel.description && (
-                    <p className="text-gray-500 text-sm">
+                    <p className="text-gray-500 text-sm mb-3">
                       {channel.description}
                     </p>
                   )}
+                  <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
+                    channel.is_premium ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {channel.is_premium ? '⭐ Premium' : '🆓 Gratuit'}
+                  </span>
                 </div>
                 
                 <button

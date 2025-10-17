@@ -1,17 +1,37 @@
 import { NextResponse } from 'next/server'
 
+// Cache simple en mémoire (5 minutes)
+let brokersCache: any = null
+let cacheTimestamp = 0
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
 export async function GET() {
   try {
+    // Vérifier le cache
+    const now = Date.now()
+    if (brokersCache && (now - cacheTimestamp) < CACHE_DURATION) {
+      return NextResponse.json({ 
+        ...brokersCache,
+        cached: true
+      })
+    }
+
     // Pour l'instant, on utilise les brokers statiques
     // TODO: Implémenter l'intégration MetaApi quand l'API sera clarifiée
     const brokers = getStaticBrokers()
     
-    return NextResponse.json({ 
+    const result = { 
       success: true,
       brokers,
       total: brokers.length,
       source: 'static'
-    })
+    }
+
+    // Mettre en cache
+    brokersCache = result
+    cacheTimestamp = now
+    
+    return NextResponse.json(result)
   } catch (error: any) {
     console.error('Error fetching brokers:', error)
     return NextResponse.json(

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,6 +26,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
+    // Vérifier si c'est un canal configuré
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    const { data: channel } = await supabase
+      .from('telegram_channels')
+      .select('id, username, name')
+      .or(`username.eq.${channelUsername},name.ilike.%${channelUsername}%`)
+      .single()
+
+    if (!channel) {
+      console.log(`Canal non configuré: ${channelUsername}`)
+      return NextResponse.json({ ok: true })
+    }
+
     // Envoyer le message à l'API de parsing
     try {
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
@@ -32,13 +50,13 @@ export async function POST(request: NextRequest) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          channelUsername,
+          channelUsername: channel.username,
           messageText: text,
           messageId: message.message_id
         })
       })
 
-      console.log('Signal processed:', await response.text())
+      console.log(`Signal traité pour ${channel.name}:`, await response.text())
     } catch (error) {
       console.error('Error processing signal:', error)
     }
