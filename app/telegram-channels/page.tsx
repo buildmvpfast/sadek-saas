@@ -10,7 +10,8 @@ type TelegramChannel = {
   name: string
   username: string
   description: string
-  is_active: boolean
+  is_premium: boolean
+  created_at: string
 }
 
 type UserSubscription = {
