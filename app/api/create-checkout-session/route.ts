@@ -9,6 +9,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 export async function POST(req: Request) {
   try {
     const supabase = createServerClient()
+    const body = await req.json()
+    const plan = body.plan || 'monthly' // 'monthly' or 'yearly'
 
     const {
       data: { session },
@@ -24,22 +26,33 @@ export async function POST(req: Request) {
       .eq('id', session.user.id)
       .single()
 
+    // Produits Stripe
+    const PRODUCT_IDS = {
+      monthly: 'prod_TOJi07OHG8AVUc', // Plan Basic Mensuel
+      yearly: 'prod_TOJkO0xDiqmvZn',  // Plan Basic Annuel
+    }
+
+    const productId = PRODUCT_IDS[plan as keyof typeof PRODUCT_IDS] || PRODUCT_IDS.monthly
+
+    // Récupérer les prix du produit
+    const prices = await stripe.prices.list({
+      product: productId,
+      active: true,
+    })
+
+    if (!prices.data || prices.data.length === 0) {
+      return NextResponse.json({ error: 'Aucun prix trouvé pour ce produit' }, { status: 400 })
+    }
+
+    // Utiliser le premier prix actif (normalement il n'y en a qu'un par produit)
+    const priceId = prices.data[0].id
+
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer_email: profile?.email,
       line_items: [
         {
-          price_data: {
-            currency: 'eur',
-            product_data: {
-              name: 'MT5 Copy Trading - Abonnement Mensuel',
-              description: 'Copy trading illimité avec jusqu\'à 5 comptes MT5',
-            },
-            unit_amount: 4900, // 49€ in cents
-            recurring: {
-              interval: 'month',
-            },
-          },
+          price: priceId,
           quantity: 1,
         },
       ],
@@ -47,6 +60,7 @@ export async function POST(req: Request) {
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/subscription?canceled=true`,
       metadata: {
         user_id: session.user.id,
+        plan: plan,
       },
     })
 

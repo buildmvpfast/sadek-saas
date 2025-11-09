@@ -50,57 +50,24 @@ export default function SubscriptionRequiredPage() {
         return
       }
 
-      console.log('🚀 Activating subscription for user:', session.user.id)
+      // Rediriger vers Stripe Checkout
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      })
 
-      // MODE TEST: Mettre à jour l'abonnement existant
-      const { data, error: updateError } = await supabase
-        .from('subscriptions')
-        .update({
-          status: 'active',
-          current_period_start: new Date().toISOString(),
-          current_period_end: new Date(
-            Date.now() + (plan === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', session.user.id)
-        .select()
+      const { url, error: apiError } = await response.json()
 
-      console.log('📊 Update result:', data, updateError)
-
-      if (updateError) {
-        console.error('❌ Update error:', updateError)
-        throw updateError
+      if (apiError) {
+        throw new Error(apiError)
       }
 
-      // Si aucun abonnement n'a été trouvé, en créer un nouveau
-      if (!data || data.length === 0) {
-        console.log('🆕 No existing subscription found, creating new one...')
-        const { data: newData, error: insertError } = await supabase
-          .from('subscriptions')
-          .insert({
-            user_id: session.user.id,
-            status: 'active',
-            current_period_start: new Date().toISOString(),
-            current_period_end: new Date(
-              Date.now() + (plan === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000
-            ).toISOString(),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .select()
-
-        if (insertError) {
-          console.error('❌ Insert error:', insertError)
-          throw insertError
-        }
-        console.log('✅ New subscription created:', newData)
+      if (url) {
+        window.location.href = url
+      } else {
+        throw new Error('URL de checkout non reçue')
       }
-
-      console.log('✅ Subscription activated! Redirecting...')
-      
-      // Rediriger vers le dashboard
-      router.push('/dashboard')
     } catch (err: any) {
       console.error('❌ Activation error:', err)
       setError(err.message || 'Erreur lors de l\'activation')

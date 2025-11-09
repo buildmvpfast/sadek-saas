@@ -94,3 +94,4 @@ INSERT INTO public.telegram_channels (name, username, description) VALUES
 SELECT table_name FROM information_schema.tables 
 WHERE table_schema = 'public' 
 AND table_name LIKE 'telegram_%';
+le bo

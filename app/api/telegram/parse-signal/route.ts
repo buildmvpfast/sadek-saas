@@ -103,19 +103,47 @@ async function executeTradesForSignal(signalId: string) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  // Récupérer tous les utilisateurs abonnés à ce canal
+  // Récupérer les données du signal
+  const { data: signal } = await supabase
+    .from('telegram_signals')
+    .select('id, channel_id, signal_type, symbol, entry_price, stop_loss, take_profit, volume')
+    .eq('id', signalId)
+    .single()
+
+  if (!signal) {
+    console.error('Signal non trouvé:', signalId)
+    return
+  }
+
+  // Récupérer tous les utilisateurs abonnés à ce canal spécifique
   const { data: subscriptions } = await supabase
     .from('user_telegram_subscriptions')
-    .select(`
-      user_id,
-      telegram_channels!inner(id)
-    `)
+    .select('user_id')
+    .eq('channel_id', signal.channel_id)
     .eq('is_active', true)
 
-  if (!subscriptions) return
+  if (!subscriptions || subscriptions.length === 0) {
+    console.log('Aucun utilisateur abonné à ce canal')
+    return
+  }
+
+  // Vérifier les abonnements actifs des utilisateurs
+  const { data: activeSubscriptions } = await supabase
+    .from('subscriptions')
+    .select('user_id')
+    .in('user_id', subscriptions.map(s => s.user_id))
+    .eq('status', 'active')
+
+  const activeUserIds = new Set(activeSubscriptions?.map(s => s.user_id) || [])
 
   // Pour chaque utilisateur, créer un trade
   for (const subscription of subscriptions) {
+    // Vérifier que l'utilisateur a un abonnement actif
+    if (!activeUserIds.has(subscription.user_id)) {
+      console.log(`Utilisateur ${subscription.user_id} n'a pas d'abonnement actif`)
+      continue
+    }
+
     // Récupérer le compte MT5 de l'utilisateur
     const { data: mt5Account } = await supabase
       .from('mt5_accounts')
@@ -124,19 +152,29 @@ async function executeTradesForSignal(signalId: string) {
       .eq('is_active', true)
       .single()
 
-    if (!mt5Account?.metaapi_account_id) continue
+    if (!mt5Account?.metaapi_account_id) {
+      console.log(`Pas de compte MT5 actif pour l'utilisateur ${subscription.user_id}`)
+      continue
+    }
 
-    // Créer l'entrée de trade
-    await supabase
+    // Créer l'entrée de trade avec les données du signal
+    const { error } = await supabase
       .from('telegram_trades')
       .insert({
         user_id: subscription.user_id,
         signal_id: signalId,
         mt5_account_id: mt5Account.id,
-        symbol: 'XAUUSD', // À récupérer du signal
-        signal_type: 'BUY', // À récupérer du signal
-        volume: 0.01,
+        symbol: signal.symbol,
+        signal_type: signal.signal_type,
+        volume: signal.volume || 0.01,
+        entry_price: signal.entry_price,
+        stop_loss: signal.stop_loss,
+        take_profit: signal.take_profit,
         status: 'pending'
       })
+
+    if (error) {
+      console.error('Erreur création trade:', error)
+    }
   }
 }
