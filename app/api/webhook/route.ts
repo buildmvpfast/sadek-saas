@@ -33,11 +33,41 @@ export async function POST(req: Request) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
 
-        await supabaseAdmin.from('subscriptions').update({
-          stripe_customer_id: session.customer as string,
-          stripe_subscription_id: session.subscription as string,
-          status: 'active',
-        }).eq('user_id', session.metadata?.user_id)
+        if (!session.metadata?.user_id) {
+          console.error('No user_id in session metadata')
+          break
+        }
+
+        // Récupérer les détails de l'abonnement Stripe pour avoir les dates
+        let subscriptionData: Stripe.Subscription | null = null
+        if (session.subscription) {
+          subscriptionData = await stripe.subscriptions.retrieve(session.subscription as string)
+        }
+
+        // Créer ou mettre à jour l'abonnement
+        const { error } = await supabaseAdmin
+          .from('subscriptions')
+          .upsert({
+            user_id: session.metadata.user_id,
+            stripe_customer_id: session.customer as string,
+            stripe_subscription_id: session.subscription as string,
+            status: subscriptionData?.status === 'active' || subscriptionData?.status === 'trialing' ? 'active' : 'inactive',
+            current_period_start: subscriptionData
+              ? new Date(subscriptionData.current_period_start * 1000).toISOString()
+              : new Date().toISOString(),
+            current_period_end: subscriptionData
+              ? new Date(subscriptionData.current_period_end * 1000).toISOString()
+              : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 jours par défaut
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id',
+          })
+
+        if (error) {
+          console.error('Error updating subscription:', error)
+        } else {
+          console.log(`✅ Subscription activated for user ${session.metadata.user_id}`)
+        }
 
         break
       }
@@ -45,11 +75,21 @@ export async function POST(req: Request) {
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription
 
-        await supabaseAdmin.from('subscriptions').update({
-          status: subscription.status as any,
-          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-        }).eq('stripe_subscription_id', subscription.id)
+        const { error } = await supabaseAdmin
+          .from('subscriptions')
+          .update({
+            status: subscription.status as any,
+            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('stripe_subscription_id', subscription.id)
+
+        if (error) {
+          console.error('Error updating subscription:', error)
+        } else {
+          console.log(`✅ Subscription updated: ${subscription.id} - Status: ${subscription.status}`)
+        }
 
         // If subscription is no longer active, close all open positions
         if (subscription.status !== 'active' && subscription.status !== 'trialing') {
@@ -61,11 +101,15 @@ export async function POST(req: Request) {
 
           if (subData) {
             // Trigger position closing (implement in MT5 service)
-            await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/close-user-positions`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ user_id: subData.user_id }),
-            })
+            try {
+              await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/close-user-positions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: subData.user_id }),
+              })
+            } catch (err) {
+              console.error('Error closing positions:', err)
+            }
           }
         }
 
@@ -75,9 +119,19 @@ export async function POST(req: Request) {
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription
 
-        await supabaseAdmin.from('subscriptions').update({
-          status: 'canceled',
-        }).eq('stripe_subscription_id', subscription.id)
+        const { error } = await supabaseAdmin
+          .from('subscriptions')
+          .update({
+            status: 'canceled',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('stripe_subscription_id', subscription.id)
+
+        if (error) {
+          console.error('Error canceling subscription:', error)
+        } else {
+          console.log(`✅ Subscription canceled: ${subscription.id}`)
+        }
 
         break
       }

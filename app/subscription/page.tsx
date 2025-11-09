@@ -34,19 +34,29 @@ export default function SubscriptionPage() {
     if (data) setSubscription(data)
   }
 
-  const handleSubscribe = async () => {
+  const handleSubscribe = async (plan: 'monthly' | 'yearly' = 'monthly') => {
     setLoading(true)
     try {
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
       })
 
-      const { url } = await response.json()
+      const { url, error: apiError } = await response.json()
+
+      if (apiError) {
+        throw new Error(apiError)
+      }
+
       if (url) {
         window.location.href = url
+      } else {
+        throw new Error('URL de checkout non reçue')
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error:', err)
+      alert(err.message || 'Erreur lors de la création de la session de paiement')
     } finally {
       setLoading(false)
     }
@@ -124,31 +134,48 @@ export default function SubscriptionPage() {
                 {loading ? 'Chargement...' : 'Gérer mon abonnement'}
               </button>
             ) : (
-              <button
-                onClick={handleSubscribe}
-                disabled={loading}
-                className="btn btn-primary w-full mt-6"
-              >
-                {loading ? 'Chargement...' : "S'abonner maintenant"}
-              </button>
+              <div className="space-y-3 mt-6">
+                <button
+                  onClick={() => handleSubscribe('monthly')}
+                  disabled={loading}
+                  className="btn btn-primary w-full"
+                >
+                  {loading ? 'Chargement...' : "S'abonner - Mensuel"}
+                </button>
+                <button
+                  onClick={() => handleSubscribe('yearly')}
+                  disabled={loading}
+                  className="btn w-full bg-green-500 hover:bg-green-600 text-white"
+                >
+                  {loading ? 'Chargement...' : "S'abonner - Annuel (Meilleure offre)"}
+                </button>
+              </div>
             )}
           </div>
 
           <div className="card">
-            <h2 className="text-xl font-bold mb-4">Plan Copy Trading</h2>
+            <h2 className="text-xl font-bold mb-4">🔹 Plan Basique</h2>
             
             <div className="mb-4">
-              <p className="text-3xl font-bold">49€<span className="text-lg text-gray-600">/mois</span></p>
+              <p className="text-3xl font-bold">
+                {subscription?.stripe_subscription_id ? (
+                  subscription.current_period_end && 
+                  new Date(subscription.current_period_end) > new Date() ? (
+                    '22,99€' // Si abonnement annuel actif
+                  ) : '29,99€'
+                ) : '29,99€'}
+                <span className="text-lg text-gray-600">/mois</span>
+              </p>
             </div>
 
             <ul className="space-y-3 text-gray-700">
-              <li>✓ Copy trading illimité</li>
-              <li>✓ Connexion de jusqu'à 5 comptes MT5</li>
+              <li>✓ 1 compte connecté</li>
+              <li>✓ 1 canal connecté</li>
+              <li>✓ 5 actifs tradables</li>
+              <li>✓ 10 positions simultanées maximum</li>
               <li>✓ Exécution instantanée des trades</li>
-              <li>✓ Gestion du risk par lot ou %</li>
               <li>✓ Dashboard en temps réel</li>
               <li>✓ Historique complet des trades</li>
-              <li>✓ Support prioritaire</li>
             </ul>
           </div>
         </div>

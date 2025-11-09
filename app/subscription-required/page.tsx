@@ -104,11 +104,11 @@ export default function SubscriptionRequiredPage() {
           <div className="card-white relative">
             <div className="text-center mb-6">
               <h3 className="text-3xl font-black mb-2" style={{ color: '#9b30a8' }}>
-                Mensuel
+                🔹 Plan Basique
               </h3>
               <div className="flex items-baseline justify-center mb-4">
                 <span className="text-6xl font-black" style={{ color: '#9b30a8' }}>
-                  29€
+                  29,99€
                 </span>
                 <span className="text-2xl font-bold opacity-75 ml-2" style={{ color: '#9b30a8' }}>
                   /mois
@@ -123,31 +123,25 @@ export default function SubscriptionRequiredPage() {
               <div className="flex items-start">
                 <span className="text-green-500 text-2xl mr-3">✓</span>
                 <p className="font-bold" style={{ color: '#9b30a8' }}>
-                  Copy trading automatique
+                  1 compte connecté
                 </p>
               </div>
               <div className="flex items-start">
                 <span className="text-green-500 text-2xl mr-3">✓</span>
                 <p className="font-bold" style={{ color: '#9b30a8' }}>
-                  Configuration personnalisée (GOLD, SOL, BTC)
+                  1 canal connecté
                 </p>
               </div>
               <div className="flex items-start">
                 <span className="text-green-500 text-2xl mr-3">✓</span>
                 <p className="font-bold" style={{ color: '#9b30a8' }}>
-                  Accès à tous les signaux
+                  5 actifs tradables
                 </p>
               </div>
               <div className="flex items-start">
                 <span className="text-green-500 text-2xl mr-3">✓</span>
                 <p className="font-bold" style={{ color: '#9b30a8' }}>
-                  Support communauté
-                </p>
-              </div>
-              <div className="flex items-start">
-                <span className="text-green-500 text-2xl mr-3">✓</span>
-                <p className="font-bold" style={{ color: '#9b30a8' }}>
-                  Multi-comptes MT5
+                  10 positions simultanées maximum
                 </p>
               </div>
             </div>
@@ -172,21 +166,21 @@ export default function SubscriptionRequiredPage() {
 
             <div className="text-center mb-6 mt-4">
               <h3 className="text-3xl font-black mb-2" style={{ color: '#9b30a8' }}>
-                Annuel
+                🔹 Plan Basique Annuel
               </h3>
               <div className="flex items-baseline justify-center mb-2">
                 <span className="text-6xl font-black text-green-600">
-                  249€
+                  275,88€
                 </span>
                 <span className="text-2xl font-bold opacity-75 ml-2" style={{ color: '#9b30a8' }}>
                   /an
                 </span>
               </div>
               <p className="text-sm font-bold text-green-600 mb-2">
-                Économise 99€ par an!
+                Économise 84€ par an!
               </p>
               <p className="text-sm opacity-75" style={{ color: '#9b30a8' }}>
-                Soit 20.75€/mois
+                Soit 22,99€/mois (facturation annuelle)
               </p>
             </div>
 
@@ -194,37 +188,31 @@ export default function SubscriptionRequiredPage() {
               <div className="flex items-start">
                 <span className="text-green-500 text-2xl mr-3">✓</span>
                 <p className="font-bold" style={{ color: '#9b30a8' }}>
-                  Copy trading automatique
+                  1 compte connecté
                 </p>
               </div>
               <div className="flex items-start">
                 <span className="text-green-500 text-2xl mr-3">✓</span>
                 <p className="font-bold" style={{ color: '#9b30a8' }}>
-                  Configuration personnalisée (GOLD, SOL, BTC)
+                  1 canal connecté
                 </p>
               </div>
               <div className="flex items-start">
                 <span className="text-green-500 text-2xl mr-3">✓</span>
                 <p className="font-bold" style={{ color: '#9b30a8' }}>
-                  Accès à tous les signaux
+                  5 actifs tradables
                 </p>
               </div>
               <div className="flex items-start">
                 <span className="text-green-500 text-2xl mr-3">✓</span>
                 <p className="font-bold" style={{ color: '#9b30a8' }}>
-                  Support communauté prioritaire
-                </p>
-              </div>
-              <div className="flex items-start">
-                <span className="text-green-500 text-2xl mr-3">✓</span>
-                <p className="font-bold" style={{ color: '#9b30a8' }}>
-                  Multi-comptes MT5 illimités
+                  10 positions simultanées maximum
                 </p>
               </div>
               <div className="flex items-start">
                 <span className="text-green-500 text-2xl mr-3">✓</span>
                 <p className="font-bold text-green-600">
-                  Accès anticipé aux nouvelles features
+                  Facturation annuelle - Économise 84€
                 </p>
               </div>
             </div>
@@ -239,16 +227,6 @@ export default function SubscriptionRequiredPage() {
           </div>
         </div>
 
-        {/* Mode Test Notice */}
-        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-2xl p-6 text-center">
-          <p className="font-bold text-yellow-800 mb-2">
-            🧪 MODE TEST ACTIVÉ
-          </p>
-          <p className="text-sm text-yellow-700 font-semibold">
-            Clique sur un plan pour activer l'abonnement instantanément (sans paiement).
-            En production, cela redirigera vers Stripe.
-          </p>
-        </div>
 
         {/* Features */}
         <div className="card-white mt-8">
