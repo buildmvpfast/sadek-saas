@@ -97,6 +97,26 @@ function parseSignal(messageText: string) {
   return null
 }
 
+/**
+ * Normalise un symbole (XAUUSD -> GOLD, SOLUSDT -> SOL30, etc.)
+ */
+function normalizeSymbol(symbol: string): string {
+  const upperSymbol = symbol.toUpperCase()
+  
+  if (upperSymbol.includes('XAU') || upperSymbol.includes('GOLD')) {
+    return 'GOLD'
+  }
+  if (upperSymbol.includes('SOL')) {
+    return 'SOL30'
+  }
+  if (upperSymbol.includes('BTC') || upperSymbol.includes('BITCOIN')) {
+    return 'BTC'
+  }
+  
+  // Par défaut, retourner le symbole tel quel
+  return upperSymbol
+}
+
 async function executeTradesForSignal(signalId: string) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -136,6 +156,9 @@ async function executeTradesForSignal(signalId: string) {
 
   const activeUserIds = new Set(activeSubscriptions?.map(s => s.user_id) || [])
 
+  // Normaliser le symbole du signal (XAUUSD -> GOLD, etc.)
+  const normalizedSymbol = normalizeSymbol(signal.symbol)
+
   // Pour chaque utilisateur, créer un trade
   for (const subscription of subscriptions) {
     // Vérifier que l'utilisateur a un abonnement actif
@@ -144,10 +167,10 @@ async function executeTradesForSignal(signalId: string) {
       continue
     }
 
-    // Récupérer le compte MT5 de l'utilisateur
+    // Récupérer le compte MT5 et les paramètres de trading de l'utilisateur
     const { data: mt5Account } = await supabase
       .from('mt5_accounts')
-      .select('id, metaapi_account_id')
+      .select('id, metaapi_account_id, broker_name')
       .eq('user_id', subscription.user_id)
       .eq('is_active', true)
       .single()
@@ -157,16 +180,72 @@ async function executeTradesForSignal(signalId: string) {
       continue
     }
 
-    // Créer l'entrée de trade avec les données du signal
+    // Récupérer les paramètres de trading de l'utilisateur
+    const { data: tradingSettings } = await supabase
+      .from('trading_settings')
+      .select('*')
+      .eq('user_id', subscription.user_id)
+      .single()
+
+    // Calculer le volume selon les paramètres utilisateur
+    let userVolume = signal.volume || 0.01 // Défaut
+
+    if (tradingSettings) {
+      if (tradingSettings.position_sizing_type === 'lot') {
+        // Utiliser les lots fixes selon l'instrument
+        if (normalizedSymbol === 'GOLD') {
+          userVolume = parseFloat(tradingSettings.gold_lot_size) || 0.01
+        } else if (normalizedSymbol === 'SOL30') {
+          userVolume = parseFloat(tradingSettings.sol_lot_size) || 0.01
+        } else if (normalizedSymbol === 'BTC') {
+          userVolume = parseFloat(tradingSettings.btc_lot_size) || 0.01
+        }
+      } else if (tradingSettings.position_sizing_type === 'percentage') {
+        // Pourcentage: utiliser le pourcentage du signal comme base
+        // TODO: améliorer avec le capital réel du compte
+        userVolume = (signal.volume || 0.01) * (parseFloat(tradingSettings.position_percentage) || 1.0) / 100
+        if (userVolume < 0.01) userVolume = 0.01 // Minimum
+      }
+    }
+
+    // Mapper le symbole au broker de l'utilisateur
+    // Seulement pour les brokers configurés: VTmarker, Raise FX, FXcess, Axi
+    let brokerSymbol = signal.symbol // Par défaut, utiliser le symbole du signal
+    
+    if (mt5Account.broker_name) {
+      // Liste des brokers supportés
+      const supportedBrokers = ['VTmarker', 'Raise FX', 'FXcess', 'Axi']
+      
+      // Vérifier que le broker est dans la liste supportée
+      if (supportedBrokers.includes(mt5Account.broker_name)) {
+        const { data: symbolMapping } = await supabase
+          .from('symbol_mappings')
+          .select('broker_symbol')
+          .eq('broker_name', mt5Account.broker_name)
+          .eq('standard_symbol', normalizedSymbol)
+          .single()
+
+        if (symbolMapping) {
+          brokerSymbol = symbolMapping.broker_symbol
+          console.log(`✅ Mapping: ${normalizedSymbol} → ${brokerSymbol} pour ${mt5Account.broker_name}`)
+        } else {
+          console.log(`⚠️ Pas de mapping trouvé pour ${normalizedSymbol} sur ${mt5Account.broker_name}, utilisation du symbole original`)
+        }
+      } else {
+        console.log(`⚠️ Broker ${mt5Account.broker_name} non supporté, utilisation du symbole original`)
+      }
+    }
+
+    // Créer l'entrée de trade avec les données du signal et les paramètres utilisateur
     const { error } = await supabase
       .from('telegram_trades')
       .insert({
         user_id: subscription.user_id,
         signal_id: signalId,
         mt5_account_id: mt5Account.id,
-        symbol: signal.symbol,
+        symbol: brokerSymbol, // Symbole du broker
         signal_type: signal.signal_type,
-        volume: signal.volume || 0.01,
+        volume: userVolume, // Volume calculé selon les paramètres utilisateur
         entry_price: signal.entry_price,
         stop_loss: signal.stop_loss,
         take_profit: signal.take_profit,
@@ -175,6 +254,8 @@ async function executeTradesForSignal(signalId: string) {
 
     if (error) {
       console.error('Erreur création trade:', error)
+    } else {
+      console.log(`✅ Trade créé pour user ${subscription.user_id}: ${brokerSymbol} ${userVolume} lots`)
     }
   }
 }
