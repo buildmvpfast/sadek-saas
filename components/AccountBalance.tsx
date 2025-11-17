@@ -29,9 +29,13 @@ export default function AccountBalance({ metaapiAccountId }: AccountBalanceProps
       
       if (data.success && data.accountInfo) {
         setAccountInfo(data.accountInfo)
+      } else {
+        console.error('Failed to fetch account info:', data.error)
+        setAccountInfo(null)
       }
     } catch (err) {
       console.error('Error fetching account info:', err)
+      setAccountInfo(null)
     } finally {
       setLoading(false)
     }
