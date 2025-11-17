@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
@@ -36,12 +36,26 @@ type Position = {
   takeProfit?: number
 }
 
+type AccountInfo = {
+  balance: number
+  equity: number
+  margin: number
+  freeMargin: number
+  marginLevel: number
+  currency: string
+  profit: number
+  server: string
+  leverage: number
+}
+
 export default function MT5AccountsPage() {
   const [mt5Accounts, setMt5Accounts] = useState<MT5Account[]>([])
   const [brokers, setBrokers] = useState<Broker[]>([])
   const [servers, setServers] = useState<string[]>([])
   const [positions, setPositions] = useState<Position[]>([])
+  const [accountInfo, setAccountInfo] = useState<Record<string, AccountInfo>>({})
   const [loadingPositions, setLoadingPositions] = useState(false)
+  const [loadingBalance, setLoadingBalance] = useState<Record<string, boolean>>({})
   const [showAddForm, setShowAddForm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingServers, setLoadingServers] = useState(false)
@@ -60,10 +74,50 @@ export default function MT5AccountsPage() {
   const supabase = createClient()
   const router = useRouter()
 
+  const fetchAccountInfo = useCallback(async (metaapiAccountId: string) => {
+    setLoadingBalance(prev => ({ ...prev, [metaapiAccountId]: true }))
+    try {
+      const response = await fetch(`/api/metaapi/account-info?accountId=${metaapiAccountId}`)
+      const data = await response.json()
+      
+      if (data.success && data.accountInfo) {
+        setAccountInfo(prev => ({ ...prev, [metaapiAccountId]: data.accountInfo }))
+      }
+    } catch (err) {
+      console.error('Error fetching account info:', err)
+    } finally {
+      setLoadingBalance(prev => ({ ...prev, [metaapiAccountId]: false }))
+    }
+  }, [])
+
   useEffect(() => {
     fetchData()
     fetchBrokers()
   }, [])
+
+  // Polling pour rafraîchir la balance toutes les 5 secondes
+  useEffect(() => {
+    const activeAccounts = mt5Accounts.filter(acc => acc.is_active && acc.metaapi_account_id)
+    
+    if (activeAccounts.length === 0) return
+
+    const interval = setInterval(() => {
+      activeAccounts.forEach(account => {
+        if (account.metaapi_account_id) {
+          fetchAccountInfo(account.metaapi_account_id)
+        }
+      })
+    }, 5000)
+
+    // Charger immédiatement
+    activeAccounts.forEach(account => {
+      if (account.metaapi_account_id) {
+        fetchAccountInfo(account.metaapi_account_id)
+      }
+    })
+
+    return () => clearInterval(interval)
+  }, [mt5Accounts, fetchAccountInfo])
 
   const fetchPositions = async (metaapiAccountId: string) => {
     setLoadingPositions(true)
@@ -115,10 +169,11 @@ export default function MT5AccountsPage() {
         }))
         setMt5Accounts(formattedAccounts)
         
-        // Charger les positions du premier compte actif
+        // Charger les positions et infos du premier compte actif
         const activeAccount = formattedAccounts.find((acc: any) => acc.is_active && acc.metaapi_account_id)
         if (activeAccount?.metaapi_account_id) {
           fetchPositions(activeAccount.metaapi_account_id)
+          fetchAccountInfo(activeAccount.metaapi_account_id)
         }
       }
     } finally {
@@ -416,7 +471,11 @@ export default function MT5AccountsPage() {
 
         {mt5Accounts.length > 0 ? (
           <div className="space-y-6">
-            {mt5Accounts.map((account) => (
+            {mt5Accounts.map((account) => {
+              const info = account.metaapi_account_id ? accountInfo[account.metaapi_account_id] : null
+              const isLoading = account.metaapi_account_id ? loadingBalance[account.metaapi_account_id] : false
+              
+              return (
               <div key={account.id} className="card">
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex-1">
@@ -438,6 +497,51 @@ export default function MT5AccountsPage() {
                     {account.is_active ? '✓ Actif' : '✗ Inactif'}
                   </span>
                 </div>
+
+                {/* Balance en temps réel */}
+                {account.is_active && account.metaapi_account_id && (
+                  <div className="mb-4 p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border-2 border-green-200">
+                    {isLoading ? (
+                      <div className="flex items-center gap-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900"></div>
+                        <span className="text-sm text-gray-600">Chargement...</span>
+                      </div>
+                    ) : info ? (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 uppercase">Balance</p>
+                          <p className="text-xl font-black text-gray-900">
+                            {info.balance.toFixed(2)} {info.currency}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 uppercase">Equity</p>
+                          <p className={`text-xl font-black ${
+                            info.equity >= info.balance ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {info.equity.toFixed(2)} {info.currency}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 uppercase">Profit</p>
+                          <p className={`text-xl font-black ${
+                            info.profit >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {info.profit >= 0 ? '+' : ''}{info.profit.toFixed(2)} {info.currency}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 uppercase">Marge Libre</p>
+                          <p className="text-xl font-black text-gray-900">
+                            {info.freeMargin.toFixed(2)} {info.currency}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">Balance non disponible</p>
+                    )}
+                  </div>
+                )}
                 
                 <div className="flex gap-2 pt-4 border-t">
                   <button
@@ -455,7 +559,8 @@ export default function MT5AccountsPage() {
                   </button>
                 </div>
               </div>
-            ))}
+              )
+            })}
             
             <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4">
               <p className="text-sm font-bold text-blue-800">

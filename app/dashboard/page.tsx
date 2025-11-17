@@ -2,6 +2,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import Link from 'next/link'
+import AccountBalance from '@/components/AccountBalance'
 
 export default async function DashboardPage() {
   const supabase = createServerClient()
@@ -95,7 +96,7 @@ export default async function DashboardPage() {
               <div className="space-y-3">
                 {mt5Accounts.map((account: any) => (
                   <div key={account.id} className="border-2 border-primary-200 rounded-2xl p-4 bg-gradient-to-r from-primary-50 to-white hover:shadow-lg transition-all">
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center mb-2">
                       <div>
                         <p className="font-bold" style={{ color: '#9b30a8' }}>{account.brokers.name}</p>
                         <p className="text-sm opacity-75" style={{ color: '#9b30a8' }}>#{account.account_number}</p>
@@ -104,6 +105,11 @@ export default async function DashboardPage() {
                         ✓ Actif
                       </span>
                     </div>
+                    {account.metaapi_account_id && (
+                      <div className="mt-3 pt-3 border-t border-primary-200">
+                        <AccountBalance metaapiAccountId={account.metaapi_account_id} />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
