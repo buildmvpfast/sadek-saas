@@ -25,6 +25,9 @@ export async function GET(request: NextRequest) {
 
     const accountInfo = await connection.getAccountInformation()
 
+    // Calculer le profit comme equity - balance
+    const profit = accountInfo.equity - accountInfo.balance
+
     return NextResponse.json({ 
       success: true, 
       accountInfo: {
@@ -34,7 +37,7 @@ export async function GET(request: NextRequest) {
         freeMargin: accountInfo.freeMargin,
         marginLevel: accountInfo.marginLevel,
         currency: accountInfo.currency,
-        profit: accountInfo.profit,
+        profit: profit,
         server: accountInfo.server,
         leverage: accountInfo.leverage,
       }
