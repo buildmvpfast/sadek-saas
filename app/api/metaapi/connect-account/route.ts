@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
     // Déployer le compte (nécessaire pour qu'il soit actif)
     if (data.id) {
-      await fetch(
+      const deployResponse = await fetch(
         `https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${data.id}/deploy`,
         {
           method: 'POST',
@@ -59,6 +59,15 @@ export async function POST(request: Request) {
           },
         }
       )
+
+      if (!deployResponse.ok) {
+        const deployError = await deployResponse.json().catch(() => ({}))
+        console.warn('Deploy warning:', deployError)
+        // On continue quand même, le déploiement peut être en cours
+      }
+
+      // Attendre un peu que le déploiement commence (optionnel)
+      // Le compte sera déployé automatiquement par MetaAPI
     }
 
     return NextResponse.json({
