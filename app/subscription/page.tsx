@@ -69,12 +69,20 @@ export default function SubscriptionPage() {
         method: 'POST',
       })
 
-      const { url } = await response.json()
-      if (url) {
-        window.location.href = url
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de la création de la session')
       }
-    } catch (err) {
+
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        throw new Error('URL du portail non reçue')
+      }
+    } catch (err: any) {
       console.error('Error:', err)
+      alert(err.message || 'Erreur lors de l\'ouverture du portail de gestion')
     } finally {
       setLoading(false)
     }
