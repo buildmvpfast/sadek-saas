@@ -14,65 +14,43 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Token MetaApi manquant' }, { status: 500 })
     }
 
-    const { default: MetaApi } = await import('metaapi.cloud-sdk')
-    const api = new MetaApi(token)
-    const account = await api.metatraderAccountApi.getAccount(accountId)
-    
-    // Timeout pour waitDeployed (15 secondes max)
-    try {
-      const deployedPromise = account.waitDeployed()
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout: account deployment took too long')), 15000)
-      )
-      await Promise.race([deployedPromise, timeoutPromise])
-    } catch (error: any) {
-      // Si le compte n'est pas déployé, on continue quand même
-      console.warn('Account deployment warning:', error.message)
-    }
-    
-    const connection = account.getRPCConnection()
-    
-    try {
-      await connection.connect()
-    } catch (error: any) {
-      console.warn('Connection warning:', error.message)
-      // On continue même si la connexion échoue
-    }
-    
-    // Timeout pour waitSynchronized (15 secondes max)
-    try {
-      const syncPromise = connection.waitSynchronized()
-      const syncTimeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout: synchronization took too long')), 15000)
-      )
-      await Promise.race([syncPromise, syncTimeoutPromise])
-    } catch (error: any) {
-      // Si la synchronisation échoue, on essaie quand même de récupérer les infos
-      console.warn('Synchronization warning:', error.message)
+    // Utiliser l'API REST de MetaAPI (compatible avec Node.js, pas besoin de window)
+    const response = await fetch(
+      `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${accountId}/account-information`,
+      {
+        headers: {
+          'auth-token': token,
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: 'Unknown error' }))
+      console.error('MetaAPI REST API error:', response.status, errorData)
+      
+      return NextResponse.json({ 
+        success: false,
+        error: errorData.message || `Erreur MetaAPI: ${response.status}`
+      }, { status: response.status })
     }
 
-    let accountInfo
-    try {
-      accountInfo = await connection.getAccountInformation()
-    } catch (error: any) {
-      console.error('Error getting account information:', error)
-      throw new Error(`Impossible de récupérer les informations du compte: ${error.message}`)
-    }
+    const accountInfo = await response.json()
 
-    const profit = accountInfo.equity - accountInfo.balance
+    // Calculer le profit comme equity - balance
+    const profit = (accountInfo.equity || 0) - (accountInfo.balance || 0)
 
     return NextResponse.json({ 
       success: true, 
       accountInfo: {
-        balance: accountInfo.balance,
-        equity: accountInfo.equity,
-        margin: accountInfo.margin,
-        freeMargin: accountInfo.freeMargin,
-        marginLevel: accountInfo.marginLevel,
-        currency: accountInfo.currency,
+        balance: accountInfo.balance || 0,
+        equity: accountInfo.equity || 0,
+        margin: accountInfo.margin || 0,
+        freeMargin: accountInfo.freeMargin || 0,
+        marginLevel: accountInfo.marginLevel || 0,
+        currency: accountInfo.currency || 'USD',
         profit: profit,
-        server: accountInfo.server,
-        leverage: accountInfo.leverage,
+        server: accountInfo.server || '',
+        leverage: accountInfo.leverage || 0,
       }
     })
   } catch (error: any) {
