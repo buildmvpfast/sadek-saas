@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     await connection.connect()
     await connection.waitSynchronized()
 
-    const accountInfo = await connection.accountInformation()
+    const accountInfo = await connection.getAccountInformation()
 
     return NextResponse.json({ 
       success: true, 
