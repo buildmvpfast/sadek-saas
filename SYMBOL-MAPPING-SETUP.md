@@ -2,10 +2,11 @@
 
 ## 📋 Brokers Supportés
 
-Seulement ces 4 brokers sont supportés pour le mapping automatique des symboles:
+Seulement ces 5 brokers sont supportés pour le mapping automatique des symboles:
 
 - **VTmarker**
 - **Raise FX**
+- **Raise Globale**
 - **FXcess**
 - **Axi**
 
@@ -25,26 +26,29 @@ Exécuter le script `supabase-symbol-mappings-actual-brokers.sql` dans Supabase 
 ```sql
 SELECT broker_name, standard_symbol, broker_symbol 
 FROM symbol_mappings 
-WHERE broker_name IN ('VTmarker', 'Raise FX', 'FXcess', 'Axi')
+WHERE broker_name IN ('VTmarker', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi')
 ORDER BY broker_name, standard_symbol;
 ```
 
 Tu devrais voir:
 ```
-broker_name | standard_symbol | broker_symbol
-------------|-----------------|---------------
-Axi         | BTC             | BTCUSD
-Axi         | GOLD            | XAUUSD
-Axi         | SOL30           | SOL30
-FXcess      | BTC             | BTCUSD
-FXcess      | GOLD            | XAUUSD
-FXcess      | SOL30           | SOL30
-Raise FX    | BTC             | BTCUSD
-Raise FX    | GOLD            | XAUUSD
-Raise FX    | SOL30           | SOL30
-VTmarker    | BTC             | BTCUSD
-VTmarker    | GOLD            | XAUUSD
-VTmarker    | SOL30           | SOL30
+broker_name   | standard_symbol | broker_symbol
+--------------|-----------------|---------------
+Axi           | BTC             | BTCUSD
+Axi           | GOLD            | XAUUSD
+Axi           | SOL30           | SOL30
+FXcess        | BTC             | BTCUSD
+FXcess        | GOLD            | XAUUSD
+FXcess        | SOL30           | SOL30
+Raise FX      | BTC             | BTCUSD
+Raise FX      | GOLD            | XAUUSD
+Raise FX      | SOL30           | SOL30
+Raise Globale | BTC             | BTCUSD
+Raise Globale | GOLD            | XAUUSD
+Raise Globale | SOL30           | SOL30
+VTmarker      | BTC             | BTCUSD
+VTmarker      | GOLD            | XAUUSD
+VTmarker      | SOL30           | SOL30
 ```
 
 ## ⚠️ Important: Nom du Broker
@@ -53,6 +57,7 @@ Le `broker_name` dans la table `mt5_accounts` doit correspondre **exactement** �
 
 - `VTmarker` (pas "VTmarker-Live" ou autre)
 - `Raise FX` (avec l'espace et la majuscule)
+- `Raise Globale` (avec l'espace et la majuscule)
 - `FXcess` (exactement comme ça)
 - `Axi` (pas "AxiTrader")
 
@@ -118,7 +123,7 @@ Si tu veux ajouter un nouveau broker:
 
 1. **Ajouter dans le code** (`app/api/telegram/parse-signal/route.ts`):
 ```typescript
-const supportedBrokers = ['VTmarker', 'Raise FX', 'FXcess', 'Axi', 'NOUVEAU_BROKER']
+const supportedBrokers = ['VTmarker', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi', 'NOUVEAU_BROKER']
 ```
 
 2. **Ajouter les mappings dans Supabase:**

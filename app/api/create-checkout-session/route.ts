@@ -47,6 +47,23 @@ export async function POST(req: Request) {
     // Utiliser le premier prix actif (normalement il n'y en a qu'un par produit)
     const priceId = prices.data[0].id
 
+    // Vérifier et normaliser NEXT_PUBLIC_APP_URL
+    let appUrl = process.env.NEXT_PUBLIC_APP_URL
+    if (!appUrl) {
+      // Essayer de récupérer depuis la requête
+      const origin = req.headers.get('origin') || req.headers.get('referer')
+      if (origin) {
+        appUrl = origin.replace(/\/$/, '') // Enlever le trailing slash
+      } else {
+        throw new Error('NEXT_PUBLIC_APP_URL non configuré et impossible de le détecter automatiquement')
+      }
+    }
+    
+    // S'assurer que l'URL a le schéma https://
+    if (!appUrl.startsWith('http://') && !appUrl.startsWith('https://')) {
+      appUrl = `https://${appUrl}`
+    }
+
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer_email: profile?.email,
@@ -56,8 +73,8 @@ export async function POST(req: Request) {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/subscription?success=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/subscription?canceled=true`,
+      success_url: `${appUrl}/subscription?success=true`,
+      cancel_url: `${appUrl}/subscription?canceled=true`,
       metadata: {
         user_id: session.user.id,
         plan: plan,

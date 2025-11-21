@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Parser le signal
-    const signal = parseSignal(messageText)
+    const signal = await parseSignal(messageText)
     
     if (!signal) {
       return NextResponse.json({ success: true, message: 'Pas de signal détecté' })
@@ -56,6 +56,17 @@ export async function POST(request: NextRequest) {
 
     // Exécuter les trades pour tous les utilisateurs abonnés
     await executeTradesForSignal(savedSignal.id)
+    
+    // Exécuter immédiatement les trades (double sécurité avec le worker Render)
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      await fetch(`${baseUrl}/api/telegram/execute-trades`, {
+        method: 'POST',
+      })
+    } catch (error) {
+      console.error('Error triggering trade execution:', error)
+      // On continue même si ça échoue, le worker Render s'en chargera dans les 5 secondes
+    }
 
     return NextResponse.json({ 
       success: true, 
@@ -69,27 +80,64 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function parseSignal(messageText: string) {
-  // Patterns pour détecter les signaux
+async function parseSignal(messageText: string) {
+  // Essayer d'abord avec OpenAI si disponible (plus robuste)
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const aiParsed = await parseSignalWithAI(messageText)
+      if (aiParsed) {
+        return aiParsed
+      }
+    } catch (error) {
+      console.warn('Erreur parsing AI, fallback sur regex:', error)
+    }
+  }
+
+  // Fallback: Patterns regex pour détecter les signaux
   const patterns = [
     // Pattern 1: BUY XAUUSD @ 2650.50 SL: 2640 TP: 2670
-    /(BUY|SELL)\s+([A-Z]+)\s+@\s+([\d.]+)\s+SL:\s*([\d.]+)\s+TP:\s*([\d.]+)/i,
+    /(BUY|SELL)\s+([A-Z0-9.]+)\s+@\s+([\d.]+)\s+SL:\s*([\d.]+)\s+TP:\s*([\d.]+)/i,
     // Pattern 2: 🟢 BUY GOLD 2650.50 SL 2640 TP 2670
-    /🟢\s*(BUY|SELL)\s+([A-Z]+)\s+([\d.]+)\s+SL\s+([\d.]+)\s+TP\s+([\d.]+)/i,
+    /🟢\s*(BUY|SELL)\s+([A-Z0-9.]+)\s+([\d.]+)\s+SL\s+([\d.]+)\s+TP\s+([\d.]+)/i,
     // Pattern 3: Signal: BUY EURUSD Entry: 1.0850 SL: 1.0800 TP: 1.0900
-    /Signal:\s*(BUY|SELL)\s+([A-Z]+)\s+Entry:\s*([\d.]+)\s+SL:\s*([\d.]+)\s+TP:\s*([\d.]+)/i
+    /Signal:\s*(BUY|SELL)\s+([A-Z0-9.]+)\s+Entry:\s*([\d.]+)\s+SL:\s*([\d.]+)\s+TP:\s*([\d.]+)/i,
+    // Pattern 4: BUY XAUUSD 2650.50 SL 2640 TP 2670 (sans @)
+    /(BUY|SELL)\s+([A-Z0-9.]+)\s+([\d.]+)\s+SL\s+([\d.]+)\s+TP\s+([\d.]+)/i,
+    // Pattern 5: XAUUSD BUY @2650.50 SL:2640 TP:2670
+    /([A-Z0-9.]+)\s+(BUY|SELL)\s+@?\s*([\d.]+)\s+SL:?\s*([\d.]+)\s+TP:?\s*([\d.]+)/i
   ]
 
   for (const pattern of patterns) {
     const match = messageText.match(pattern)
     if (match) {
-      return {
-        type: match[1].toUpperCase(),
-        symbol: match[2],
-        entryPrice: parseFloat(match[3]),
-        stopLoss: parseFloat(match[4]),
-        takeProfit: parseFloat(match[5]),
-        volume: 0.01 // Volume par défaut
+      // Détecter l'ordre des groupes selon le pattern
+      let type, symbol, entryPrice, stopLoss, takeProfit
+      
+      if (match[1].match(/^(BUY|SELL)$/i)) {
+        // Format: BUY/SELL en premier
+        type = match[1].toUpperCase()
+        symbol = match[2]
+        entryPrice = parseFloat(match[3])
+        stopLoss = parseFloat(match[4])
+        takeProfit = parseFloat(match[5])
+      } else {
+        // Format: Symbole en premier
+        symbol = match[1]
+        type = match[2].toUpperCase()
+        entryPrice = parseFloat(match[3])
+        stopLoss = parseFloat(match[4])
+        takeProfit = parseFloat(match[5])
+      }
+
+      if (type && symbol && entryPrice && stopLoss && takeProfit) {
+        return {
+          type,
+          symbol,
+          entryPrice,
+          stopLoss,
+          takeProfit,
+          volume: 0.01 // Volume par défaut
+        }
       }
     }
   }
@@ -98,23 +146,110 @@ function parseSignal(messageText: string) {
 }
 
 /**
- * Normalise un symbole (XAUUSD -> GOLD, SOLUSDT -> SOL30, etc.)
+ * Parse un signal avec OpenAI pour une meilleure compréhension du contexte
+ */
+async function parseSignalWithAI(messageText: string): Promise<any | null> {
+  if (!process.env.OPENAI_API_KEY) {
+    return null
+  }
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini', // Modèle rapide et économique
+        messages: [
+          {
+            role: 'system',
+            content: `Tu es un expert en parsing de signaux de trading. Extrais les informations suivantes d'un message Telegram de trading:
+- Type: BUY ou SELL
+- Symbole: Le symbole de trading (XAUUSD, GOLD, XAUUSD.I, EURUSD, etc.)
+- Prix d'entrée (Entry Price)
+- Stop Loss (SL)
+- Take Profit (TP)
+
+Réponds UNIQUEMENT avec un JSON valide dans ce format:
+{
+  "type": "BUY" ou "SELL",
+  "symbol": "XAUUSD",
+  "entryPrice": 2650.50,
+  "stopLoss": 2640,
+  "takeProfit": 2670
+}
+
+Si tu ne peux pas extraire toutes les informations, retourne null.`
+          },
+          {
+            role: 'user',
+            content: messageText
+          }
+        ],
+        temperature: 0.1, // Faible pour plus de précision
+        max_tokens: 200
+      })
+    })
+
+    const data = await response.json()
+    
+    if (!response.ok) {
+      console.error('OpenAI API error:', data)
+      return null
+    }
+
+    const content = data.choices[0]?.message?.content
+    if (!content) {
+      return null
+    }
+
+    // Parser le JSON de la réponse
+    const parsed = JSON.parse(content.trim())
+    
+    if (parsed && parsed.type && parsed.symbol && parsed.entryPrice && parsed.stopLoss && parsed.takeProfit) {
+      return {
+        type: parsed.type.toUpperCase(),
+        symbol: parsed.symbol.toUpperCase(),
+        entryPrice: parseFloat(parsed.entryPrice),
+        stopLoss: parseFloat(parsed.stopLoss),
+        takeProfit: parseFloat(parsed.takeProfit),
+        volume: 0.01
+      }
+    }
+
+    return null
+  } catch (error) {
+    console.error('Error parsing with AI:', error)
+    return null
+  }
+}
+
+/**
+ * Normalise un symbole (XAUUSD -> GOLD, XAUUSD.I -> GOLD, GOLD -> GOLD, etc.)
+ * Gère tous les formats: XAUUSD, XAUUSD.I, GOLD, GOLDUSD, etc.
  */
 function normalizeSymbol(symbol: string): string {
-  const upperSymbol = symbol.toUpperCase()
+  const upperSymbol = symbol.toUpperCase().trim()
   
+  // GOLD variations: XAUUSD, XAUUSD.I, GOLD, GOLDUSD, XAU/USD, etc.
   if (upperSymbol.includes('XAU') || upperSymbol.includes('GOLD')) {
     return 'GOLD'
   }
+  
+  // SOL variations: SOL, SOL30, SOLUSDT, etc.
   if (upperSymbol.includes('SOL')) {
     return 'SOL30'
   }
+  
+  // BTC variations: BTC, BTCUSD, BITCOIN, etc.
   if (upperSymbol.includes('BTC') || upperSymbol.includes('BITCOIN')) {
     return 'BTC'
   }
   
-  // Par défaut, retourner le symbole tel quel
-  return upperSymbol
+  // Par défaut, retourner le symbole tel quel (sans les points/underscores pour compatibilité)
+  return upperSymbol.replace(/[._]/g, '')
 }
 
 async function executeTradesForSignal(signalId: string) {
@@ -209,12 +344,12 @@ async function executeTradesForSignal(signalId: string) {
     }
 
     // Mapper le symbole au broker de l'utilisateur
-    // Seulement pour les brokers configurés: VTmarker, Raise FX, FXcess, Axi
+    // Seulement pour les brokers configurés: VTmarker, Raise FX, Raise Globale, FXcess, Axi
     let brokerSymbol = signal.symbol // Par défaut, utiliser le symbole du signal
     
     if (mt5Account.broker_name) {
       // Liste des brokers supportés
-      const supportedBrokers = ['VTmarker', 'Raise FX', 'FXcess', 'Axi']
+      const supportedBrokers = ['VTmarker', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi']
       
       // Vérifier que le broker est dans la liste supportée
       if (supportedBrokers.includes(mt5Account.broker_name)) {

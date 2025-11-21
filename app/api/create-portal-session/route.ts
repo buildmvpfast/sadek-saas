@@ -37,9 +37,26 @@ export async function POST(req: Request) {
       }, { status: 404 })
     }
 
+    // Vérifier et normaliser NEXT_PUBLIC_APP_URL
+    let appUrl = process.env.NEXT_PUBLIC_APP_URL
+    if (!appUrl) {
+      // Essayer de récupérer depuis la requête
+      const origin = req.headers.get('origin') || req.headers.get('referer')
+      if (origin) {
+        appUrl = origin.replace(/\/$/, '') // Enlever le trailing slash
+      } else {
+        appUrl = 'http://localhost:3000' // Fallback pour dev
+      }
+    }
+    
+    // S'assurer que l'URL a le schéma https:// (sauf localhost)
+    if (!appUrl.startsWith('http://') && !appUrl.startsWith('https://')) {
+      appUrl = appUrl.includes('localhost') ? `http://${appUrl}` : `https://${appUrl}`
+    }
+
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: subscription.stripe_customer_id,
-      return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/subscription`,
+      return_url: `${appUrl}/subscription`,
     })
 
     return NextResponse.json({ url: portalSession.url })

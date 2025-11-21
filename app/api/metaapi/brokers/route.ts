@@ -48,7 +48,7 @@ export async function GET() {
 
 function extractBrokerName(profileName: string): string | null {
   // Extraire le nom du broker depuis le nom du profil
-  const brokerKeywords = ['VTmarker', 'Raise FX', 'FXcess', 'Axi', 'AxiTrader']
+  const brokerKeywords = ['VTmarker', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi', 'AxiTrader']
   
   for (const keyword of brokerKeywords) {
     if (profileName.toLowerCase().includes(keyword.toLowerCase())) {
