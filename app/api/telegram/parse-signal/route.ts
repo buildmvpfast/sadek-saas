@@ -14,15 +14,20 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Trouver le canal
+    // Trouver le canal avec un token actif
     const { data: channel } = await supabase
       .from('telegram_channels')
-      .select('id')
+      .select(`
+        id,
+        telegram_bot_tokens!inner(bot_token, is_active)
+      `)
       .eq('username', channelUsername)
+      .eq('telegram_bot_tokens.is_active', true)
+      .eq('is_active', true)
       .single()
 
     if (!channel) {
-      return NextResponse.json({ error: 'Canal non trouvé' }, { status: 404 })
+      return NextResponse.json({ error: 'Canal non trouvé ou sans token actif' }, { status: 404 })
     }
 
     // Parser le signal

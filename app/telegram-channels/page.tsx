@@ -42,11 +42,15 @@ export default function TelegramChannelsPage() {
       return
     }
 
-    // Récupérer tous les canaux disponibles
+    // Récupérer uniquement les canaux avec un token actif
     const { data: channelsData } = await supabase
       .from('telegram_channels')
-      .select('*')
+      .select(`
+        *,
+        telegram_bot_tokens!inner(is_active)
+      `)
       .eq('is_active', true)
+      .eq('telegram_bot_tokens.is_active', true)
 
     // Récupérer les abonnements de l'utilisateur
     const { data: subscriptionsData } = await supabase
