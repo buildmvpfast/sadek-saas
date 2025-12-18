@@ -1,283 +1,308 @@
-'use client'
+"use client";
 
-import { useEffect, useState, lazy, Suspense, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
-import Navbar from '@/components/Navbar'
-import { clientCache } from '@/lib/cache'
+import { useEffect, useState, lazy, Suspense, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+import Navbar from "@/components/Navbar";
+import { clientCache } from "@/lib/cache";
 
 // Lazy load des composants lourds
-const LoadingSpinner = lazy(() => import('@/components/LoadingSpinner'))
+const LoadingSpinner = lazy(() => import("@/components/LoadingSpinner"));
 
 type Broker = {
-  id: string
-  name: string
-  servers?: string[]
-}
+  id: string;
+  name: string;
+  servers?: string[];
+};
 
 type MT5Account = {
-  id: string
-  account_number: number
-  is_active: boolean
-  broker_name: string
-  server_name: string
-  metaapi_account_id?: string
-}
+  id: string;
+  account_number: number;
+  is_active: boolean;
+  broker_name: string;
+  server_name: string;
+  metaapi_account_id?: string;
+};
 
 type Position = {
-  id: string
-  symbol: string
-  type: string
-  volume: number
-  openPrice: number
-  currentPrice: number
-  profit: number
-  stopLoss?: number
-  takeProfit?: number
-}
+  id: string;
+  symbol: string;
+  type: string;
+  volume: number;
+  openPrice: number;
+  currentPrice: number;
+  profit: number;
+  stopLoss?: number;
+  takeProfit?: number;
+};
 
 type AccountInfo = {
-  balance: number
-  equity: number
-  margin: number
-  freeMargin: number
-  marginLevel: number
-  currency: string
-  profit: number
-  server: string
-  leverage: number
-}
+  balance: number;
+  equity: number;
+  margin: number;
+  freeMargin: number;
+  marginLevel: number;
+  currency: string;
+  profit: number;
+  server: string;
+  leverage: number;
+};
 
 export default function MT5AccountsPage() {
-  const [mt5Accounts, setMt5Accounts] = useState<MT5Account[]>([])
-  const [brokers, setBrokers] = useState<Broker[]>([])
-  const [servers, setServers] = useState<string[]>([])
-  const [positions, setPositions] = useState<Position[]>([])
-  const [accountInfo, setAccountInfo] = useState<Record<string, AccountInfo>>({})
-  const [loadingPositions, setLoadingPositions] = useState(false)
-  const [loadingBalance, setLoadingBalance] = useState<Record<string, boolean>>({})
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [loadingServers, setLoadingServers] = useState(false)
-  const [loadingSubmit, setLoadingSubmit] = useState(false)
-  const [error, setError] = useState('')
-  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [mt5Accounts, setMt5Accounts] = useState<MT5Account[]>([]);
+  const [brokers, setBrokers] = useState<Broker[]>([]);
+  const [servers, setServers] = useState<string[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [accountInfo, setAccountInfo] = useState<Record<string, AccountInfo>>(
+    {}
+  );
+  const [loadingPositions, setLoadingPositions] = useState(false);
+  const [loadingBalance, setLoadingBalance] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadingServers, setLoadingServers] = useState(false);
+  const [loadingSubmit, setLoadingSubmit] = useState(false);
+  const [error, setError] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [formData, setFormData] = useState({
-    broker_name: '',
-    server_name: '',
-    account_number: '',
-    password: '',
+    broker_name: "",
+    server_name: "",
+    account_number: "",
+    password: "",
     is_investor: false,
-  })
+  });
 
-  const supabase = createClient()
-  const router = useRouter()
+  const supabase = createClient();
+  const router = useRouter();
 
   const fetchAccountInfo = useCallback(async (metaapiAccountId: string) => {
-    setLoadingBalance(prev => ({ ...prev, [metaapiAccountId]: true }))
+    setLoadingBalance((prev) => ({ ...prev, [metaapiAccountId]: true }));
     try {
-      const response = await fetch(`/api/metaapi/account-info?accountId=${metaapiAccountId}`)
-      const data = await response.json()
-      
+      const response = await fetch(
+        `/api/metaapi/account-info?accountId=${metaapiAccountId}`
+      );
+      const data = await response.json();
+
       if (data.success && data.accountInfo) {
-        setAccountInfo(prev => ({ ...prev, [metaapiAccountId]: data.accountInfo }))
+        setAccountInfo((prev) => ({
+          ...prev,
+          [metaapiAccountId]: data.accountInfo,
+        }));
       }
     } catch (err) {
-      console.error('Error fetching account info:', err)
+      console.error("Error fetching account info:", err);
     } finally {
-      setLoadingBalance(prev => ({ ...prev, [metaapiAccountId]: false }))
+      setLoadingBalance((prev) => ({ ...prev, [metaapiAccountId]: false }));
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    fetchData()
-    fetchBrokers()
-  }, [])
+    fetchData();
+    fetchBrokers();
+  }, []);
 
   // Polling pour rafraîchir la balance toutes les 5 secondes
   useEffect(() => {
-    const activeAccounts = mt5Accounts.filter(acc => acc.is_active && acc.metaapi_account_id)
-    
-    if (activeAccounts.length === 0) return
+    const activeAccounts = mt5Accounts.filter(
+      (acc) => acc.is_active && acc.metaapi_account_id
+    );
+
+    if (activeAccounts.length === 0) return;
 
     const interval = setInterval(() => {
-      activeAccounts.forEach(account => {
+      activeAccounts.forEach((account) => {
         if (account.metaapi_account_id) {
-          fetchAccountInfo(account.metaapi_account_id)
+          fetchAccountInfo(account.metaapi_account_id);
         }
-      })
-    }, 5000)
+      });
+    }, 5000);
 
     // Charger immédiatement
-    activeAccounts.forEach(account => {
+    activeAccounts.forEach((account) => {
       if (account.metaapi_account_id) {
-        fetchAccountInfo(account.metaapi_account_id)
+        fetchAccountInfo(account.metaapi_account_id);
       }
-    })
+    });
 
-    return () => clearInterval(interval)
-  }, [mt5Accounts, fetchAccountInfo])
+    return () => clearInterval(interval);
+  }, [mt5Accounts, fetchAccountInfo]);
 
   const fetchPositions = async (metaapiAccountId: string) => {
-    setLoadingPositions(true)
+    setLoadingPositions(true);
     try {
-      const response = await fetch(`/api/metaapi/positions?accountId=${metaapiAccountId}`)
-      const data = await response.json()
-      
+      const response = await fetch(
+        `/api/metaapi/positions?accountId=${metaapiAccountId}`
+      );
+      const data = await response.json();
+
       if (data.success && data.positions) {
-        setPositions(data.positions)
+        setPositions(data.positions);
       }
     } catch (err) {
-      console.error('Error fetching positions:', err)
+      console.error("Error fetching positions:", err);
     } finally {
-      setLoadingPositions(false)
+      setLoadingPositions(false);
     }
-  }
+  };
 
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) {
-      setIsRefreshing(true)
+      setIsRefreshing(true);
     } else {
-      setLoading(true)
+      setLoading(true);
     }
 
     try {
       const {
         data: { session },
-      } = await supabase.auth.getSession()
+      } = await supabase.auth.getSession();
 
       if (!session) {
-        router.push('/auth/login')
-        return
+        router.push("/auth/login");
+        return;
       }
 
       const { data: accountsData } = await supabase
-        .from('mt5_accounts')
-        .select('id, account_number, is_active, broker_name, server_name, metaapi_account_id')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false })
+        .from("mt5_accounts")
+        .select(
+          "id, account_number, is_active, broker_name, server_name, metaapi_account_id"
+        )
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false });
 
       if (accountsData) {
         const formattedAccounts = accountsData.map((acc: any) => ({
           id: acc.id,
           account_number: acc.account_number,
           is_active: acc.is_active,
-          broker_name: acc.broker_name || 'N/A',
-          server_name: acc.server_name || 'N/A',
+          broker_name: acc.broker_name || "N/A",
+          server_name: acc.server_name || "N/A",
           metaapi_account_id: acc.metaapi_account_id,
-        }))
-        setMt5Accounts(formattedAccounts)
-        
+        }));
+        setMt5Accounts(formattedAccounts);
+
         // Charger les positions et infos du premier compte actif
-        const activeAccount = formattedAccounts.find((acc: any) => acc.is_active && acc.metaapi_account_id)
+        const activeAccount = formattedAccounts.find(
+          (acc: any) => acc.is_active && acc.metaapi_account_id
+        );
         if (activeAccount?.metaapi_account_id) {
-          fetchPositions(activeAccount.metaapi_account_id)
-          fetchAccountInfo(activeAccount.metaapi_account_id)
+          fetchPositions(activeAccount.metaapi_account_id);
+          fetchAccountInfo(activeAccount.metaapi_account_id);
         }
       }
     } finally {
       if (isRefresh) {
-        setIsRefreshing(false)
+        setIsRefreshing(false);
       } else {
-        setLoading(false)
+        setLoading(false);
       }
     }
-  }
+  };
 
   const fetchBrokers = async () => {
     try {
-      const response = await fetch('/api/metaapi/brokers')
-      const data = await response.json()
-      
+      const response = await fetch("/api/metaapi/brokers");
+      const data = await response.json();
+
       if (data.success && data.brokers) {
-        setBrokers(data.brokers)
+        setBrokers(data.brokers);
       } else {
         // Fallback si l'API ne marche pas
-        setBrokers(data.brokers || [])
+        setBrokers(data.brokers || []);
       }
     } catch (err) {
-      console.error('Error fetching brokers:', err)
-      setError('Impossible de charger les brokers')
+      console.error("Error fetching brokers:", err);
+      setError("Impossible de charger les brokers");
     }
-  }
+  };
 
   const fetchServers = async (brokerName: string) => {
-    setLoadingServers(true)
+    setLoadingServers(true);
     try {
-      const response = await fetch(`/api/metaapi/servers?broker=${encodeURIComponent(brokerName)}`)
-      const data = await response.json()
-      
+      const response = await fetch(
+        `/api/metaapi/servers?broker=${encodeURIComponent(brokerName)}`
+      );
+      const data = await response.json();
+
       if (data.success && data.servers) {
-        setServers(data.servers.map((s: any) => s.name))
+        setServers(data.servers.map((s: any) => s.name));
       } else {
         // Fallback: utiliser les serveurs du broker sélectionné
-        const broker = brokers.find(b => b.name === brokerName)
-        setServers(broker?.servers || [])
+        const broker = brokers.find((b) => b.name === brokerName);
+        setServers(broker?.servers || []);
       }
     } catch (err) {
-      console.error('Error fetching servers:', err)
-      const broker = brokers.find(b => b.name === brokerName)
-      setServers(broker?.servers || [])
+      console.error("Error fetching servers:", err);
+      const broker = brokers.find((b) => b.name === brokerName);
+      setServers(broker?.servers || []);
     } finally {
-      setLoadingServers(false)
+      setLoadingServers(false);
     }
-  }
+  };
 
   const handleBrokerChange = (brokerName: string) => {
-    setFormData({ 
-      ...formData, 
+    setFormData({
+      ...formData,
       broker_name: brokerName,
-      server_name: '' 
-    })
+      server_name: "",
+    });
     if (brokerName) {
-      fetchServers(brokerName)
+      fetchServers(brokerName);
     } else {
-      setServers([])
+      setServers([]);
     }
-  }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoadingSubmit(true)
+    e.preventDefault();
+    setError("");
+    setLoadingSubmit(true);
 
     try {
       const {
         data: { session },
-      } = await supabase.auth.getSession()
+      } = await supabase.auth.getSession();
 
-      if (!session) throw new Error('Non authentifié')
+      if (!session) throw new Error("Non authentifié");
 
       // Vérifier que l'utilisateur n'a pas déjà un compte
       if (mt5Accounts.length > 0) {
-        throw new Error('Vous ne pouvez connecter qu\'un seul compte MT5. Supprimez votre compte actuel pour en ajouter un nouveau.')
+        throw new Error(
+          "Vous ne pouvez connecter qu'un seul compte MT5. Supprimez votre compte actuel pour en ajouter un nouveau."
+        );
       }
 
       // 1. Connecter le compte à MetaApi
-      const metaApiResponse = await fetch('/api/metaapi/connect-account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const metaApiResponse = await fetch("/api/metaapi/connect-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: `User - ${formData.broker_name} - ${formData.account_number}`,
           login: formData.account_number,
           password: formData.password,
           server: formData.server_name,
-          platform: 'mt5',
+          platform: "mt5",
           magic: 0,
         }),
-      })
+      });
 
-      const metaApiData = await metaApiResponse.json()
+      const metaApiData = await metaApiResponse.json();
 
       if (!metaApiData.success) {
-        throw new Error(metaApiData.error || 'Erreur lors de la connexion MetaApi')
+        throw new Error(
+          metaApiData.error || "Erreur lors de la connexion MetaApi"
+        );
       }
 
       // 2. Enregistrer dans Supabase avec le metaapi_account_id
-      const passwordEncrypted = Buffer.from(formData.password).toString('base64')
+      const passwordEncrypted = Buffer.from(formData.password).toString(
+        "base64"
+      );
 
-      const { error } = await supabase.from('mt5_accounts').insert({
+      const { error } = await supabase.from("mt5_accounts").insert({
         user_id: session.user.id,
         broker_name: formData.broker_name,
         server_name: formData.server_name,
@@ -287,51 +312,54 @@ export default function MT5AccountsPage() {
         is_admin_account: false, // Compte user, pas admin
         metaapi_account_id: metaApiData.accountId,
         is_active: true,
-      })
+      });
 
-      if (error) throw error
+      if (error) throw error;
 
-      setShowAddForm(false)
+      setShowAddForm(false);
       setFormData({
-        broker_name: '',
-        server_name: '',
-        account_number: '',
-        password: '',
+        broker_name: "",
+        server_name: "",
+        account_number: "",
+        password: "",
         is_investor: false,
-      })
-      setServers([])
-      fetchData()
+      });
+      setServers([]);
+      fetchData();
     } catch (err: any) {
-      setError(err.message || 'Une erreur est survenue')
+      setError(err.message || "Une erreur est survenue");
     } finally {
-      setLoadingSubmit(false)
+      setLoadingSubmit(false);
     }
-  }
+  };
 
-  const toggleAccountStatus = async (accountId: string, currentStatus: boolean) => {
+  const toggleAccountStatus = async (
+    accountId: string,
+    currentStatus: boolean
+  ) => {
     const { error } = await supabase
-      .from('mt5_accounts')
+      .from("mt5_accounts")
       .update({ is_active: !currentStatus })
-      .eq('id', accountId)
+      .eq("id", accountId);
 
-    if (!error) fetchData()
-  }
+    if (!error) fetchData();
+  };
 
   const deleteAccount = async (accountId: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer ce compte?')) return
+    if (!confirm("Êtes-vous sûr de vouloir supprimer ce compte?")) return;
 
     const { error } = await supabase
-      .from('mt5_accounts')
+      .from("mt5_accounts")
       .delete()
-      .eq('id', accountId)
+      .eq("id", accountId);
 
-    if (!error) fetchData()
-  }
+    if (!error) fetchData();
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Mon Compte MT5</h1>
@@ -341,14 +369,14 @@ export default function MT5AccountsPage() {
               disabled={isRefreshing}
               className="btn btn-secondary"
             >
-              {isRefreshing ? '🔄' : '↻'} Actualiser
+              {isRefreshing ? "🔄" : "↻"} Actualiser
             </button>
             {mt5Accounts.length === 0 && (
               <button
                 onClick={() => setShowAddForm(!showAddForm)}
                 className="btn btn-primary"
               >
-                {showAddForm ? 'Annuler' : '+ Connecter mon compte'}
+                {showAddForm ? "Annuler" : "+ Connecter mon compte"}
               </button>
             )}
           </div>
@@ -365,7 +393,9 @@ export default function MT5AccountsPage() {
             <h2 className="text-xl font-bold mb-4">Nouveau Compte MT5</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Broker *</label>
+                <label className="block text-sm font-medium mb-2">
+                  Broker *
+                </label>
                 <select
                   value={formData.broker_name}
                   onChange={(e) => handleBrokerChange(e.target.value)}
@@ -380,22 +410,31 @@ export default function MT5AccountsPage() {
                   ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
-                  {brokers.length > 0 
-                    ? `${brokers.length} brokers disponibles` 
-                    : 'Chargement des brokers...'}
+                  {brokers.length > 0
+                    ? `${brokers.length} brokers disponibles`
+                    : "Chargement des brokers..."}
                 </p>
               </div>
 
               {formData.broker_name && (
                 <div>
-                  <label className="block text-sm font-medium mb-2">Serveur MT5 *</label>
+                  <label className="block text-sm font-medium mb-2">
+                    Serveur MT5 *
+                  </label>
                   {loadingServers ? (
-                    <div className="input bg-gray-50">Chargement des serveurs...</div>
+                    <div className="input bg-gray-50">
+                      Chargement des serveurs...
+                    </div>
                   ) : servers.length > 0 ? (
                     <>
                       <select
                         value={formData.server_name}
-                        onChange={(e) => setFormData({ ...formData, server_name: e.target.value })}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            server_name: e.target.value,
+                          })
+                        }
                         className="input"
                         required
                       >
@@ -415,7 +454,12 @@ export default function MT5AccountsPage() {
                       <input
                         type="text"
                         value={formData.server_name}
-                        onChange={(e) => setFormData({ ...formData, server_name: e.target.value })}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            server_name: e.target.value,
+                          })
+                        }
                         className="input"
                         placeholder="Ex: MonBroker-Live"
                         required
@@ -429,11 +473,15 @@ export default function MT5AccountsPage() {
               )}
 
               <div>
-                <label className="block text-sm font-medium mb-2">Numéro de compte MT5 *</label>
+                <label className="block text-sm font-medium mb-2">
+                  Numéro de compte MT5 *
+                </label>
                 <input
                   type="number"
                   value={formData.account_number}
-                  onChange={(e) => setFormData({ ...formData, account_number: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, account_number: e.target.value })
+                  }
                   className="input"
                   placeholder="12345678"
                   required
@@ -441,11 +489,15 @@ export default function MT5AccountsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Mot de passe MT5 *</label>
+                <label className="block text-sm font-medium mb-2">
+                  Mot de passe MT5 *
+                </label>
                 <input
                   type="password"
                   value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, password: e.target.value })
+                  }
                   className="input"
                   placeholder="Votre mot de passe MT5"
                   required
@@ -456,14 +508,22 @@ export default function MT5AccountsPage() {
                 <input
                   type="checkbox"
                   checked={formData.is_investor}
-                  onChange={(e) => setFormData({ ...formData, is_investor: e.target.checked })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, is_investor: e.target.checked })
+                  }
                   className="mr-2"
                 />
-                <label className="text-sm">Mot de passe investisseur (lecture seule)</label>
+                <label className="text-sm">
+                  Mot de passe investisseur (lecture seule)
+                </label>
               </div>
 
-              <button type="submit" disabled={loadingSubmit || !formData.server_name} className="btn btn-primary w-full">
-                {loadingSubmit ? 'Ajout en cours...' : 'Ajouter le compte'}
+              <button
+                type="submit"
+                disabled={loadingSubmit || !formData.server_name}
+                className="btn btn-primary w-full"
+              >
+                {loadingSubmit ? "Ajout en cours..." : "Ajouter le compte"}
               </button>
             </form>
           </div>
@@ -472,100 +532,130 @@ export default function MT5AccountsPage() {
         {mt5Accounts.length > 0 ? (
           <div className="space-y-6">
             {mt5Accounts.map((account) => {
-              const info = account.metaapi_account_id ? accountInfo[account.metaapi_account_id] : null
-              const isLoading = account.metaapi_account_id ? loadingBalance[account.metaapi_account_id] : false
-              
-              return (
-              <div key={account.id} className="card">
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold text-gray-900 mb-1">
-                      {account.broker_name}
-                    </h3>
-                    <p className="text-gray-600 font-semibold">
-                      Serveur: {account.server_name}
-                    </p>
-                    <p className="text-gray-600 font-semibold">
-                      Compte: #{account.account_number}
-                    </p>
-                  </div>
-                  <span className={`px-4 py-2 rounded-full text-sm font-bold ${
-                    account.is_active
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-400 text-white'
-                  }`}>
-                    {account.is_active ? '✓ Actif' : '✗ Inactif'}
-                  </span>
-                </div>
+              const info = account.metaapi_account_id
+                ? accountInfo[account.metaapi_account_id]
+                : null;
+              const isLoading = account.metaapi_account_id
+                ? loadingBalance[account.metaapi_account_id]
+                : false;
 
-                {/* Balance en temps réel */}
-                {account.is_active && account.metaapi_account_id && (
-                  <div className="mb-4 p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border-2 border-green-200">
-                    {isLoading ? (
-                      <div className="flex items-center gap-2">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900"></div>
-                        <span className="text-sm text-gray-600">Chargement...</span>
-                      </div>
-                    ) : info ? (
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div>
-                          <p className="text-xs font-semibold text-gray-600 uppercase">Balance</p>
-                          <p className="text-xl font-black text-gray-900">
-                            {info.balance.toFixed(2)} {info.currency}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-gray-600 uppercase">Equity</p>
-                          <p className={`text-xl font-black ${
-                            info.equity >= info.balance ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {info.equity.toFixed(2)} {info.currency}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-gray-600 uppercase">Profit</p>
-                          <p className={`text-xl font-black ${
-                            info.profit >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {info.profit >= 0 ? '+' : ''}{info.profit.toFixed(2)} {info.currency}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-gray-600 uppercase">Marge Libre</p>
-                          <p className="text-xl font-black text-gray-900">
-                            {info.freeMargin.toFixed(2)} {info.currency}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-500">Balance non disponible</p>
-                    )}
+              return (
+                <div key={account.id} className="card">
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex-1">
+                      <h3 className="text-xl font-bold text-gray-900 mb-1">
+                        {account.broker_name}
+                      </h3>
+                      <p className="text-gray-600 font-semibold">
+                        Serveur: {account.server_name}
+                      </p>
+                      <p className="text-gray-600 font-semibold">
+                        Compte: #{account.account_number}
+                      </p>
+                    </div>
+                    <span
+                      className={`px-4 py-2 rounded-full text-sm font-bold ${
+                        account.is_active
+                          ? "bg-green-500 text-white"
+                          : "bg-gray-400 text-white"
+                      }`}
+                    >
+                      {account.is_active ? "✓ Actif" : "✗ Inactif"}
+                    </span>
                   </div>
-                )}
-                
-                <div className="flex gap-2 pt-4 border-t">
-                  <button
-                    onClick={() => toggleAccountStatus(account.id, account.is_active)}
-                    className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition-all"
-                  >
-                    {account.is_active ? 'Désactiver' : 'Activer'}
-                  </button>
-                  
-                  <button
-                    onClick={() => deleteAccount(account.id)}
-                    className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-all"
-                  >
-                    Supprimer
-                  </button>
+
+                  {/* Balance en temps réel */}
+                  {account.is_active && account.metaapi_account_id && (
+                    <div className="mb-4 p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border-2 border-green-200">
+                      {isLoading ? (
+                        <div className="flex items-center gap-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900"></div>
+                          <span className="text-sm text-gray-600">
+                            Chargement...
+                          </span>
+                        </div>
+                      ) : info ? (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div>
+                            <p className="text-xs font-semibold text-gray-600 uppercase">
+                              Balance
+                            </p>
+                            <p className="text-xl font-black text-gray-900">
+                              {info.balance.toFixed(2)} {info.currency}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-gray-600 uppercase">
+                              Equity
+                            </p>
+                            <p
+                              className={`text-xl font-black ${
+                                info.equity >= info.balance
+                                  ? "text-green-600"
+                                  : "text-red-600"
+                              }`}
+                            >
+                              {info.equity.toFixed(2)} {info.currency}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-gray-600 uppercase">
+                              Profit
+                            </p>
+                            <p
+                              className={`text-xl font-black ${
+                                info.profit >= 0
+                                  ? "text-green-600"
+                                  : "text-red-600"
+                              }`}
+                            >
+                              {info.profit >= 0 ? "+" : ""}
+                              {info.profit.toFixed(2)} {info.currency}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-gray-600 uppercase">
+                              Marge Libre
+                            </p>
+                            <p className="text-xl font-black text-gray-900">
+                              {info.freeMargin.toFixed(2)} {info.currency}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500">
+                          Balance non disponible
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-4 border-t">
+                    <button
+                      onClick={() =>
+                        toggleAccountStatus(account.id, account.is_active)
+                      }
+                      className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition-all"
+                    >
+                      {account.is_active ? "Désactiver" : "Activer"}
+                    </button>
+
+                    <button
+                      onClick={() => deleteAccount(account.id)}
+                      className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-all"
+                    >
+                      Supprimer
+                    </button>
+                  </div>
                 </div>
-              </div>
-              )
+              );
             })}
-            
+
             <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4">
               <p className="text-sm font-bold text-blue-800">
-                ℹ️ <strong>Limite:</strong> Vous ne pouvez connecter qu'un seul compte MT5. 
-                Pour en changer, supprimez d'abord votre compte actuel.
+                ℹ️ <strong>Limite:</strong> Vous ne pouvez connecter qu'un seul
+                compte MT5. Pour en changer, supprimez d'abord votre compte
+                actuel.
               </p>
             </div>
 
@@ -594,20 +684,36 @@ export default function MT5AccountsPage() {
                         <tr key={pos.id} className="border-b">
                           <td className="px-4 py-3 font-bold">{pos.symbol}</td>
                           <td className="px-4 py-3">
-                            <span className={`px-2 py-1 rounded text-white text-xs ${
-                              pos.type === 'ORDER_TYPE_BUY' ? 'bg-green-500' : 'bg-red-500'
-                            }`}>
-                              {pos.type === 'ORDER_TYPE_BUY' ? 'BUY' : 'SELL'}
+                            <span
+                              className={`px-2 py-1 rounded text-white text-xs ${
+                                pos.type === "ORDER_TYPE_BUY"
+                                  ? "bg-green-500"
+                                  : "bg-red-500"
+                              }`}
+                            >
+                              {pos.type === "ORDER_TYPE_BUY" ? "BUY" : "SELL"}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right">{pos.volume}</td>
-                          <td className="px-4 py-3 text-right">{pos.openPrice?.toFixed(2)}</td>
-                          <td className="px-4 py-3 text-right">{pos.currentPrice?.toFixed(2)}</td>
-                          <td className="px-4 py-3 text-right">{pos.stopLoss?.toFixed(2) || '-'}</td>
-                          <td className="px-4 py-3 text-right">{pos.takeProfit?.toFixed(2) || '-'}</td>
-                          <td className={`px-4 py-3 text-right font-bold ${
-                            pos.profit >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
+                          <td className="px-4 py-3 text-right">
+                            {pos.openPrice?.toFixed(2)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {pos.currentPrice?.toFixed(2)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {pos.stopLoss?.toFixed(2) || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {pos.takeProfit?.toFixed(2) || "-"}
+                          </td>
+                          <td
+                            className={`px-4 py-3 text-right font-bold ${
+                              pos.profit >= 0
+                                ? "text-green-600"
+                                : "text-red-600"
+                            }`}
+                          >
                             ${pos.profit?.toFixed(2)}
                           </td>
                         </tr>
@@ -626,12 +732,12 @@ export default function MT5AccountsPage() {
               Aucun compte MT5 connecté
             </p>
             <p className="text-gray-600 mb-4">
-              Connectez votre compte MT5 pour recevoir automatiquement les signaux de trading
+              Connectez votre compte MT5 pour recevoir automatiquement les
+              signaux de trading
             </p>
           </div>
         )}
       </div>
     </div>
-  )
+  );
 }
-

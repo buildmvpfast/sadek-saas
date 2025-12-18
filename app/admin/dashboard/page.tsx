@@ -46,7 +46,7 @@ export default async function AdminDashboardPage() {
 
   const { data: adminMt5Account } = await supabase
     .from('mt5_accounts')
-    .select('*, brokers(*)')
+    .select('id, account_number, broker_name, server_name, is_active, metaapi_account_id')
     .eq('user_id', session.user.id)
     .eq('is_active', true)
     .single()
@@ -93,8 +93,11 @@ export default async function AdminDashboardPage() {
               <div className="border rounded-lg p-4 bg-green-50">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-semibold text-lg">{adminMt5Account.brokers.name}</p>
+                    <p className="font-semibold text-lg">{adminMt5Account.broker_name || 'N/A'}</p>
                     <p className="text-gray-600">Compte #{adminMt5Account.account_number}</p>
+                    {adminMt5Account.server_name && (
+                      <p className="text-sm text-gray-500">{adminMt5Account.server_name}</p>
+                    )}
                     <p className="text-sm text-green-600 mt-2">✓ Actif - Copie en cours</p>
                   </div>
                   <span className="px-4 py-2 bg-green-600 text-white rounded-full font-semibold">

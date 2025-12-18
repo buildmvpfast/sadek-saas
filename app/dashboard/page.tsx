@@ -27,7 +27,7 @@ export default async function DashboardPage() {
 
   const { data: mt5Accounts } = await supabase
     .from('mt5_accounts')
-    .select('*, brokers(*)')
+    .select('id, account_number, broker_name, server_name, is_active, metaapi_account_id')
     .eq('user_id', session.user.id)
     .eq('is_active', true)
 
@@ -98,8 +98,11 @@ export default async function DashboardPage() {
                   <div key={account.id} className="border-2 border-primary-200 rounded-2xl p-4 bg-gradient-to-r from-primary-50 to-white hover:shadow-lg transition-all">
                     <div className="flex justify-between items-center mb-2">
                       <div>
-                        <p className="font-bold" style={{ color: '#9b30a8' }}>{account.brokers.name}</p>
+                        <p className="font-bold" style={{ color: '#9b30a8' }}>{account.broker_name || 'N/A'}</p>
                         <p className="text-sm opacity-75" style={{ color: '#9b30a8' }}>#{account.account_number}</p>
+                        {account.server_name && (
+                          <p className="text-xs opacity-60" style={{ color: '#9b30a8' }}>{account.server_name}</p>
+                        )}
                       </div>
                       <span className="px-4 py-2 bg-green-500 text-white rounded-full text-sm font-bold shadow-lg">
                         ✓ Actif
