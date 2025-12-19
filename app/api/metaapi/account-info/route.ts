@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
-  try {
-    const accountId = request.nextUrl.searchParams.get("accountId");
+  const accountId = request.nextUrl.searchParams.get("accountId");
 
+  try {
     if (!accountId) {
       return NextResponse.json({ error: "accountId requis" }, { status: 400 });
     }
@@ -141,17 +141,35 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error("Error fetching account info:", {
-      accountId,
+      accountId: accountId || "unknown",
       error: error.message,
+      code: error.code,
       stack: error.stack,
     });
+
+    // Gérer les erreurs de certificat SSL
+    if (
+      error.code === "CERT_HAS_EXPIRED" ||
+      error.message?.includes("certificate")
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Erreur de connexion MetaAPI (certificat). Réessayez dans quelques instants.",
+          accountId: accountId || null,
+        },
+        { status: 200 }
+      );
+    }
+
     return NextResponse.json(
       {
         success: false,
         error:
           error.message ||
           "Erreur lors de la récupération des informations du compte",
-        accountId,
+        accountId: accountId || null,
       },
       { status: 200 }
     ); // Retourner 200 pour ne pas casser l'UI
