@@ -7,26 +7,36 @@ export async function POST(request: NextRequest) {
 
     console.log(
       "📥 Webhook Telegram reçu:",
-      JSON.stringify(body).substring(0, 200)
+      JSON.stringify(body).substring(0, 500)
     );
 
-    // Vérifier que c'est un message
-    if (!body.message) {
-      console.log("⚠️ Pas de message dans le webhook");
+    // Telegram peut envoyer: message, channel_post, edited_message, edited_channel_post
+    let message =
+      body.message ||
+      body.channel_post ||
+      body.edited_message ||
+      body.edited_channel_post;
+
+    if (!message) {
+      console.log(
+        "⚠️ Pas de message dans le webhook. Body keys:",
+        Object.keys(body)
+      );
       return NextResponse.json({ ok: true });
     }
 
-    const { message } = body;
     const chat = message.chat;
-    const text = message.text;
+    const text = message.text || message.caption; // caption pour les messages avec photos
 
     console.log(
-      `📨 Message reçu - Chat type: ${chat.type}, Username: ${chat.username}, Title: ${chat.title}`
+      `📨 Message reçu - Chat type: ${chat?.type}, Username: ${
+        chat?.username
+      }, Title: ${chat?.title}, Text: ${text?.substring(0, 50)}`
     );
 
     // Vérifier que c'est un canal (pas un chat privé)
-    if (chat.type !== "channel") {
-      console.log(`⚠️ Ce n'est pas un canal (type: ${chat.type}), ignoré`);
+    if (!chat || chat.type !== "channel") {
+      console.log(`⚠️ Ce n'est pas un canal (type: ${chat?.type}), ignoré`);
       return NextResponse.json({ ok: true });
     }
 
