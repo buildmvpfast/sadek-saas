@@ -1,127 +1,148 @@
-import { NextResponse } from 'next/server'
+import { NextResponse } from "next/server";
 
 // Cache simple en mémoire (5 minutes)
-let brokersCache: any = null
-let cacheTimestamp = 0
-const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+let brokersCache: any = null;
+let cacheTimestamp = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 export async function GET() {
   try {
     // Vérifier le cache
-    const now = Date.now()
-    if (brokersCache && (now - cacheTimestamp) < CACHE_DURATION) {
-      return NextResponse.json({ 
+    const now = Date.now();
+    if (brokersCache && now - cacheTimestamp < CACHE_DURATION) {
+      return NextResponse.json({
         ...brokersCache,
-        cached: true
-      })
+        cached: true,
+      });
     }
 
     // Pour l'instant, on utilise les brokers statiques
     // TODO: Implémenter l'intégration MetaApi quand l'API sera clarifiée
-    const brokers = getStaticBrokers()
-    
-    const result = { 
+    const brokers = getStaticBrokers();
+
+    const result = {
       success: true,
       brokers,
       total: brokers.length,
-      source: 'static'
-    }
+      source: "static",
+    };
 
     // Mettre en cache
-    brokersCache = result
-    cacheTimestamp = now
-    
-    return NextResponse.json(result)
+    brokersCache = result;
+    cacheTimestamp = now;
+
+    return NextResponse.json(result);
   } catch (error: any) {
-    console.error('Error fetching brokers:', error)
+    console.error("Error fetching brokers:", error);
     return NextResponse.json(
-      { 
+      {
         success: true,
         brokers: getStaticBrokers(),
         total: getStaticBrokers().length,
-        source: 'static'
+        source: "static",
       },
       { status: 200 }
-    )
+    );
   }
 }
 
 function extractBrokerName(profileName: string): string | null {
   // Extraire le nom du broker depuis le nom du profil
-  const brokerKeywords = ['VTmarker', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi', 'AxiTrader']
-  
+  const brokerKeywords = [
+    "VTmarker",
+    "Raise FX",
+    "Raise Global",
+    "Raise Globale",
+    "FXcess",
+    "Axi",
+    "AxiTrader",
+  ];
+
   for (const keyword of brokerKeywords) {
     if (profileName.toLowerCase().includes(keyword.toLowerCase())) {
-      return keyword
+      return keyword;
     }
   }
-  
-  return null
+
+  return null;
 }
 
 function getStaticBrokers() {
   return [
     {
-      id: 'vtmarker',
-      name: 'VTmarker',
+      id: "vtmarker",
+      name: "VTmarker",
       servers: [
-        'VTmarker-Live',
-        'VTmarker-Demo',
-        'VTmarker-Live01',
-        'VTmarker-Live02',
-        'VTmarker-Real',
-        'VTmarker-Real01',
-        'VTmarker-Real02'
+        "VTmarker-Live",
+        "VTmarker-Demo",
+        "VTmarker-Live01",
+        "VTmarker-Live02",
+        "VTmarker-Real",
+        "VTmarker-Real01",
+        "VTmarker-Real02",
       ],
     },
     {
-      id: 'raisefx',
-      name: 'Raise FX',
+      id: "raisefx",
+      name: "Raise FX",
       servers: [
-        'RaiseFX-Live',
-        'RaiseFX-Demo',
-        'RaiseFX-Live01',
-        'RaiseFX-Live02',
-        'RaiseFX-Real',
-        'RaiseFX-Real01',
-        'RaiseFX-Real02',
-        'RaiseFX-MT5-Live',
-        'RaiseFX-MT5-Demo'
+        "RaiseFX-Live",
+        "RaiseFX-Demo",
+        "RaiseFX-Live01",
+        "RaiseFX-Live02",
+        "RaiseFX-Real",
+        "RaiseFX-Real01",
+        "RaiseFX-Real02",
+        "RaiseFX-MT5-Live",
+        "RaiseFX-MT5-Demo",
       ],
     },
     {
-      id: 'fxcess',
-      name: 'FXcess',
+      id: "raiseglobal",
+      name: "Raise Global",
       servers: [
-        'FXcess-Live',
-        'FXcess-Demo',
-        'FXcess-Live01',
-        'FXcess-Live02',
-        'FXcess-Real',
-        'FXcess-Real01',
-        'FXcess-Real02',
-        'FXcess-MT5-Live',
-        'FXcess-MT5-Demo'
+        "RaiseGlobal-Live",
+        "RaiseGlobal-Demo",
+        "RaiseGlobal-Live01",
+        "RaiseGlobal-Live02",
+        "RaiseGlobal-Real",
+        "RaiseGlobal-Real01",
+        "RaiseGlobal-Real02",
       ],
     },
     {
-      id: 'axi',
-      name: 'Axi',
+      id: "fxcess",
+      name: "FXcess",
       servers: [
-        'Axi-Live',
-        'Axi-Demo',
-        'Axi-Live01',
-        'Axi-Live02',
-        'Axi-Real',
-        'Axi-Real01',
-        'Axi-Real02',
-        'Axi-MT5-Live',
-        'Axi-MT5-Demo',
-        'AxiTrader-Live',
-        'AxiTrader-Demo'
+        "FXcess-Live",
+        "FXcess-Demo",
+        "FXcess-Live01",
+        "FXcess-Live02",
+        "FXcess-Real",
+        "FXcess-Real01",
+        "FXcess-Real02",
+        "FXcess-MT5-Live",
+        "FXcess-MT5-Demo",
       ],
     },
-  ]
+    {
+      id: "axi",
+      name: "Axi",
+      servers: [
+        "Axi-Live",
+        "Axi-Demo",
+        "Axi-Live01",
+        "Axi-Live02",
+        "Axi-Real",
+        "Axi-Real01",
+        "Axi-Real02",
+        "Axi-MT5-Live",
+        "Axi-MT5-Demo",
+        "AxiTrader-Live",
+        "AxiTrader-Demo",
+      ],
+    },
+  ];
 }
 
 // Ancienne version avec MetaApi SDK (garde pour référence)
@@ -135,4 +156,3 @@ export async function GET() {
     const profiles = await provisioningProfileApi.getProvisioningProfiles()
 
 */
-
