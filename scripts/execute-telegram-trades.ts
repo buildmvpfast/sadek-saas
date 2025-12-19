@@ -51,6 +51,7 @@ async function executePendingTrades() {
       mt5_account_id,
       symbol,
       signal_type,
+      order_type,
       volume,
       entry_price,
       stop_loss,
@@ -111,8 +112,29 @@ async function executePendingTrades() {
       continue;
     }
 
-    const actionType =
-      trade.signal_type === "BUY" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL";
+    // Déterminer le type d'ordre selon order_type ou entry_price
+    const orderType =
+      (trade as any).order_type || (!trade.entry_price ? "MARKET" : "LIMIT");
+    const isMarketOrder = orderType === "MARKET";
+    const isLimitOrder = orderType === "LIMIT";
+    const isStopOrder = orderType === "STOP";
+
+    // Déterminer actionType selon le type d'ordre
+    let actionType: string;
+    if (isStopOrder) {
+      actionType =
+        trade.signal_type === "BUY"
+          ? "ORDER_TYPE_BUY_STOP"
+          : "ORDER_TYPE_SELL_STOP";
+    } else if (isLimitOrder) {
+      actionType =
+        trade.signal_type === "BUY"
+          ? "ORDER_TYPE_BUY_LIMIT"
+          : "ORDER_TYPE_SELL_LIMIT";
+    } else {
+      actionType =
+        trade.signal_type === "BUY" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL";
+    }
 
     const order: any = {
       symbol: trade.symbol,
@@ -120,11 +142,22 @@ async function executePendingTrades() {
       volume: trade.volume || 0.01,
     };
 
+    // Si c'est un limit ou stop order, ajouter le prix
+    if ((isLimitOrder || isStopOrder) && trade.entry_price) {
+      order.price = parseFloat(trade.entry_price.toString());
+      console.log(
+        `📤 ${orderType} order: ${trade.signal_type} ${trade.symbol} @ ${order.price}`
+      );
+    } else {
+      // Market order (par défaut) - pas besoin de price
+      console.log(`📤 MARKET order: ${trade.signal_type} ${trade.symbol}`);
+    }
+
     if (trade.stop_loss) {
-      order.stopLoss = trade.stop_loss;
+      order.stopLoss = parseFloat(trade.stop_loss.toString());
     }
     if (trade.take_profit) {
-      order.takeProfit = trade.take_profit;
+      order.takeProfit = parseFloat(trade.take_profit.toString());
     }
 
     try {
