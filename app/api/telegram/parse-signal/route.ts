@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
 
     // Déterminer order_type: MARKET si pas de entry_price, LIMIT si entry_price existe
     const orderType = signal.entryPrice ? "LIMIT" : "MARKET";
-    
+
     // Sauvegarder le signal
     const { data: savedSignal, error } = await supabase
       .from("telegram_signals")
@@ -167,8 +167,14 @@ async function parseSignal(messageText: string) {
         entryPrice = match[3] ? parseFloat(match[3]) : null;
         stopLoss = match[4] ? parseFloat(match[4]) : null;
         // Prendre le dernier TP (match[5] ou match[6] selon le pattern)
-        takeProfit = match[5] ? parseFloat(match[5]) : (match[4] ? parseFloat(match[4]) : null);
-      } else if (match[1].match(/^(BUY|SELL|ACHAT|VENTE|LONG|SHORT|🟢|🔴|✅|❌)$/i)) {
+        takeProfit = match[5]
+          ? parseFloat(match[5])
+          : match[4]
+          ? parseFloat(match[4])
+          : null;
+      } else if (
+        match[1].match(/^(BUY|SELL|ACHAT|VENTE|LONG|SHORT|🟢|🔴|✅|❌)$/i)
+      ) {
         // Format: BUY/SELL en premier
         type = normalizeType(match[1]);
         symbol = match[2].toUpperCase().replace(/[\/_]/g, "");
@@ -253,7 +259,7 @@ INFORMATIONS À EXTRAIRE:
 - takeProfit: Take Profit si trouvé (DERNIER si plusieurs), sinon null
 - volume: Volume si mentionné, sinon null
 
-Réponds UNIQUEMENT avec un JSON valide (sans markdown, sans ```json, sans explications):
+Réponds UNIQUEMENT avec un JSON valide (sans markdown, sans code blocks, sans explications):
 {
   "type": "BUY",
   "symbol": "XAUUSD",
@@ -410,30 +416,30 @@ async function mapSymbolToBroker(
   // 2. Fallback: Mapping intelligent basé sur les conventions courantes
   const fallbackMapping: Record<string, Record<string, string>> = {
     GOLD: {
-      "VTmarker": "XAUUSD",
+      VTmarker: "XAUUSD",
       "Raise FX": "XAUUSD",
       "Raise Global": "XAUUSD",
       "Raise Globale": "XAUUSD",
-      "FXcess": "XAUUSD",
-      "Axi": "XAUUSD",
+      FXcess: "XAUUSD",
+      Axi: "XAUUSD",
       // Certains brokers utilisent "GOLD" directement
       // Ajoute ici si tu connais des brokers qui utilisent "GOLD"
     },
     SOL30: {
-      "VTmarker": "SOL30",
+      VTmarker: "SOL30",
       "Raise FX": "SOL30",
       "Raise Global": "SOL30",
       "Raise Globale": "SOL30",
-      "FXcess": "SOL30",
-      "Axi": "SOL30",
+      FXcess: "SOL30",
+      Axi: "SOL30",
     },
     BTC: {
-      "VTmarker": "BTCUSD",
+      VTmarker: "BTCUSD",
       "Raise FX": "BTCUSD",
       "Raise Global": "BTCUSD",
       "Raise Globale": "BTCUSD",
-      "FXcess": "BTCUSD",
-      "Axi": "BTCUSD",
+      FXcess: "BTCUSD",
+      Axi: "BTCUSD",
     },
   };
 
@@ -442,7 +448,8 @@ async function mapSymbolToBroker(
     fallbackMapping[normalizedSymbol] &&
     fallbackMapping[normalizedSymbol][normalizedBrokerName]
   ) {
-    const mappedSymbol = fallbackMapping[normalizedSymbol][normalizedBrokerName];
+    const mappedSymbol =
+      fallbackMapping[normalizedSymbol][normalizedBrokerName];
     console.log(
       `✅ Mapping fallback: ${normalizedSymbol} → ${mappedSymbol} pour ${normalizedBrokerName}`
     );
@@ -589,7 +596,8 @@ async function executeTradesForSignal(signalId: string) {
       mt5_account_id: mt5Account.id,
       symbol: brokerSymbol, // Symbole du broker (mappé automatiquement)
       signal_type: signal.signal_type,
-      order_type: signal.order_type || (signal.entry_price ? "LIMIT" : "MARKET"),
+      order_type:
+        signal.order_type || (signal.entry_price ? "LIMIT" : "MARKET"),
       volume: userVolume, // Volume calculé selon les paramètres utilisateur
       entry_price: signal.entry_price, // null pour market orders
       stop_loss: signal.stop_loss,
