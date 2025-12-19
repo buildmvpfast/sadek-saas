@@ -66,6 +66,7 @@ export default function MT5AccountsPage() {
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [error, setError] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [manualServerInput, setManualServerInput] = useState(false);
 
   const [formData, setFormData] = useState({
     broker_name: "",
@@ -249,6 +250,7 @@ export default function MT5AccountsPage() {
       broker_name: brokerName,
       server_name: "",
     });
+    setManualServerInput(false);
     if (brokerName) {
       fetchServers(brokerName);
     } else {
@@ -418,14 +420,46 @@ export default function MT5AccountsPage() {
 
               {formData.broker_name && (
                 <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Serveur MT5 *
-                  </label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-sm font-medium">
+                      Serveur MT5 *
+                    </label>
+                    {!loadingServers && servers.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setManualServerInput(!manualServerInput)}
+                        className="text-xs text-blue-600 hover:text-blue-800 underline"
+                      >
+                        {manualServerInput
+                          ? "Utiliser la liste"
+                          : "Saisir manuellement"}
+                      </button>
+                    )}
+                  </div>
                   {loadingServers ? (
                     <div className="input bg-gray-50">
                       Chargement des serveurs...
                     </div>
-                  ) : servers.length > 0 ? (
+                  ) : manualServerInput || servers.length === 0 ? (
+                    <>
+                      <input
+                        type="text"
+                        value={formData.server_name}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            server_name: e.target.value,
+                          })
+                        }
+                        className="input"
+                        placeholder="Ex: RaiseGlobal-Live"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Entrez le nom exact du serveur (visible dans MT5)
+                      </p>
+                    </>
+                  ) : (
                     <>
                       <select
                         value={formData.server_name}
@@ -447,25 +481,6 @@ export default function MT5AccountsPage() {
                       </select>
                       <p className="text-xs text-gray-500 mt-1">
                         {servers.length} serveurs disponibles
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <input
-                        type="text"
-                        value={formData.server_name}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            server_name: e.target.value,
-                          })
-                        }
-                        className="input"
-                        placeholder="Ex: MonBroker-Live"
-                        required
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Entrez le nom exact du serveur (visible dans MT5)
                       </p>
                     </>
                   )}
