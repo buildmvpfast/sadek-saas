@@ -4,7 +4,7 @@
 
 Seulement ces 5 brokers sont supportés pour le mapping automatique des symboles:
 
-- **VTmarker**
+- **VT Markets**
 - **Raise FX**
 - **Raise Globale**
 - **FXcess**
@@ -26,7 +26,7 @@ Exécuter le script `supabase-symbol-mappings-actual-brokers.sql` dans Supabase 
 ```sql
 SELECT broker_name, standard_symbol, broker_symbol 
 FROM symbol_mappings 
-WHERE broker_name IN ('VTmarker', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi')
+WHERE broker_name IN ('VT Markets', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi')
 ORDER BY broker_name, standard_symbol;
 ```
 
@@ -46,16 +46,16 @@ Raise FX      | SOL30           | SOL30
 Raise Globale | BTC             | BTCUSD
 Raise Globale | GOLD            | XAUUSD
 Raise Globale | SOL30           | SOL30
-VTmarker      | BTC             | BTCUSD
-VTmarker      | GOLD            | XAUUSD
-VTmarker      | SOL30           | SOL30
+VT Markets      | BTC             | BTCUSD
+VT Markets      | GOLD            | XAUUSD
+VT Markets      | SOL30           | SOL30
 ```
 
 ## ⚠️ Important: Nom du Broker
 
 Le `broker_name` dans la table `mt5_accounts` doit correspondre **exactement** à un de ces noms:
 
-- `VTmarker` (pas "VTmarker-Live" ou autre)
+- `VT Markets` (pas "VT Markets-Live" ou autre)
 - `Raise FX` (avec l'espace et la majuscule)
 - `Raise Globale` (avec l'espace et la majuscule)
 - `FXcess` (exactement comme ça)
@@ -72,9 +72,9 @@ WHERE broker_name IS NOT NULL;
 Si les noms ne correspondent pas, il faut les corriger:
 
 ```sql
--- Exemple: si tu as "IC Markets" au lieu de "VTmarker"
+-- Exemple: si tu as "IC Markets" au lieu de "VT Markets"
 UPDATE mt5_accounts 
-SET broker_name = 'VTmarker' 
+SET broker_name = 'VT Markets' 
 WHERE broker_name = 'IC Markets';
 ```
 
@@ -85,7 +85,7 @@ WHERE broker_name = 'IC Markets';
 3. **Pour chaque utilisateur:**
    - Récupère son `broker_name` depuis `mt5_accounts`
    - Vérifie si le broker est dans la liste supportée
-   - Si oui, cherche le mapping: `GOLD` → `XAUUSD` (pour VTmarker)
+   - Si oui, cherche le mapping: `GOLD` → `XAUUSD` (pour VT Markets)
    - Si non, utilise le symbole original du signal
 4. **Trade créé** avec le symbole du broker
 
@@ -113,7 +113,7 @@ WHERE broker_name = 'IC Markets';
 ```sql
 UPDATE symbol_mappings 
 SET broker_symbol = 'NOUVEAU_SYMBOLE' 
-WHERE broker_name = 'VTmarker' 
+WHERE broker_name = 'VT Markets' 
 AND standard_symbol = 'GOLD';
 ```
 
@@ -123,7 +123,7 @@ Si tu veux ajouter un nouveau broker:
 
 1. **Ajouter dans le code** (`app/api/telegram/parse-signal/route.ts`):
 ```typescript
-const supportedBrokers = ['VTmarker', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi', 'NOUVEAU_BROKER']
+const supportedBrokers = ['VT Markets', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi', 'NOUVEAU_BROKER']
 ```
 
 2. **Ajouter les mappings dans Supabase:**

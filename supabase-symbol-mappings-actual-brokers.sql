@@ -1,12 +1,12 @@
 -- Mapping des symboles pour les brokers ACTUELS uniquement
--- VTmarker, Raise FX, Raise Globale, FXcess, Axi
+-- VT Markets, Raise FX, Raise Globale, FXcess, Axi
 
 -- Supprimer les anciens mappings si besoin (optionnel)
--- DELETE FROM symbol_mappings WHERE broker_name NOT IN ('VTmarker', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi');
+-- DELETE FROM symbol_mappings WHERE broker_name NOT IN ('VT Markets', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi');
 
 -- GOLD (XAU/USD)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'GOLD', 'XAUUSD'),
+  ('VT Markets', 'GOLD', 'XAUUSD'),
   ('Raise FX', 'GOLD', 'XAUUSD'),
   ('Raise Globale', 'GOLD', 'XAUUSD'),
   ('FXcess', 'GOLD', 'XAUUSD'),
@@ -16,7 +16,7 @@ SET broker_symbol = EXCLUDED.broker_symbol;
 
 -- SOL30 (Solana)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'SOL30', 'SOL30'),
+  ('VT Markets', 'SOL30', 'SOL30'),
   ('Raise FX', 'SOL30', 'SOL30'),
   ('Raise Globale', 'SOL30', 'SOL30'),
   ('FXcess', 'SOL30', 'SOL30'),
@@ -26,7 +26,7 @@ SET broker_symbol = EXCLUDED.broker_symbol;
 
 -- BTC (Bitcoin)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'BTC', 'BTCUSD'),
+  ('VT Markets', 'BTC', 'BTCUSD'),
   ('Raise FX', 'BTC', 'BTCUSD'),
   ('Raise Globale', 'BTC', 'BTCUSD'),
   ('FXcess', 'BTC', 'BTCUSD'),
@@ -37,6 +37,6 @@ SET broker_symbol = EXCLUDED.broker_symbol;
 -- Vérifier les mappings créés
 SELECT broker_name, standard_symbol, broker_symbol 
 FROM symbol_mappings 
-WHERE broker_name IN ('VTmarker', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi')
+WHERE broker_name IN ('VT Markets', 'Raise FX', 'Raise Globale', 'FXcess', 'Axi')
 ORDER BY broker_name, standard_symbol;
 

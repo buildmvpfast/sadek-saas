@@ -372,7 +372,7 @@ async function mapSymbolToBroker(
 
   // Liste des brokers supportés
   const supportedBrokers = [
-    "VTmarker",
+    "VT Markets",
     "Raise FX",
     "Raise Global",
     "Raise Globale",
@@ -416,7 +416,7 @@ async function mapSymbolToBroker(
   // 2. Fallback: Mapping intelligent basé sur les conventions courantes
   const fallbackMapping: Record<string, Record<string, string>> = {
     GOLD: {
-      VTmarker: "XAUUSD",
+      VT Markets: "XAUUSD",
       "Raise FX": "XAUUSD",
       "Raise Global": "XAUUSD",
       "Raise Globale": "XAUUSD",
@@ -426,7 +426,7 @@ async function mapSymbolToBroker(
       // Ajoute ici si tu connais des brokers qui utilisent "GOLD"
     },
     SOL30: {
-      VTmarker: "SOL30",
+      VT Markets: "SOL30",
       "Raise FX": "SOL30",
       "Raise Global": "SOL30",
       "Raise Globale": "SOL30",
@@ -434,7 +434,7 @@ async function mapSymbolToBroker(
       Axi: "SOL30",
     },
     BTC: {
-      VTmarker: "BTCUSD",
+      VT Markets: "BTCUSD",
       "Raise FX": "BTCUSD",
       "Raise Global": "BTCUSD",
       "Raise Globale": "BTCUSD",

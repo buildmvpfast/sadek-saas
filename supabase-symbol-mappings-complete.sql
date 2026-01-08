@@ -23,7 +23,7 @@ CREATE POLICY "Only service role can modify symbol mappings" ON symbol_mappings
 
 -- GOLD (XAU/USD) - Mapping pour tous les brokers supportés
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'GOLD', 'XAUUSD'),
+  ('VT Markets', 'GOLD', 'XAUUSD'),
   ('Raise FX', 'GOLD', 'XAUUSD'),
   ('Raise Global', 'GOLD', 'XAUUSD'),
   ('Raise Globale', 'GOLD', 'XAUUSD'),
@@ -34,7 +34,7 @@ SET broker_symbol = EXCLUDED.broker_symbol;
 
 -- SOL30 (Solana)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'SOL30', 'SOL30'),
+  ('VT Markets', 'SOL30', 'SOL30'),
   ('Raise FX', 'SOL30', 'SOL30'),
   ('Raise Global', 'SOL30', 'SOL30'),
   ('Raise Globale', 'SOL30', 'SOL30'),
@@ -45,7 +45,7 @@ SET broker_symbol = EXCLUDED.broker_symbol;
 
 -- BTC (Bitcoin)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'BTC', 'BTCUSD'),
+  ('VT Markets', 'BTC', 'BTCUSD'),
   ('Raise FX', 'BTC', 'BTCUSD'),
   ('Raise Global', 'BTC', 'BTCUSD'),
   ('Raise Globale', 'BTC', 'BTCUSD'),
@@ -56,7 +56,7 @@ SET broker_symbol = EXCLUDED.broker_symbol;
 
 -- EURUSD (Forex - généralement identique partout)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'EURUSD', 'EURUSD'),
+  ('VT Markets', 'EURUSD', 'EURUSD'),
   ('Raise FX', 'EURUSD', 'EURUSD'),
   ('Raise Global', 'EURUSD', 'EURUSD'),
   ('Raise Globale', 'EURUSD', 'EURUSD'),
@@ -67,7 +67,7 @@ SET broker_symbol = EXCLUDED.broker_symbol;
 
 -- GBPUSD (Forex)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'GBPUSD', 'GBPUSD'),
+  ('VT Markets', 'GBPUSD', 'GBPUSD'),
   ('Raise FX', 'GBPUSD', 'GBPUSD'),
   ('Raise Global', 'GBPUSD', 'GBPUSD'),
   ('Raise Globale', 'GBPUSD', 'GBPUSD'),
@@ -83,7 +83,7 @@ SELECT
   broker_symbol,
   created_at
 FROM symbol_mappings 
-WHERE broker_name IN ('VTmarker', 'Raise FX', 'Raise Global', 'Raise Globale', 'FXcess', 'Axi')
+WHERE broker_name IN ('VT Markets', 'Raise FX', 'Raise Global', 'Raise Globale', 'FXcess', 'Axi')
 ORDER BY broker_name, standard_symbol;
 
 -- Afficher le nombre de mappings par broker
@@ -91,7 +91,7 @@ SELECT
   broker_name, 
   COUNT(*) as nombre_mappings
 FROM symbol_mappings 
-WHERE broker_name IN ('VTmarker', 'Raise FX', 'Raise Global', 'Raise Globale', 'FXcess', 'Axi')
+WHERE broker_name IN ('VT Markets', 'Raise FX', 'Raise Global', 'Raise Globale', 'FXcess', 'Axi')
 GROUP BY broker_name
 ORDER BY broker_name;
 

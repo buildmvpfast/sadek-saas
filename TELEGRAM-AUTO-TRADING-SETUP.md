@@ -82,7 +82,7 @@ Ce script crée les mappings pour :
 ```sql
 SELECT broker_name, standard_symbol, broker_symbol 
 FROM symbol_mappings 
-WHERE broker_name IN ('VTmarker', 'Raise FX', 'FXcess', 'Axi')
+WHERE broker_name IN ('VT Markets', 'Raise FX', 'FXcess', 'Axi')
 ORDER BY broker_name, standard_symbol;
 ```
 
@@ -150,7 +150,7 @@ Le système normalise automatiquement :
 - `BTCUSD` → `BTC`
 
 Puis mappe selon le broker :
-- VTmarker : `GOLD` → `XAUUSD`
+- VT Markets : `GOLD` → `XAUUSD`
 - Raise FX : `GOLD` → `XAUUSD`
 - FXcess : `GOLD` → `XAUUSD`
 - Axi : `GOLD` → `XAUUSD`

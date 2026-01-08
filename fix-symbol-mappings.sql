@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS symbol_mappings (
 
 -- GOLD (XAU/USD) - Pour tous les brokers supportés
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'GOLD', 'XAUUSD'),
+  ('VT Markets', 'GOLD', 'XAUUSD'),
   ('Raise FX', 'GOLD', 'XAUUSD'),
   ('FXcess', 'GOLD', 'XAUUSD'),
   ('Axi', 'GOLD', 'XAUUSD')
@@ -22,7 +22,7 @@ SET broker_symbol = EXCLUDED.broker_symbol;
 
 -- SOL30 (Solana)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'SOL30', 'SOL30'),
+  ('VT Markets', 'SOL30', 'SOL30'),
   ('Raise FX', 'SOL30', 'SOL30'),
   ('FXcess', 'SOL30', 'SOL30'),
   ('Axi', 'SOL30', 'SOL30')
@@ -31,7 +31,7 @@ SET broker_symbol = EXCLUDED.broker_symbol;
 
 -- BTC (Bitcoin)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VTmarker', 'BTC', 'BTCUSD'),
+  ('VT Markets', 'BTC', 'BTCUSD'),
   ('Raise FX', 'BTC', 'BTCUSD'),
   ('FXcess', 'BTC', 'BTCUSD'),
   ('Axi', 'BTC', 'BTCUSD')
@@ -44,7 +44,7 @@ SELECT
   standard_symbol, 
   broker_symbol 
 FROM symbol_mappings 
-WHERE broker_name IN ('VTmarker', 'Raise FX', 'FXcess', 'Axi')
+WHERE broker_name IN ('VT Markets', 'Raise FX', 'FXcess', 'Axi')
 ORDER BY broker_name, standard_symbol;
 
 -- Afficher le nombre de mappings par broker
@@ -52,7 +52,7 @@ SELECT
   broker_name, 
   COUNT(*) as nombre_mappings
 FROM symbol_mappings 
-WHERE broker_name IN ('VTmarker', 'Raise FX', 'FXcess', 'Axi')
+WHERE broker_name IN ('VT Markets', 'Raise FX', 'FXcess', 'Axi')
 GROUP BY broker_name
 ORDER BY broker_name;
 

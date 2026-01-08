@@ -169,7 +169,7 @@ Copie tout le contenu du fichier.
 ```sql
 SELECT broker_name, standard_symbol, broker_symbol 
 FROM symbol_mappings 
-WHERE broker_name IN ('VTmarker', 'Raise FX', 'FXcess', 'Axi')
+WHERE broker_name IN ('VT Markets', 'Raise FX', 'FXcess', 'Axi')
 ORDER BY broker_name, standard_symbol;
 ```
 
@@ -186,9 +186,9 @@ FXcess      | SOL30           | SOL30
 Raise FX    | BTC             | BTCUSD
 Raise FX    | GOLD            | XAUUSD
 Raise FX    | SOL30           | SOL30
-VTmarker    | BTC             | BTCUSD
-VTmarker    | GOLD            | XAUUSD
-VTmarker    | SOL30           | SOL30
+VT Markets    | BTC             | BTCUSD
+VT Markets    | GOLD            | XAUUSD
+VT Markets    | SOL30           | SOL30
 ```
 
 ✅ Si tu vois ça, c'est bon !

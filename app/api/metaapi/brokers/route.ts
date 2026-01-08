@@ -49,7 +49,7 @@ export async function GET() {
 function extractBrokerName(profileName: string): string | null {
   // Extraire le nom du broker depuis le nom du profil
   const brokerKeywords = [
-    "VTmarker",
+    "VT Markets",
     "Raise FX",
     "Raise Global",
     "Raise Globale",
@@ -70,16 +70,16 @@ function extractBrokerName(profileName: string): string | null {
 function getStaticBrokers() {
   return [
     {
-      id: "vtmarker",
-      name: "VTmarker",
+      id: "vtmarkets",
+      name: "VT Markets",
       servers: [
-        "VTmarker-Live",
-        "VTmarker-Demo",
-        "VTmarker-Live01",
-        "VTmarker-Live02",
-        "VTmarker-Real",
-        "VTmarker-Real01",
-        "VTmarker-Real02",
+        "VT Markets-Live",
+        "VT Markets-Demo",
+        "VT Markets-Live01",
+        "VT Markets-Live02",
+        "VT Markets-Real",
+        "VT Markets-Real01",
+        "VT Markets-Real02",
       ],
     },
     {
