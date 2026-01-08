@@ -170,8 +170,8 @@ async function parseSignal(messageText: string) {
         takeProfit = match[5]
           ? parseFloat(match[5])
           : match[4]
-          ? parseFloat(match[4])
-          : null;
+            ? parseFloat(match[4])
+            : null;
       } else if (
         match[1].match(/^(BUY|SELL|ACHAT|VENTE|LONG|SHORT|🟢|🔴|✅|❌)$/i)
       ) {
@@ -416,7 +416,7 @@ async function mapSymbolToBroker(
   // 2. Fallback: Mapping intelligent basé sur les conventions courantes
   const fallbackMapping: Record<string, Record<string, string>> = {
     GOLD: {
-      VT Markets: "XAUUSD",
+      "VT Markets": "XAUUSD",
       "Raise FX": "XAUUSD",
       "Raise Global": "XAUUSD",
       "Raise Globale": "XAUUSD",
@@ -426,7 +426,7 @@ async function mapSymbolToBroker(
       // Ajoute ici si tu connais des brokers qui utilisent "GOLD"
     },
     SOL30: {
-      VT Markets: "SOL30",
+      "VT Markets": "SOL30",
       "Raise FX": "SOL30",
       "Raise Global": "SOL30",
       "Raise Globale": "SOL30",
@@ -434,7 +434,7 @@ async function mapSymbolToBroker(
       Axi: "SOL30",
     },
     BTC: {
-      VT Markets: "BTCUSD",
+      "VT Markets": "BTCUSD",
       "Raise FX": "BTCUSD",
       "Raise Global": "BTCUSD",
       "Raise Globale": "BTCUSD",
