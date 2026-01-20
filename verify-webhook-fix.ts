@@ -1,5 +1,7 @@
 
+import fetch from 'node-fetch';
 
+async function verifyWebhook() {
   const url = 'http://localhost:3000/api/telegram/webhook';
   
   const payload = {
