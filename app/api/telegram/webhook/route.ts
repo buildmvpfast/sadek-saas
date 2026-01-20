@@ -40,12 +40,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Extraire le nom d'utilisateur du canal
+    // Extraire le nom d'utilisateur du canal et l'ID
     const channelUsername = chat.username || chat.title;
+    const channelId = chat.id;
 
-    if (!channelUsername || !text) {
+    if ((!channelUsername && !channelId) || !text) {
       console.log(
-        `⚠️ Pas de username ou texte: username=${channelUsername}, text=${
+        `⚠️ Pas d'identifiant ou texte: username=${channelUsername}, id=${channelId}, text=${
           text ? "présent" : "absent"
         }`
       );
@@ -53,7 +54,10 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(
-      `✅ Canal détecté: ${channelUsername}, Message: ${text.substring(0, 100)}`
+      `✅ Canal détecté: ${channelUsername} (ID: ${channelId}), Message: ${text.substring(
+        0,
+        100
+      )}`
     );
 
     // Vérifier si c'est un canal configuré AVEC un token actif
@@ -63,24 +67,42 @@ export async function POST(request: NextRequest) {
     );
 
     // Chercher le canal avec un token configuré et actif
-    const { data: channel } = await supabase
+    // On cherche d'abord par ID (plus fiable), sinon par username/nom
+    let query = supabase
       .from("telegram_channels")
       .select(
         `
         id, 
         username, 
         name,
+        telegram_chat_id,
         telegram_bot_tokens!inner(bot_token, is_active)
       `
       )
-      .or(`username.eq.${channelUsername},name.ilike.%${channelUsername}%`)
       .eq("telegram_bot_tokens.is_active", true)
-      .eq("is_active", true)
-      .single();
+      .eq("is_active", true);
+
+    if (channelId) {
+      // Si on a l'ID, on cherche par ID OU par nom (pour la rétrocompatibilité ou si l'ID n'est pas encore migré)
+      query = query.or(
+        `telegram_chat_id.eq.${channelId},username.eq.${channelUsername},name.ilike.%${channelUsername}%`
+      );
+    } else {
+      query = query.or(
+        `username.eq.${channelUsername},name.ilike.%${channelUsername}%`
+      );
+    }
+
+    const { data: channel, error } = await query.limit(1).maybeSingle();
+
+    if (error) {
+      console.error("❌ Erreur lors de la recherche du canal:", error);
+      return NextResponse.json({ ok: true });
+    }
 
     if (!channel) {
       console.log(
-        `❌ Canal non configuré ou sans token actif: ${channelUsername}`
+        `❌ Canal non configuré ou sans token actif: ${channelUsername} (ID: ${channelId})`
       );
       return NextResponse.json({ ok: true });
     }
