@@ -438,7 +438,7 @@ async function mapSymbolToBroker(
   // 2. Fallback: Mapping intelligent basé sur les conventions courantes
   const fallbackMapping: Record<string, Record<string, string>> = {
     GOLD: {
-      "VT Markets": "XAUUSD",
+      "VT Markets": "XAUUSD-ECN",
       "Raise FX": "XAUUSD",
       "Raise Global": "XAUUSD",
       "Raise Globale": "XAUUSD",
