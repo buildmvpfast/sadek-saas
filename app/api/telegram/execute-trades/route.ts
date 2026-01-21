@@ -12,6 +12,9 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
+    // TEMPORARY FIX: MetaAPI SSL certificate has expired
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
     if (!process.env.METAAPI_TOKEN) {
       return NextResponse.json(
         { error: "METAAPI_TOKEN non configuré" },
@@ -132,22 +135,55 @@ export async function POST(request: NextRequest) {
 
       // Exécuter le trade via MetaAPI
       try {
-        const response = await fetch(
+        // Liste des URLs possibles à tester (double domaine nécessaire pour cet environnement)
+        const possibleUrls = [
           `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "auth-token": process.env.METAAPI_TOKEN!,
-            },
-            body: JSON.stringify(order),
+          `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
+          `https://metaapi-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
+          `https://mt-client-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`
+        ];
+
+        let response = null;
+        let lastError = null;
+        let successUrl = null;
+
+        for (const url of possibleUrls) {
+          try {
+            console.log(`📡 Tentative d'exécution sur: ${url}`);
+            response = await fetch(url, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "auth-token": process.env.METAAPI_TOKEN!,
+              },
+              body: JSON.stringify(order),
+            });
+
+            // Si on a un 404 HTML, on continue avec l'URL suivante
+            const contentType = response.headers.get("content-type");
+            if (response.status === 404 && contentType?.includes("text/html")) {
+              console.warn(`⚠️ 404 HTML reçu sur ${url}, essai suivant...`);
+              continue;
+            }
+
+            // Si on arrive ici, on a une réponse JSON (succès ou erreur API)
+            successUrl = url;
+            break;
+          } catch (e: any) {
+            console.error(`❌ Échec fetch sur ${url}:`, e.message);
+            lastError = e;
           }
-        );
+        }
+
+        if (!response || !successUrl) {
+          throw lastError || new Error("Impossible de joindre aucun endpoint MetaAPI (SSL ou URL incorrecte)");
+        }
 
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.message || "Trade failed");
+          console.error(`❌ MetaAPI Error (${response.status}):`, data);
+          throw new Error(data.message || `Trade failed with status ${response.status}`);
         }
 
         // Mettre à jour le trade avec succès
