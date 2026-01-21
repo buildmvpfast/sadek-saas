@@ -239,38 +239,35 @@ async function parseSignalWithAI(messageText: string): Promise<any | null> {
 
 RÈGLES CRITIQUES:
 1. Type d'ordre: Cherche "BUY", "SELL", "ACHAT", "VENTE", "LONG", "SHORT", emojis 🟢/🔴.
-2. Mode d'exécution: Détermine si c'est "MARKET" (au prix actuel), "LIMIT" (achat plus bas / vente plus haut) ou "STOP" (achat plus haut / vente plus bas). Si "LIMIT" ou "STOP" est écrit, utilise-le.
-3. Symbole: Peut être écrit de n'importe quelle façon (XAUUSD, XAU/USD, GOLD, GOLDUSD, EURUSD, EUR/USD, etc.)
-4. Prix d'entrée: Cherche "ENTRY", "@", "AT", "PRICE", ou juste un nombre après le symbole. Si c'est un intervalle (ex: 2650-2655), prends le PREMIER nombre (2650).
-5. Stop Loss: Cherche "SL", "STOP", "STOP LOSS", "S/L", ou tout indicateur de stop. Si c'est un intervalle, prends le PREMIER nombre.
-6. Take Profit: Cherche "TP", "TAKE PROFIT", "T/P", "PROFIT", ou tout indicateur de profit.
-7. ⚠️ MULTIPLE TP: Si plusieurs TP (TP1, TP2, TP3, ou liste séparée par virgules), TOUJOURS prendre le DERNIER/PLUS ÉLEVÉ.
-8. MULTIPLE SL: Si plusieurs SL, prendre le PREMIER.
-9. Format flexible: Accepte les formats avec/sans ":", "@", virgules, tirets, espaces multiples, etc. Gère les noms d'actifs comme "GOLD", "GOLD.I", "XAUUSD", "US30", "NAS100", etc.
+2. Mode d'exécution: Détermine s'il s'agit de "MARKET" (exécuté maintenant), "LIMIT" (souvent écrit "Buy Limit", "Sell Limit" ou avec "@") ou "STOP".
+3. Symbole: IDENTIFIE l'actif (ex: GOLD, XAUUSD, EURUSD, US30). Ne confonds PAS "LIMIT" ou "STOP" avec le symbole. "GOLD" est un symbole très courant.
+4. Prix d'entrée: Cherche le prix après le symbole. Si c'est un intervalle (ex: 4832.5-4833), prends impérativement le PREMIER nombre (4832.5).
+5. Stop Loss: Cherche "SL", "STOP", "STOP LOSS" suivi d'un nombre.
+6. Take Profit: Cherche "TP", "TAKE PROFIT" suivi d'un nombre. Prends le DERNIER TP si plusieurs sont présents.
+7. Format: Sois ultra-flexible sur la ponctuation.
 
-FORMATS ACCEPTÉS (exemples):
-- "BUY XAUUSD" → { "type": "BUY", "orderType": "MARKET" }
-- "BUY LIMIT GOLD @2650" → { "type": "BUY", "orderType": "LIMIT", "entryPrice": 2650 }
-- "SELL STOP EURUSD 1.0850" → { "type": "SELL", "orderType": "STOP", "entryPrice": 1.0850 }
+FORMATS D'EXEMPLE:
+- "Buy limit gold 4832.5-4833" -> { "type": "BUY", "orderType": "LIMIT", "symbol": "GOLD", "entryPrice": 4832.5 }
+- "Sell gold @ 2650" -> { "type": "SELL", "orderType": "LIMIT", "symbol": "GOLD", "entryPrice": 2650 }
 
 INFORMATIONS À EXTRAIRE:
-- type: "BUY" ou "SELL" (OBLIGATOIRE)
-- orderType: "MARKET", "LIMIT" ou "STOP" (OBLIGATOIRE. Par défaut "MARKET" si pas de prix d'entrée, "LIMIT" si prix d'entrée présent sans précision)
-- symbol: Le symbole en majuscules (OBLIGATOIRE)
-- entryPrice: Prix d'entrée si trouvé, sinon null
-- stopLoss: Stop Loss si trouvé (premier si plusieurs), sinon null
-- takeProfit: Take Profit si trouvé (DERNIER si plusieurs), sinon null
-- volume: Volume si mentionné, sinon null
+- type: "BUY" ou "SELL"
+- orderType: "MARKET", "LIMIT" ou "STOP"
+- symbol: Le symbole en majuscules
+- entryPrice: Nombre décimal (point pour les décimales)
+- stopLoss: Nombre décimal
+- takeProfit: Nombre décimal
+- volume: Nombre décimal ou null
 
 Réponds UNIQUEMENT avec un JSON valide:
 {
   "type": "BUY",
-  "orderType": "MARKET",
-  "symbol": "XAUUSD",
-  "entryPrice": null,
-  "stopLoss": null,
-  "takeProfit": null,
-  "volume": null
+  "orderType": "LIMIT",
+  "symbol": "GOLD",
+  "entryPrice": 4832.5,
+  "stopLoss": 4828.5,
+  "takeProfit": 4868.7,
+  "volume": 0.01
 }
 
 Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
