@@ -166,10 +166,10 @@ async function executePendingTrades() {
     try {
       // Liste des URLs possibles à tester (double domaine nécessaire pour cet environnement)
       const possibleUrls = [
+        `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
         `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
         `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
-        `https://metaapi-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
-        `https://mt-client-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`
+        `https://metaapi-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`
       ];
 
       let response = null;
