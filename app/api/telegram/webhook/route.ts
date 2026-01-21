@@ -117,7 +117,8 @@ export async function POST(request: NextRequest) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          channelUsername: channel.username,
+          channelId: channel.id,
+          channelUsername: channel.username, // Keep for backward compatibility if needed
           messageText: text,
           messageId: message.message_id,
         }),
