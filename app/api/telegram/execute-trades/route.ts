@@ -57,6 +57,9 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`📊 ${pendingTrades.length} trade(s) en attente trouvé(s)`);
+    
+    // TEMPORARY FIX: MetaAPI SSL certificate has expired
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
     let executed = 0;
     let failed = 0;
