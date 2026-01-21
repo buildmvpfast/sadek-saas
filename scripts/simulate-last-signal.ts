@@ -5,7 +5,7 @@ async function simulateSignal() {
   const payload = {
     update_id: 999999,
     channel_post: {
-      message_id: 888881,
+      message_id: Math.floor(Math.random() * 1000000),
       chat: {
         id: -1002313602819,
         title: "L’imprimante VIP 🔒🖨️💸",
