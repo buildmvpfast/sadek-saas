@@ -150,13 +150,15 @@ export async function POST(request: NextRequest) {
         for (const url of possibleUrls) {
           try {
             console.log(`📡 Tentative d'exécution sur: ${url}`);
+            const body = JSON.stringify(order);
+            console.log(`📦 Body being sent: ${body}`);
             response = await fetch(url, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
                 "auth-token": process.env.METAAPI_TOKEN!,
               },
-              body: JSON.stringify(order),
+              body,
             });
 
             // Si on a un 404 HTML, on continue avec l'URL suivante
