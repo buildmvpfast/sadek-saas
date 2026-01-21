@@ -167,10 +167,28 @@ async function parseSignal(messageText: string) {
         return upper;
       };
 
+      // Si le symbole matché est "LIMIT" ou "STOP", c'est probablement une erreur de capture
+      // On tente de nettoyer le symbole
+      const cleanSymbol = (s: string) => {
+        let sym = s.toUpperCase().trim();
+        // Si le symbole capturé est un mot clé de type d'ordre, on essaie de trouver le vrai symbole après
+        if (sym === "LIMIT" || sym === "STOP") {
+          // On cherche un mot de 3 à 7 lettres qui ne soit pas un mot clé
+          const words = messageText.split(/\s+/);
+          const potentialSymbol = words.find(w => 
+            w.length >= 3 && 
+            w.length <= 8 && 
+            !['BUY', 'SELL', 'LIMIT', 'STOP', 'ACHAT', 'VENTE'].includes(w.toUpperCase())
+          );
+          if (potentialSymbol) sym = potentialSymbol.toUpperCase();
+        }
+        return sym.replace(/[\/_]/g, "");
+      };
+
       // Pattern avec multiple TP (TP1, TP2, TP3)
       if (pattern.source.includes("TP\\d")) {
         type = normalizeType(match[1]);
-        symbol = match[2].toUpperCase().replace(/[\/_]/g, "");
+        symbol = cleanSymbol(match[2]);
         entryPrice = match[3] ? parseFloat(match[3]) : null;
         stopLoss = match[4] ? parseFloat(match[4]) : null;
         // Prendre le dernier TP (match[5] ou match[6] selon le pattern)
@@ -184,13 +202,13 @@ async function parseSignal(messageText: string) {
       ) {
         // Format: BUY/SELL en premier
         type = normalizeType(match[1]);
-        symbol = match[2].toUpperCase().replace(/[\/_]/g, "");
+        symbol = cleanSymbol(match[2]);
         entryPrice = match[3] ? parseFloat(match[3]) : null;
         stopLoss = match[4] ? parseFloat(match[4]) : null;
         takeProfit = match[5] ? parseFloat(match[5]) : null;
       } else {
         // Format: Symbole en premier
-        symbol = match[1].toUpperCase().replace(/[\/_]/g, "");
+        symbol = cleanSymbol(match[1]);
         type = normalizeType(match[2]);
         entryPrice = match[3] ? parseFloat(match[3]) : null;
         stopLoss = match[4] ? parseFloat(match[4]) : null;
@@ -198,7 +216,7 @@ async function parseSignal(messageText: string) {
       }
 
       // Validation minimale: type et symbol requis
-      if (type && symbol) {
+      if (type && symbol && symbol !== "LIMIT" && symbol !== "STOP") {
         return {
           type,
           symbol,

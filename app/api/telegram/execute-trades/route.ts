@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
       // Exécuter le trade via MetaAPI
       try {
         const response = await fetch(
-          `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
+          `https://mt-client-api-v1.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
           {
             method: "POST",
             headers: {
