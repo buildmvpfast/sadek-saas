@@ -147,9 +147,9 @@ async function executePendingTrades() {
 
     // Si c'est un limit ou stop order, ajouter le prix
     if ((isLimitOrder || isStopOrder) && trade.entry_price) {
-      order.price = parseFloat(trade.entry_price.toString());
+      order.openPrice = parseFloat(trade.entry_price.toString());
       console.log(
-        `📤 ${orderType} order: ${trade.signal_type} ${trade.symbol} @ ${order.price}`
+        `📤 ${orderType} order: ${trade.signal_type} ${trade.symbol} @ ${order.openPrice}`
       );
     } else {
       // Market order (par défaut) - pas besoin de price
