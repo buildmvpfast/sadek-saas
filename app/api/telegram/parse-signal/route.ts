@@ -45,6 +45,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Vérifier si le signal a déjà été traité (Idempotence)
+    const { data: existingSignal } = await supabase
+      .from("telegram_signals")
+      .select("id")
+      .eq("channel_id", channel.id)
+      .eq("message_id", messageId)
+      .maybeSingle();
+
+    if (existingSignal) {
+      console.log(`ℹ️ Signal déjà traité (messageId: ${messageId})`);
+      return NextResponse.json({
+        success: true,
+        message: "Signal déjà traité",
+        signal: existingSignal,
+      });
+    }
+
     // Parser le signal
     console.log(
       `📨 Parsing signal from ${channelUsername}:`,
@@ -375,6 +392,11 @@ function normalizeSymbol(symbol: string): string {
     return "BTC";
   }
 
+  // US30 variations: US30, DJ30, WS30, DOW, etc.
+  if (upperSymbol.includes("US30") || upperSymbol.includes("DJ30") || upperSymbol.includes("WS30") || upperSymbol.includes("DOW")) {
+    return "US30";
+  }
+
   // Par défaut, retourner le symbole tel quel (sans les points/underscores pour compatibilité)
   return upperSymbol.replace(/[._]/g, "");
 }
@@ -586,6 +608,8 @@ async function executeTradesForSignal(signalId: string) {
           userVolume = parseFloat(tradingSettings.sol_lot_size) || 0.01;
         } else if (normalizedSymbol === "BTC") {
           userVolume = parseFloat(tradingSettings.btc_lot_size) || 0.01;
+        } else if (normalizedSymbol === "US30") {
+          userVolume = parseFloat(tradingSettings.us30_lot_size) || 0.01;
         }
       } else if (tradingSettings.position_sizing_type === "percentage") {
         // Pourcentage: utiliser le pourcentage du signal comme base

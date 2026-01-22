@@ -11,6 +11,7 @@ type TradingSettings = {
   gold_lot_size: number
   sol_lot_size: number
   btc_lot_size: number
+  us30_lot_size: number
   position_percentage: number
   max_open_positions: number
 }
@@ -21,6 +22,7 @@ export default function SettingsPage() {
     gold_lot_size: 0.01,
     sol_lot_size: 0.01,
     btc_lot_size: 0.01,
+    us30_lot_size: 0.01,
     position_percentage: 1.0,
     max_open_positions: 10,
   })
@@ -58,6 +60,7 @@ export default function SettingsPage() {
         gold_lot_size: parseFloat(data.gold_lot_size) || 0.01,
         sol_lot_size: parseFloat(data.sol_lot_size) || 0.01,
         btc_lot_size: parseFloat(data.btc_lot_size) || 0.01,
+        us30_lot_size: parseFloat(data.us30_lot_size) || 0.01,
         position_percentage: parseFloat(data.position_percentage) || 1.0,
         max_open_positions: data.max_open_positions || 10,
       })
@@ -86,6 +89,7 @@ export default function SettingsPage() {
         gold_lot_size: settings.gold_lot_size,
         sol_lot_size: settings.sol_lot_size,
         btc_lot_size: settings.btc_lot_size,
+        us30_lot_size: settings.us30_lot_size,
         position_percentage: settings.position_percentage,
         max_open_positions: settings.max_open_positions,
       }
@@ -285,6 +289,30 @@ export default function SettingsPage() {
                   />
                   <p className="text-sm mt-2 opacity-75" style={{ color: '#9b30a8' }}>
                     Nombre de lots pour les trades sur Bitcoin
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
+                    📉 US30 (Dow Jones)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max="100"
+                    className="input"
+                    value={settings.us30_lot_size}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        us30_lot_size: parseFloat(e.target.value) || 0.01,
+                      })
+                    }
+                    required
+                  />
+                  <p className="text-sm mt-2 opacity-75" style={{ color: '#9b30a8' }}>
+                    Nombre de lots pour les trades sur l'US30
                   </p>
                 </div>
               </div>
