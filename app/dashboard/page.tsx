@@ -38,12 +38,39 @@ export default async function DashboardPage() {
     .eq("user_id", session.user.id)
     .single();
 
-  const { data: copyTrades } = await supabase
-    .from("copy_trades")
-    .select("*")
-    .eq("follower_user_id", session.user.id)
-    .order("created_at", { ascending: false })
-    .limit(10);
+  // Récupérer les trades des deux sources (copy trading classique et signaux Telegram)
+  const [copyTradesResult, telegramTradesResult] = await Promise.all([
+    supabase
+      .from("copy_trades")
+      .select("*")
+      .eq("follower_user_id", session.user.id)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("telegram_trades")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .order("created_at", { ascending: false })
+      .limit(20)
+  ]);
+
+  const copyTradesRaw = copyTradesResult.data || [];
+  const telegramTradesRaw = telegramTradesResult.data || [];
+
+  // Normaliser et fusionner les trades
+  const copyTrades = [
+    ...copyTradesRaw.map((t: any) => ({
+      ...t,
+      source: 'copy'
+    })),
+    ...telegramTradesRaw.map((t: any) => ({
+      ...t,
+      source: 'telegram',
+      // Harmonisation des champs pour l'affichage
+      order_type: `${t.signal_type} ${t.order_type || 'MARKET'}`,
+      status: t.status === 'executed' ? 'opened' : t.status
+    }))
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   return (
     <div className="min-h-screen pattern-bg">

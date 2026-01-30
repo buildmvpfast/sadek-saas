@@ -23,14 +23,44 @@ export default async function AdminTradesPage() {
     redirect('/dashboard')
   }
 
-  const { data: trades } = await supabase
-    .from('copy_trades')
-    .select(`
-      *,
-      follower:profiles!copy_trades_follower_user_id_fkey(full_name, email)
-    `)
-    .order('created_at', { ascending: false })
-    .limit(100)
+  // Récupérer les trades des deux sources
+  const [copyTradesResult, telegramTradesResult] = await Promise.all([
+    supabase
+      .from('copy_trades')
+      .select('*, follower:profiles!copy_trades_follower_user_id_fkey(full_name, email)')
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('telegram_trades')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100)
+  ]);
+
+  const copyTradesRaw = copyTradesResult.data || [];
+  const telegramTradesRaw = telegramTradesResult.data || [];
+
+  // Récupérer les profils pour les trades Telegram
+  const telegramUserIds = Array.from(new Set(telegramTradesRaw.map((t: any) => t.user_id)));
+  const { data: telegramProfiles } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', telegramUserIds);
+  
+  const telegramProfileMap = Object.fromEntries(
+    (telegramProfiles || []).map((p: any) => [p.id, p])
+  );
+
+  const trades = [
+    ...copyTradesRaw,
+    ...telegramTradesRaw.map((t: any) => ({
+      ...t,
+      follower: telegramProfileMap[t.user_id],
+      open_price: t.entry_price || 0,
+      order_type: `${t.signal_type} ${t.order_type || 'MARKET'}`,
+      status: t.status === 'executed' ? 'opened' : t.status
+    }))
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100);
 
   return (
     <div className="min-h-screen bg-gray-50">

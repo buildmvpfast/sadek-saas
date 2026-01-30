@@ -38,11 +38,44 @@ export default async function AdminDashboardPage() {
     .select('*', { count: 'exact' })
     .eq('is_active', true)
 
-  const { data: recentTrades } = await supabase
-    .from('copy_trades')
-    .select('*, profiles!copy_trades_follower_user_id_fkey(full_name, email)')
-    .order('created_at', { ascending: false })
-    .limit(10)
+  // Récupérer les derniers trades des deux sources
+  const [copyTradesResult, telegramTradesResult] = await Promise.all([
+    supabase
+      .from('copy_trades')
+      .select('*, profiles!copy_trades_follower_user_id_fkey(full_name, email)')
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('telegram_trades')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20)
+  ]);
+
+  const copyTradesRaw = copyTradesResult.data || [];
+  const telegramTradesRaw = telegramTradesResult.data || [];
+
+  // Récupérer les profils pour les trades Telegram
+  const telegramUserIds = Array.from(new Set(telegramTradesRaw.map((t: any) => t.user_id)));
+  const { data: telegramProfiles } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', telegramUserIds);
+  
+  const telegramProfileMap = Object.fromEntries(
+    (telegramProfiles || []).map((p: any) => [p.id, p])
+  );
+
+  const recentTrades = [
+    ...copyTradesRaw.map((t: any) => ({ ...t, source: 'copy' })),
+    ...telegramTradesRaw.map((t: any) => ({
+      ...t,
+      source: 'telegram',
+      profiles: telegramProfileMap[t.user_id],
+      order_type: `${t.signal_type} ${t.order_type || 'MARKET'}`,
+      status: t.status === 'executed' ? 'opened' : t.status
+    }))
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const { data: adminMt5Account } = await supabase
     .from('mt5_accounts')
