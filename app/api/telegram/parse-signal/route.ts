@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export async function POST(request: NextRequest) {
   try {
-    const { channelId, channelUsername, messageText, messageId } = await request.json();
+    const { channelId, channelUsername, messageText, messageId, replyToMessageId } = await request.json();
 
     if ((!channelId && !channelUsername) || !messageText || !messageId) {
       return NextResponse.json(
@@ -43,6 +43,82 @@ export async function POST(request: NextRequest) {
         { error: "Canal non trouvé ou sans token actif" },
         { status: 404 }
       );
+    }
+
+    // Gérer les messages d'annulation
+    const isCancelCommand = /annuler|cancel|effacer|supprimer|delete/i.test(messageText);
+    
+    if (isCancelCommand) {
+      console.log(`⚠️ Commande d'annulation détectée dans ${channel.username}: "${messageText}"`);
+      
+      let signalIdToCancel = null;
+
+      // Cas 1: Annulation par réponse à un message
+      if (replyToMessageId) {
+        console.log(`🔍 Recherche du signal à annuler (replyToMessageId: ${replyToMessageId})`);
+        const { data: originalSignal } = await supabase
+          .from("telegram_signals")
+          .select("id")
+          .eq("channel_id", channel.id)
+          .eq("message_id", replyToMessageId)
+          .maybeSingle();
+        
+        if (originalSignal) {
+          signalIdToCancel = originalSignal.id;
+          console.log(`✅ Signal trouvé par reply_to: ${signalIdToCancel}`);
+        }
+      }
+
+      // Cas 2: Annulation du dernier pending si pas de réponse ou signal non trouvé
+      if (!signalIdToCancel) {
+        console.log(`🔍 Recherche du dernier signal du canal avec des trades en attente...`);
+        // On cherche le dernier signal du canal qui a au moins un trade 'pending'
+        const { data: lastPendingTrade } = await supabase
+          .from("telegram_trades")
+          .select("signal_id, telegram_signals!inner(id, channel_id)")
+          .eq("status", "pending")
+          .eq("telegram_signals.channel_id", channel.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (lastPendingTrade) {
+          signalIdToCancel = lastPendingTrade.signal_id;
+          console.log(`✅ Dernier signal en attente du canal trouvé: ${signalIdToCancel}`);
+        }
+      }
+
+      if (signalIdToCancel) {
+        // Annuler tous les trades 'pending' pour ce signal
+        const { data: cancelledTrades, error: cancelError } = await supabase
+          .from("telegram_trades")
+          .update({
+            status: "failed",
+            error_message: "Annulé par commande Telegram"
+          })
+          .eq("signal_id", signalIdToCancel)
+          .eq("status", "pending")
+          .select();
+
+        if (cancelError) {
+          console.error("❌ Erreur lors de l'annulation:", cancelError);
+          return NextResponse.json({ error: "Erreur lors de l'annulation" }, { status: 500 });
+        }
+
+        console.log(`✅ ${cancelledTrades?.length || 0} trade(s) annulé(s) pour le signal ${signalIdToCancel}`);
+        
+        return NextResponse.json({
+          success: true,
+          message: `${cancelledTrades?.length || 0} trade(s) annulé(s) avec succès`,
+          cancelledCount: cancelledTrades?.length || 0
+        });
+      } else {
+        console.log("❌ Aucun trade en attente trouvé à annuler");
+        return NextResponse.json({
+          success: true,
+          message: "Aucun trade en attente trouvé à annuler"
+        });
+      }
     }
 
     // Vérifier si le signal a déjà été traité (Idempotence)
@@ -382,6 +458,17 @@ function normalizeSymbol(symbol: string): string {
     return "GOLD";
   }
 
+  // Indices variations
+  if (upperSymbol.includes("US30") || upperSymbol.includes("DJ30") || upperSymbol.includes("WS30") || upperSymbol.includes("DOW")) {
+    return "US30";
+  }
+  if (upperSymbol.includes("NAS100") || upperSymbol.includes("US100") || upperSymbol.includes("USTEC") || upperSymbol.includes("NASDAQ")) {
+    return "NAS100";
+  }
+  if (upperSymbol.includes("GER40") || upperSymbol.includes("DAX") || upperSymbol.includes("DE40") || upperSymbol.includes("GER30")) {
+    return "GER40";
+  }
+
   // SOL variations: SOL, SOL30, SOLUSDT, etc.
   if (upperSymbol.includes("SOL")) {
     return "SOL30";
@@ -392,13 +479,8 @@ function normalizeSymbol(symbol: string): string {
     return "BTC";
   }
 
-  // US30 variations: US30, DJ30, WS30, DOW, etc.
-  if (upperSymbol.includes("US30") || upperSymbol.includes("DJ30") || upperSymbol.includes("WS30") || upperSymbol.includes("DOW")) {
-    return "US30";
-  }
-
-  // Par défaut, retourner le symbole tel quel (sans les points/underscores pour compatibilité)
-  return upperSymbol.replace(/[._]/g, "");
+  // Par défaut, retourner le symbole tel quel (sans les points/underscores/slashes pour compatibilité)
+  return upperSymbol.replace(/[._\/]/g, "");
 }
 
 /**
@@ -466,9 +548,15 @@ async function mapSymbolToBroker(
       "Raise Globale": "XAUUSD",
       FXcess: "XAUUSD",
       Axi: "XAUUSD",
-      // Certains brokers utilisent "GOLD" directement
-      // Ajoute ici si tu connais des brokers qui utilisent "GOLD"
     },
+    EURUSD: { "VT Markets": "EURUSD-ECN" },
+    GBPUSD: { "VT Markets": "GBPUSD-ECN" },
+    EURGBP: { "VT Markets": "EURGBP-ECN" },
+    EURJPY: { "VT Markets": "EURJPY-ECN" },
+    GBPJPY: { "VT Markets": "GBPJPY-ECN" },
+    US30: { "VT Markets": "US30.cash-ECN" },
+    NAS100: { "VT Markets": "NAS100.cash-ECN" },
+    GER40: { "VT Markets": "GER40.cash-ECN" },
     SOL30: {
       "VT Markets": "SOL30",
       "Raise FX": "SOL30",
@@ -547,12 +635,12 @@ async function executeTradesForSignal(signalId: string) {
     .select("user_id")
     .in(
       "user_id",
-      subscriptions.map((s) => s.user_id)
+      subscriptions.map((s: any) => s.user_id)
     )
     .eq("status", "active");
 
   const activeUserIds = new Set(
-    activeSubscriptions?.map((s) => s.user_id) || []
+    activeSubscriptions?.map((s: any) => s.user_id) || []
   );
 
   // Normaliser le symbole du signal (XAUUSD -> GOLD, etc.)
