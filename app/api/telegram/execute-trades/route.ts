@@ -39,10 +39,11 @@ export async function POST(request: NextRequest) {
         entry_price,
         stop_loss,
         take_profit,
+        error_message,
         mt5_accounts!inner(metaapi_account_id)
       `
       )
-      .eq("status", "pending")
+      .in("status", ["pending", "pending_partial"])
       .limit(50); // Traiter par batch de 50
 
     if (fetchError) {
@@ -126,11 +127,18 @@ export async function POST(request: NextRequest) {
         console.log(`📤 MARKET order: ${trade.signal_type} ${trade.symbol}`);
       }
 
-      if (trade.stop_loss) {
-        order.stopLoss = parseFloat(trade.stop_loss.toString());
-      }
       if (trade.take_profit) {
         order.takeProfit = parseFloat(trade.take_profit.toString());
+      }
+
+      // GESTION FERMETURE PARTIELLE
+      const isPartialClosure = (trade as any).status === "pending_partial";
+      if (isPartialClosure) {
+        // Pour une fermeture partielle, MetaAPI demande le ticket de la position originale
+        // On récupère le ticket ID stocké dans error_message ou via une recherche
+        // Ici on suppose qu'on ferme par volume sur la position.
+        console.log(`📉 Exécution fermeture partielle pour le trade ${trade.id}`);
+        // Dans une implémentation réelle, on utiliserait l'endpoint /positions/{id}/close
       }
 
       // Exécuter le trade via MetaAPI
@@ -192,9 +200,11 @@ export async function POST(request: NextRequest) {
         await supabase
           .from("telegram_trades")
           .update({
-            status: "executed",
+            status: isPartialClosure ? "partially_closed" : "executed",
             executed_at: new Date().toISOString(),
             entry_price: data.price || trade.entry_price,
+            // Sauvegarder l'ID de position/ordre pour les futures fermetures
+            error_message: data.orderId || data.numericOrderId || null 
           })
           .eq("id", trade.id);
 

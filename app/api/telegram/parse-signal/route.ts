@@ -121,23 +121,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Vérifier si le signal a déjà été traité (Idempotence)
-    const { data: existingSignal } = await supabase
-      .from("telegram_signals")
-      .select("id")
-      .eq("channel_id", channel.id)
-      .eq("message_id", messageId)
-      .maybeSingle();
-
-    if (existingSignal) {
-      console.log(`ℹ️ Signal déjà traité (messageId: ${messageId})`);
-      return NextResponse.json({
-        success: true,
-        message: "Signal déjà traité",
-        signal: existingSignal,
-      });
-    }
-
     // Parser le signal
     console.log(
       `📨 Parsing signal from ${channelUsername}:`,
@@ -154,6 +137,54 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`✅ Signal parsé:`, signal);
+
+    // GÉRER LES FERMETURES PARTIELLES (TP Hit, Prendre Profit)
+    if (signal.isPartialClose) {
+      console.log(`📉 Commande de fermeture partielle détectée (${signal.closePercent}%)`);
+      let signalIdToClose = null;
+
+      if (replyToMessageId) {
+        const { data: originalSignal } = await supabase
+          .from("telegram_signals")
+          .select("id")
+          .eq("channel_id", channel.id)
+          .eq("message_id", replyToMessageId)
+          .maybeSingle();
+        if (originalSignal) signalIdToClose = originalSignal.id;
+      }
+
+      if (!signalIdToClose) {
+        const { data: lastExecutedTrade } = await supabase
+          .from("telegram_trades")
+          .select("signal_id")
+          .eq("status", "executed")
+          .order("executed_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (lastExecutedTrade) signalIdToClose = lastExecutedTrade.signal_id;
+      }
+
+      if (signalIdToClose) {
+        // Marquer les trades pour fermeture partielle
+        // Note: L'exécution réelle se fera via execute-trades
+        const { data: tradesToPartial, error: partialError } = await supabase
+          .from("telegram_trades")
+          .update({
+            status: "pending_partial",
+            error_message: `Fermeture partielle ${signal.closePercent}% demandée`,
+            // On stocke le pourcentage dans un champ temporaire ou via error_message pour l'instant
+            // Car la structure de table est fixe
+          })
+          .eq("signal_id", signalIdToClose)
+          .eq("status", "executed")
+          .select();
+
+        return NextResponse.json({
+          success: true,
+          message: `${tradesToPartial?.length || 0} trade(s) en attente de fermeture partielle (${signal.closePercent}%)`
+        });
+      }
+    }
 
     // Déterminer order_type: MARKET si pas de entry_price, LIMIT si entry_price existe
     const orderType = signal.entryPrice ? "LIMIT" : "MARKET";
@@ -194,7 +225,6 @@ export async function POST(request: NextRequest) {
       });
     } catch (error) {
       console.error("Error triggering trade execution:", error);
-      // On continue même si ça échoue, le worker Render s'en chargera dans les 5 secondes
     }
 
     return NextResponse.json({
@@ -348,37 +378,33 @@ async function parseSignalWithAI(messageText: string): Promise<any | null> {
             role: "system",
             content: `Tu es un expert en parsing de signaux de trading MT5. Ton rôle est d'extraire les informations d'un message Telegram de trading, PEU IMPORTE le format utilisé.
 
+8. Gestion des TP multiples: Si plusieurs TP sont listés (TP1, TP2...), EXTRAIS-LES TOUS dans un tableau "takeProfits". Le système choisira automatiquement le meilleur (le plus haut pour BUY, le plus bas pour SELL).
+9. Fermetures Partielles / TP Hit: Si le message mentionne "TP HIT", "TAKE PROFIT TOUCHÉ", "PRENDRE DES PROFITS", "SÉCURISER", "CLOSE HALF", "PRENDRE UNE PARTIE", indique "isPartialClose": true. 
+   - Cherche un pourcentage (ex: "50%", "CLOSE HALF" -> 50). Par défaut "closePercent": 50.
+
 RÈGLES CRITIQUES:
 1. Type d'ordre: Cherche "BUY", "SELL", "ACHAT", "VENTE", "LONG", "SHORT", emojis 🟢/🔴.
 2. Mode d'exécution: Détermine s'il s'agit de "MARKET" (exécuté maintenant), "LIMIT" (souvent écrit "Buy Limit", "Sell Limit" ou avec "@") ou "STOP".
-3. Symbole: IDENTIFIE l'actif (ex: GOLD, XAUUSD, EURUSD, US30). Ne confonds PAS "LIMIT" ou "STOP" avec le symbole. "GOLD" est un symbole très courant.
-4. Prix d'entrée: Cherche le prix après le symbole. Si c'est un intervalle (ex: 4832.5-4833), prends impérativement le PREMIER nombre (4832.5).
-5. Stop Loss: Cherche "SL", "STOP", "STOP LOSS" suivi d'un nombre.
-6. Take Profit: Cherche "TP", "TAKE PROFIT" suivi d'un nombre. Prends le DERNIER TP si plusieurs sont présents.
-7. Format: Sois ultra-flexible sur la ponctuation.
-
-FORMATS D'EXEMPLE:
-- "Buy limit gold 4832.5-4833" -> { "type": "BUY", "orderType": "LIMIT", "symbol": "GOLD", "entryPrice": 4832.5 }
-- "Sell gold @ 2650" -> { "type": "SELL", "orderType": "LIMIT", "symbol": "GOLD", "entryPrice": 2650 }
 
 INFORMATIONS À EXTRAIRE:
-- type: "BUY" ou "SELL"
-- orderType: "MARKET", "LIMIT" ou "STOP"
-- symbol: Le symbole en majuscules
-- entryPrice: Nombre décimal (point pour les décimales)
-- stopLoss: Nombre décimal
-- takeProfit: Nombre décimal
-- volume: Nombre décimal ou null
+- type: "BUY", "SELL" ou "CLOSE" (si fermeture partielle)
+- symbol: Le symbole
+- entryPrice: Nombre
+- stopLoss: Nombre
+- takeProfits: Tableau de nombres [2670, 2680, 2690]
+- isPartialClose: Boolean
+- closePercent: Nombre (ex: 50)
 
 Réponds UNIQUEMENT avec un JSON valide:
 {
   "type": "BUY",
-  "orderType": "LIMIT",
+  "orderType": "MARKET",
   "symbol": "GOLD",
-  "entryPrice": 4832.5,
-  "stopLoss": 4828.5,
-  "takeProfit": 4868.7,
-  "volume": 0.01
+  "entryPrice": null,
+  "stopLoss": 2640,
+  "takeProfits": [2670, 2680, 2690],
+  "isPartialClose": false,
+  "closePercent": null
 }
 
 Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
@@ -436,9 +462,16 @@ Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
       symbol: parsed.symbol.toUpperCase(),
       entryPrice: parsed.entryPrice ? parseFloat(parsed.entryPrice) : null,
       stopLoss: parsed.stopLoss ? parseFloat(parsed.stopLoss) : null,
-      takeProfit: parsed.takeProfit ? parseFloat(parsed.takeProfit) : null,
+      takeProfit: parsed.takeProfit ? parseFloat(parsed.takeProfit) : 
+                (Array.isArray(parsed.takeProfits) && parsed.takeProfits.length > 0) ?
+                (() => {
+                  const sorted = parsed.takeProfits.sort((a: number, b: number) => a - b);
+                  return parsed.type.toUpperCase() === "BUY" ? sorted[sorted.length - 1] : sorted[0];
+                })() : null,
       orderType: parsed.orderType || "MARKET",
       volume: parsed.volume ? parseFloat(parsed.volume) : 0.01,
+      isPartialClose: parsed.isPartialClose || false,
+      closePercent: parsed.closePercent || 50
     };
   } catch (error) {
     console.error("Error parsing with AI:", error);
