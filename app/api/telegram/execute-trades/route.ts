@@ -127,6 +127,9 @@ export async function POST(request: NextRequest) {
         console.log(`📤 MARKET order: ${trade.signal_type} ${trade.symbol}`);
       }
 
+      if (trade.stop_loss) {
+        order.stopLoss = parseFloat(trade.stop_loss.toString());
+      }
       if (trade.take_profit) {
         order.takeProfit = parseFloat(trade.take_profit.toString());
       }
