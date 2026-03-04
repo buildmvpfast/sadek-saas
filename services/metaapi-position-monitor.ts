@@ -185,8 +185,24 @@ export class MetaApiPositionMonitor {
         trading_settings(
           position_sizing_type,
           gold_lot_size,
-          sol_lot_size,
           btc_lot_size,
+          eth_lot_size,
+          sol_lot_size,
+          us30_lot_size,
+          nas100_lot_size,
+          ger40_lot_size,
+          uk100_lot_size,
+          spx500_lot_size,
+          eurusd_lot_size,
+          gbpusd_lot_size,
+          usdjpy_lot_size,
+          usdchf_lot_size,
+          usdcad_lot_size,
+          audusd_lot_size,
+          nzdusd_lot_size,
+          eurgbp_lot_size,
+          eurjpy_lot_size,
+          gbpjpy_lot_size,
           position_percentage,
           max_open_positions
         )
@@ -254,14 +270,29 @@ export class MetaApiPositionMonitor {
     let userVolume = 0.01 // Défaut
 
     if (settings && settings.position_sizing_type === 'lot') {
-      // Utiliser les lots fixes selon l'instrument
-      if (standardSymbol === 'GOLD') {
-        userVolume = parseFloat(settings.gold_lot_size) || 0.01
-      } else if (standardSymbol === 'SOL30') {
-        userVolume = parseFloat(settings.sol_lot_size) || 0.01
-      } else if (standardSymbol === 'BTC') {
-        userVolume = parseFloat(settings.btc_lot_size) || 0.01
+      const lotMap: Record<string, string> = {
+        GOLD: 'gold_lot_size',
+        BTC: 'btc_lot_size',
+        ETH: 'eth_lot_size',
+        SOL30: 'sol_lot_size',
+        US30: 'us30_lot_size',
+        NAS100: 'nas100_lot_size',
+        GER40: 'ger40_lot_size',
+        UK100: 'uk100_lot_size',
+        SPX500: 'spx500_lot_size',
+        EURUSD: 'eurusd_lot_size',
+        GBPUSD: 'gbpusd_lot_size',
+        USDJPY: 'usdjpy_lot_size',
+        USDCHF: 'usdchf_lot_size',
+        USDCAD: 'usdcad_lot_size',
+        AUDUSD: 'audusd_lot_size',
+        NZDUSD: 'nzdusd_lot_size',
+        EURGBP: 'eurgbp_lot_size',
+        EURJPY: 'eurjpy_lot_size',
+        GBPJPY: 'gbpjpy_lot_size',
       }
+      const key = lotMap[standardSymbol]
+      userVolume = key ? parseFloat(settings[key]) || 0.01 : 0.01
     } else if (settings && settings.position_sizing_type === 'percentage') {
       // Calculer selon le pourcentage
       // TODO: récupérer le capital du compte pour calculer

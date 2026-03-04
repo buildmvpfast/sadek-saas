@@ -8,24 +8,90 @@ import Navbar from '@/components/Navbar'
 type TradingSettings = {
   id?: string
   position_sizing_type: 'lot' | 'percentage'
+  // Métaux
   gold_lot_size: number
-  sol_lot_size: number
+  // Crypto
   btc_lot_size: number
+  eth_lot_size: number
+  sol_lot_size: number
+  // Indices
   us30_lot_size: number
+  nas100_lot_size: number
+  ger40_lot_size: number
+  uk100_lot_size: number
+  spx500_lot_size: number
+  // Forex majeurs
+  eurusd_lot_size: number
+  gbpusd_lot_size: number
+  usdjpy_lot_size: number
+  usdchf_lot_size: number
+  usdcad_lot_size: number
+  audusd_lot_size: number
+  nzdusd_lot_size: number
+  // Forex croisés
+  eurgbp_lot_size: number
+  eurjpy_lot_size: number
+  gbpjpy_lot_size: number
+  // Global
   position_percentage: number
   max_open_positions: number
 }
 
+const DEFAULT_SETTINGS: TradingSettings = {
+  position_sizing_type: 'lot',
+  gold_lot_size: 0.01,
+  btc_lot_size: 0.01,
+  eth_lot_size: 0.01,
+  sol_lot_size: 0.01,
+  us30_lot_size: 0.01,
+  nas100_lot_size: 0.01,
+  ger40_lot_size: 0.01,
+  uk100_lot_size: 0.01,
+  spx500_lot_size: 0.01,
+  eurusd_lot_size: 0.01,
+  gbpusd_lot_size: 0.01,
+  usdjpy_lot_size: 0.01,
+  usdchf_lot_size: 0.01,
+  usdcad_lot_size: 0.01,
+  audusd_lot_size: 0.01,
+  nzdusd_lot_size: 0.01,
+  eurgbp_lot_size: 0.01,
+  eurjpy_lot_size: 0.01,
+  gbpjpy_lot_size: 0.01,
+  position_percentage: 1.0,
+  max_open_positions: 10,
+}
+
+type LotInputProps = {
+  label: string
+  emoji: string
+  field: keyof TradingSettings
+  settings: TradingSettings
+  onChange: (field: keyof TradingSettings, value: number) => void
+}
+
+function LotInput({ label, emoji, field, settings, onChange }: LotInputProps) {
+  return (
+    <div>
+      <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
+        {emoji} {label}
+      </label>
+      <input
+        type="number"
+        step="0.01"
+        min="0.01"
+        max="100"
+        className="input"
+        value={settings[field] as number}
+        onChange={(e) => onChange(field, parseFloat(e.target.value) || 0.01)}
+        required
+      />
+    </div>
+  )
+}
+
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<TradingSettings>({
-    position_sizing_type: 'lot',
-    gold_lot_size: 0.01,
-    sol_lot_size: 0.01,
-    btc_lot_size: 0.01,
-    us30_lot_size: 0.01,
-    position_percentage: 1.0,
-    max_open_positions: 10,
-  })
+  const [settings, setSettings] = useState<TradingSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
@@ -58,13 +124,32 @@ export default function SettingsPage() {
         id: data.id,
         position_sizing_type: data.position_sizing_type,
         gold_lot_size: parseFloat(data.gold_lot_size) || 0.01,
-        sol_lot_size: parseFloat(data.sol_lot_size) || 0.01,
         btc_lot_size: parseFloat(data.btc_lot_size) || 0.01,
+        eth_lot_size: parseFloat(data.eth_lot_size) || 0.01,
+        sol_lot_size: parseFloat(data.sol_lot_size) || 0.01,
         us30_lot_size: parseFloat(data.us30_lot_size) || 0.01,
+        nas100_lot_size: parseFloat(data.nas100_lot_size) || 0.01,
+        ger40_lot_size: parseFloat(data.ger40_lot_size) || 0.01,
+        uk100_lot_size: parseFloat(data.uk100_lot_size) || 0.01,
+        spx500_lot_size: parseFloat(data.spx500_lot_size) || 0.01,
+        eurusd_lot_size: parseFloat(data.eurusd_lot_size) || 0.01,
+        gbpusd_lot_size: parseFloat(data.gbpusd_lot_size) || 0.01,
+        usdjpy_lot_size: parseFloat(data.usdjpy_lot_size) || 0.01,
+        usdchf_lot_size: parseFloat(data.usdchf_lot_size) || 0.01,
+        usdcad_lot_size: parseFloat(data.usdcad_lot_size) || 0.01,
+        audusd_lot_size: parseFloat(data.audusd_lot_size) || 0.01,
+        nzdusd_lot_size: parseFloat(data.nzdusd_lot_size) || 0.01,
+        eurgbp_lot_size: parseFloat(data.eurgbp_lot_size) || 0.01,
+        eurjpy_lot_size: parseFloat(data.eurjpy_lot_size) || 0.01,
+        gbpjpy_lot_size: parseFloat(data.gbpjpy_lot_size) || 0.01,
         position_percentage: parseFloat(data.position_percentage) || 1.0,
         max_open_positions: data.max_open_positions || 10,
       })
     }
+  }
+
+  const handleChange = (field: keyof TradingSettings, value: number) => {
+    setSettings((prev) => ({ ...prev, [field]: value }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -87,15 +172,29 @@ export default function SettingsPage() {
         user_id: session.user.id,
         position_sizing_type: settings.position_sizing_type,
         gold_lot_size: settings.gold_lot_size,
-        sol_lot_size: settings.sol_lot_size,
         btc_lot_size: settings.btc_lot_size,
+        eth_lot_size: settings.eth_lot_size,
+        sol_lot_size: settings.sol_lot_size,
         us30_lot_size: settings.us30_lot_size,
+        nas100_lot_size: settings.nas100_lot_size,
+        ger40_lot_size: settings.ger40_lot_size,
+        uk100_lot_size: settings.uk100_lot_size,
+        spx500_lot_size: settings.spx500_lot_size,
+        eurusd_lot_size: settings.eurusd_lot_size,
+        gbpusd_lot_size: settings.gbpusd_lot_size,
+        usdjpy_lot_size: settings.usdjpy_lot_size,
+        usdchf_lot_size: settings.usdchf_lot_size,
+        usdcad_lot_size: settings.usdcad_lot_size,
+        audusd_lot_size: settings.audusd_lot_size,
+        nzdusd_lot_size: settings.nzdusd_lot_size,
+        eurgbp_lot_size: settings.eurgbp_lot_size,
+        eurjpy_lot_size: settings.eurjpy_lot_size,
+        gbpjpy_lot_size: settings.gbpjpy_lot_size,
         position_percentage: settings.position_percentage,
         max_open_positions: settings.max_open_positions,
       }
 
       if (settings.id) {
-        // Update existing
         const { error: updateError } = await supabase
           .from('trading_settings')
           .update(dataToSave)
@@ -103,7 +202,6 @@ export default function SettingsPage() {
 
         if (updateError) throw updateError
       } else {
-        // Insert new
         const { error: insertError } = await supabase
           .from('trading_settings')
           .insert(dataToSave)
@@ -114,7 +212,7 @@ export default function SettingsPage() {
       setSuccess('✅ Paramètres enregistrés avec succès!')
       fetchSettings()
     } catch (err: any) {
-      setError(err.message || 'Erreur lors de l\'enregistrement')
+      setError(err.message || "Erreur lors de l'enregistrement")
     } finally {
       setLoading(false)
     }
@@ -147,178 +245,129 @@ export default function SettingsPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Type de position */}
           <div className="card-white">
             <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>
               Type de Position
             </h2>
 
             <div className="space-y-4">
-              <label className="flex items-center space-x-3 cursor-pointer p-4 border-2 rounded-2xl transition-all hover:shadow-md"
-                style={{
-                  borderColor: settings.position_sizing_type === 'lot' ? '#9b30a8' : '#e5d0e8',
-                  backgroundColor: settings.position_sizing_type === 'lot' ? '#f5e8f7' : 'white'
-                }}
-              >
-                <input
-                  type="radio"
-                  name="position_sizing_type"
-                  value="lot"
-                  checked={settings.position_sizing_type === 'lot'}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      position_sizing_type: e.target.value as 'lot',
-                    })
-                  }
-                  className="w-5 h-5"
-                />
-                <div className="flex-1">
-                  <p className="font-black text-lg" style={{ color: '#9b30a8' }}>
-                    📊 Lots Fixes
-                  </p>
-                  <p className="text-sm opacity-75" style={{ color: '#9b30a8' }}>
-                    Choisissez un nombre de lots spécifique pour chaque instrument
-                  </p>
-                </div>
-              </label>
-
-              <label className="flex items-center space-x-3 cursor-pointer p-4 border-2 rounded-2xl transition-all hover:shadow-md"
-                style={{
-                  borderColor: settings.position_sizing_type === 'percentage' ? '#9b30a8' : '#e5d0e8',
-                  backgroundColor: settings.position_sizing_type === 'percentage' ? '#f5e8f7' : 'white'
-                }}
-              >
-                <input
-                  type="radio"
-                  name="position_sizing_type"
-                  value="percentage"
-                  checked={settings.position_sizing_type === 'percentage'}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      position_sizing_type: e.target.value as 'percentage',
-                    })
-                  }
-                  className="w-5 h-5"
-                />
-                <div className="flex-1">
-                  <p className="font-black text-lg" style={{ color: '#9b30a8' }}>
-                    📈 Pourcentage du Capital
-                  </p>
-                  <p className="text-sm opacity-75" style={{ color: '#9b30a8' }}>
-                    Utilisez un % de votre capital par position (recommandé)
-                  </p>
-                </div>
-              </label>
+              {(['lot', 'percentage'] as const).map((type) => (
+                <label
+                  key={type}
+                  className="flex items-center space-x-3 cursor-pointer p-4 border-2 rounded-2xl transition-all hover:shadow-md"
+                  style={{
+                    borderColor: settings.position_sizing_type === type ? '#9b30a8' : '#e5d0e8',
+                    backgroundColor:
+                      settings.position_sizing_type === type ? '#f5e8f7' : 'white',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="position_sizing_type"
+                    value={type}
+                    checked={settings.position_sizing_type === type}
+                    onChange={() =>
+                      setSettings({ ...settings, position_sizing_type: type })
+                    }
+                    className="w-5 h-5"
+                  />
+                  <div className="flex-1">
+                    {type === 'lot' ? (
+                      <>
+                        <p className="font-black text-lg" style={{ color: '#9b30a8' }}>
+                          📊 Lots Fixes
+                        </p>
+                        <p className="text-sm opacity-75" style={{ color: '#9b30a8' }}>
+                          Choisissez un nombre de lots spécifique pour chaque instrument
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-black text-lg" style={{ color: '#9b30a8' }}>
+                          📈 Pourcentage du Capital
+                        </p>
+                        <p className="text-sm opacity-75" style={{ color: '#9b30a8' }}>
+                          Utilisez un % de votre capital par position (recommandé)
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </label>
+              ))}
             </div>
           </div>
 
+          {/* Lots fixes par instrument */}
           {settings.position_sizing_type === 'lot' && (
-            <div className="card-white">
-              <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>
-                Configuration des Lots par Instrument
-              </h2>
-
-              <div className="space-y-6">
-                <div>
-                  <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
-                    🪙 GOLD (XAU/USD)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    max="100"
-                    className="input"
-                    value={settings.gold_lot_size}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        gold_lot_size: parseFloat(e.target.value) || 0.01,
-                      })
-                    }
-                    required
-                  />
-                  <p className="text-sm mt-2 opacity-75" style={{ color: '#9b30a8' }}>
-                    Nombre de lots pour les trades sur l'or (ex: 0.01, 0.1, 1.0)
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
-                    ⚡ SOL30 (Solana)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    max="100"
-                    className="input"
-                    value={settings.sol_lot_size}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        sol_lot_size: parseFloat(e.target.value) || 0.01,
-                      })
-                    }
-                    required
-                  />
-                  <p className="text-sm mt-2 opacity-75" style={{ color: '#9b30a8' }}>
-                    Nombre de lots pour les trades sur Solana
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
-                    ₿ BTC (Bitcoin)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    max="100"
-                    className="input"
-                    value={settings.btc_lot_size}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        btc_lot_size: parseFloat(e.target.value) || 0.01,
-                      })
-                    }
-                    required
-                  />
-                  <p className="text-sm mt-2 opacity-75" style={{ color: '#9b30a8' }}>
-                    Nombre de lots pour les trades sur Bitcoin
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
-                    📉 US30 (Dow Jones)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    max="100"
-                    className="input"
-                    value={settings.us30_lot_size}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        us30_lot_size: parseFloat(e.target.value) || 0.01,
-                      })
-                    }
-                    required
-                  />
-                  <p className="text-sm mt-2 opacity-75" style={{ color: '#9b30a8' }}>
-                    Nombre de lots pour les trades sur l'US30
-                  </p>
+            <>
+              {/* Métaux */}
+              <div className="card-white">
+                <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>
+                  🥇 Métaux
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <LotInput label="GOLD (XAU/USD)" emoji="🪙" field="gold_lot_size" settings={settings} onChange={handleChange} />
                 </div>
               </div>
-            </div>
+
+              {/* Crypto */}
+              <div className="card-white">
+                <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>
+                  🔗 Crypto
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <LotInput label="BTC (Bitcoin)" emoji="₿" field="btc_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="ETH (Ethereum)" emoji="🔷" field="eth_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="SOL30 (Solana)" emoji="⚡" field="sol_lot_size" settings={settings} onChange={handleChange} />
+                </div>
+              </div>
+
+              {/* Indices */}
+              <div className="card-white">
+                <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>
+                  📉 Indices
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <LotInput label="US30 (Dow Jones)" emoji="🇺🇸" field="us30_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="NAS100 (Nasdaq)" emoji="💻" field="nas100_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="SPX500 (S&P 500)" emoji="📊" field="spx500_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="GER40 (DAX)" emoji="🇩🇪" field="ger40_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="UK100 (FTSE 100)" emoji="🇬🇧" field="uk100_lot_size" settings={settings} onChange={handleChange} />
+                </div>
+              </div>
+
+              {/* Forex Majeurs */}
+              <div className="card-white">
+                <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>
+                  💱 Forex — Paires Majeures
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <LotInput label="EUR/USD" emoji="🇪🇺" field="eurusd_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="GBP/USD" emoji="🇬🇧" field="gbpusd_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="USD/JPY" emoji="🇯🇵" field="usdjpy_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="USD/CHF" emoji="🇨🇭" field="usdchf_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="USD/CAD" emoji="🇨🇦" field="usdcad_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="AUD/USD" emoji="🇦🇺" field="audusd_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="NZD/USD" emoji="🇳🇿" field="nzdusd_lot_size" settings={settings} onChange={handleChange} />
+                </div>
+              </div>
+
+              {/* Forex Croisés */}
+              <div className="card-white">
+                <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>
+                  🔀 Forex — Paires Croisées
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <LotInput label="EUR/GBP" emoji="🇪🇺" field="eurgbp_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="EUR/JPY" emoji="🇯🇵" field="eurjpy_lot_size" settings={settings} onChange={handleChange} />
+                  <LotInput label="GBP/JPY" emoji="🇬🇧" field="gbpjpy_lot_size" settings={settings} onChange={handleChange} />
+                </div>
+              </div>
+            </>
           )}
 
+          {/* Pourcentage */}
           {settings.position_sizing_type === 'percentage' && (
             <div className="card-white">
               <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>
@@ -351,13 +400,14 @@ export default function SettingsPage() {
 
               <div className="bg-blue-50 border-2 border-blue-400 p-4 rounded-xl mt-4">
                 <p className="text-sm font-bold" style={{ color: '#9b30a8' }}>
-                  💡 <strong>Info:</strong> Le système calculera automatiquement le nombre de
-                  lots en fonction de votre capital disponible et du pourcentage choisi.
+                  💡 <strong>Info:</strong> Le système calculera automatiquement le nombre de lots
+                  en fonction de votre capital disponible et du pourcentage choisi.
                 </p>
               </div>
             </div>
           )}
 
+          {/* Autres */}
           <div className="card-white">
             <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>
               Autres Paramètres
@@ -403,11 +453,11 @@ export default function SettingsPage() {
           <div className="space-y-3 opacity-90" style={{ color: '#9b30a8' }}>
             <p className="font-semibold">
               <strong>Lots Fixes:</strong> Vous choisissez exactement combien de lots trader pour
-              chaque instrument (GOLD, SOL, BTC). Simple et prévisible.
+              chaque instrument. Simple et prévisible.
             </p>
             <p className="font-semibold">
-              <strong>Pourcentage:</strong> Le système calcule automatiquement la taille de
-              position selon votre capital. Plus flexible et adapté à la croissance.
+              <strong>Pourcentage:</strong> Le système calcule automatiquement la taille de position
+              selon votre capital. Plus flexible et adapté à la croissance.
             </p>
             <p className="font-semibold">
               <strong>Mapping Automatique:</strong> Les symboles sont automatiquement adaptés à
