@@ -6,14 +6,10 @@ const BROKERS_DATA = [
     name: "VT Markets",
     servers: [
       "VTMarkets-Live",
-      "VTMarkets-Live2",
-      "VTMarkets-Live3",
+      "VTMarkets-Live 2",
+      "VTMarkets-Live 3",
+      "VTMarkets-Live 4",
       "VTMarkets-Demo",
-      "VTMarkets-Demo2",
-      "VT Markets-Live",
-      "VT Markets-Live2",
-      "VT Markets-Live3",
-      "VT Markets-Demo",
     ],
   },
   {
