@@ -37,14 +37,28 @@ export async function POST(request: Request) {
 
     const data = await response.json()
 
+    console.log('MetaApi create account response:', response.status, JSON.stringify(data))
+
     if (!response.ok) {
       console.error('MetaApi error:', data)
       return NextResponse.json(
         {
           success: false,
           error: data.message || 'Failed to connect account to MetaApi',
+          details: data,
         },
         { status: response.status }
+      )
+    }
+
+    if (!data.id) {
+      console.error('MetaApi returned no account ID:', data)
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'MetaApi did not return an account ID. Response: ' + JSON.stringify(data),
+        },
+        { status: 500 }
       )
     }
 
