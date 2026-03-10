@@ -30,7 +30,7 @@ export async function POST(request: Request) {
           platform,
           magic: magic || 0,
           application: 'MetaApi',
-          region: 'new-york', // ou 'london', 'singapore'
+          region: 'london',
         }),
       }
     )

@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     // Use REST API directly — much faster than SDK streaming connection
     const response = await fetch(
-      `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${accountId}/positions`,
+      `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${accountId}/positions`,
       {
         headers: {
           'auth-token': token,
@@ -37,6 +37,23 @@ export async function GET(request: NextRequest) {
         },
       }
     )
+
+    // If london fails, try new-york as fallback
+    if (!response.ok && response.status === 404) {
+      const fallbackResponse = await fetch(
+        `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${accountId}/positions`,
+        {
+          headers: {
+            'auth-token': token,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (fallbackResponse.ok) {
+        const positions = await fallbackResponse.json()
+        return NextResponse.json({ success: true, positions: positions || [] })
+      }
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))

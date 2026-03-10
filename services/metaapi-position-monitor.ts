@@ -93,7 +93,7 @@ export class MetaApiPositionMonitor {
     try {
       // Appeler l'API MetaApi pour récupérer les positions
       const response = await fetch(
-        `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${account.metaapi_account_id}/positions`,
+        `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${account.metaapi_account_id}/positions`,
         {
           headers: {
             'auth-token': process.env.METAAPI_TOKEN!,
@@ -370,7 +370,7 @@ export class MetaApiPositionMonitor {
   ): Promise<{ success: boolean; positionId?: string; openPrice?: number; error?: string }> {
     try {
       const response = await fetch(
-        `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/trade`,
+        `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/trade`,
         {
           method: 'POST',
           headers: {
@@ -466,7 +466,7 @@ export class MetaApiPositionMonitor {
    */
   private async closePosition(metaApiAccountId: string, positionId: string) {
     const response = await fetch(
-      `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/positions/${positionId}/close`,
+      `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/positions/${positionId}/close`,
       {
         method: 'POST',
         headers: {
