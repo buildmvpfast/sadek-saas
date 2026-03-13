@@ -91,6 +91,16 @@ export async function POST(req: Request) {
 
       case "customer.subscription.updated": {
         const subscription = event.data.object as Stripe.Subscription;
+        const isActive =
+          subscription.status === "active" ||
+          subscription.status === "trialing";
+
+        // Fetch user_id BEFORE updating so we can act on it
+        const { data: subData } = await supabaseAdmin
+          .from("subscriptions")
+          .select("user_id")
+          .eq("stripe_subscription_id", subscription.id)
+          .single();
 
         const periodStart = subscription.current_period_start
           ? new Date(subscription.current_period_start * 1000)
@@ -117,31 +127,20 @@ export async function POST(req: Request) {
           );
         }
 
-        // If subscription is no longer active, close all open positions
-        if (
-          subscription.status !== "active" &&
-          subscription.status !== "trialing"
-        ) {
-          const { data: subData } = await supabaseAdmin
-            .from("subscriptions")
-            .select("user_id")
-            .eq("stripe_subscription_id", subscription.id)
-            .single();
-
-          if (subData) {
-            // Trigger position closing (implement in MT5 service)
-            try {
-              await fetch(
-                `${process.env.NEXT_PUBLIC_APP_URL}/api/close-user-positions`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ user_id: subData.user_id }),
-                }
-              );
-            } catch (err) {
-              console.error("Error closing positions:", err);
-            }
+        // Close all open positions if subscription became inactive
+        if (!isActive && subData?.user_id) {
+          console.log(`🔴 Abonnement inactif pour user ${subData.user_id}, fermeture des positions...`);
+          try {
+            await fetch(
+              `${process.env.NEXT_PUBLIC_APP_URL}/api/close-user-positions`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_id: subData.user_id }),
+              }
+            );
+          } catch (err) {
+            console.error("Error closing positions:", err);
           }
         }
 
@@ -150,6 +149,13 @@ export async function POST(req: Request) {
 
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
+
+        // Fetch user_id before updating
+        const { data: subData } = await supabaseAdmin
+          .from("subscriptions")
+          .select("user_id")
+          .eq("stripe_subscription_id", subscription.id)
+          .single();
 
         const { error } = await supabaseAdmin
           .from("subscriptions")
@@ -163,6 +169,23 @@ export async function POST(req: Request) {
           console.error("Error canceling subscription:", error);
         } else {
           console.log(`✅ Subscription canceled: ${subscription.id}`);
+        }
+
+        // Close all open positions
+        if (subData?.user_id) {
+          console.log(`🔴 Abonnement annulé pour user ${subData.user_id}, fermeture des positions...`);
+          try {
+            await fetch(
+              `${process.env.NEXT_PUBLIC_APP_URL}/api/close-user-positions`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_id: subData.user_id }),
+              }
+            );
+          } catch (err) {
+            console.error("Error closing positions:", err);
+          }
         }
 
         break;

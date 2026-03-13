@@ -254,6 +254,23 @@ export class MetaApiPositionMonitor {
     user: any,
     userAccount: any
   ) {
+    // Double-check subscription is still active before copying
+    const { data: sub } = await supabase
+      .from('subscriptions')
+      .select('status')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!sub || (sub.status !== 'active' && sub.status !== 'trialing')) {
+      console.log(`⛔ User ${user.id} abonnement inactif (${sub?.status}), copie ignorée`)
+      return
+    }
+
+    // Also verify account is still active
+    if (!userAccount.is_active) {
+      console.log(`⛔ Compte ${userAccount.account_number} inactif, copie ignorée`)
+      return
+    }
     // Mapper le symbole au broker de l'utilisateur
     const userSymbol = await this.getBrokerSymbol(
       userAccount.broker_name,
