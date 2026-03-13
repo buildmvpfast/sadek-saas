@@ -670,7 +670,7 @@ async function executeTradesForSignal(signalId: string) {
       "user_id",
       subscriptions.map((s: any) => s.user_id)
     )
-    .eq("status", "active");
+    .in("status", ["active", "trialing"]);
 
   const activeUserIds = new Set(
     activeSubscriptions?.map((s: any) => s.user_id) || []
@@ -722,16 +722,29 @@ async function executeTradesForSignal(signalId: string) {
 
     if (tradingSettings) {
       if (tradingSettings.position_sizing_type === "lot") {
-        // Utiliser les lots fixes selon l'instrument
-        if (normalizedSymbol === "GOLD") {
-          userVolume = parseFloat(tradingSettings.gold_lot_size) || 0.01;
-        } else if (normalizedSymbol === "SOL30") {
-          userVolume = parseFloat(tradingSettings.sol_lot_size) || 0.01;
-        } else if (normalizedSymbol === "BTC") {
-          userVolume = parseFloat(tradingSettings.btc_lot_size) || 0.01;
-        } else if (normalizedSymbol === "US30") {
-          userVolume = parseFloat(tradingSettings.us30_lot_size) || 0.01;
+        const lotMap: Record<string, string> = {
+          GOLD: 'gold_lot_size',
+          BTC: 'btc_lot_size',
+          ETH: 'eth_lot_size',
+          SOL30: 'sol_lot_size',
+          US30: 'us30_lot_size',
+          NAS100: 'nas100_lot_size',
+          GER40: 'ger40_lot_size',
+          UK100: 'uk100_lot_size',
+          SPX500: 'spx500_lot_size',
+          EURUSD: 'eurusd_lot_size',
+          GBPUSD: 'gbpusd_lot_size',
+          USDJPY: 'usdjpy_lot_size',
+          USDCHF: 'usdchf_lot_size',
+          USDCAD: 'usdcad_lot_size',
+          AUDUSD: 'audusd_lot_size',
+          NZDUSD: 'nzdusd_lot_size',
+          EURGBP: 'eurgbp_lot_size',
+          EURJPY: 'eurjpy_lot_size',
+          GBPJPY: 'gbpjpy_lot_size',
         }
+        const key = lotMap[normalizedSymbol]
+        userVolume = key ? parseFloat(tradingSettings[key]) || 0.01 : 0.01
       } else if (tradingSettings.position_sizing_type === "percentage") {
         // Pourcentage: utiliser le pourcentage du signal comme base
         // TODO: améliorer avec le capital réel du compte

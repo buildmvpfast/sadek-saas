@@ -15,7 +15,6 @@ const supabase = createClient(
 
 async function executePendingTrades() {
   // Bypassing SSL certificate error for MetaAPI (expired certificate)
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
   if (!process.env.METAAPI_TOKEN) {
     console.error("❌ METAAPI_TOKEN non configuré");
