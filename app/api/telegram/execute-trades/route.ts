@@ -194,12 +194,26 @@ export async function POST(request: NextRequest) {
         }
 
         // Mettre à jour le trade avec succès
+        const rawPositionId =
+          (data as any).positionId ||
+          (data as any).numericPositionId ||
+          (data as any).position_id ||
+          (data as any).numericOrderId ||
+          (data as any).orderId ||
+          null;
+
+        const positionId =
+          rawPositionId !== null && rawPositionId !== undefined
+            ? parseInt(rawPositionId.toString(), 10)
+            : null;
+
         await supabase
           .from("telegram_trades")
           .update({
             status: isPartialClosure ? "partially_closed" : "executed",
             executed_at: new Date().toISOString(),
             entry_price: data.price || trade.entry_price,
+            position_id: positionId,
             // Sauvegarder l'ID de position/ordre pour les futures fermetures
             error_message: data.orderId || data.numericOrderId || null 
           })

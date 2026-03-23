@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS public.telegram_trades (
   entry_price DECIMAL(15,5),
   stop_loss DECIMAL(15,5),
   take_profit DECIMAL(15,5),
+  position_id BIGINT,
   status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'executed', 'failed'
   executed_at TIMESTAMP WITH TIME ZONE,
   error_message TEXT,
