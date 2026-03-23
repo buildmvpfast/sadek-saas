@@ -12,9 +12,6 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // TEMPORARY FIX: MetaAPI SSL certificate has expired
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
     if (!process.env.METAAPI_TOKEN) {
       return NextResponse.json(
         { error: "METAAPI_TOKEN non configuré" },
@@ -62,9 +59,6 @@ export async function POST(request: NextRequest) {
 
     console.log(`📊 ${pendingTrades.length} trade(s) en attente trouvé(s)`);
     
-    // TEMPORARY FIX: MetaAPI SSL certificate has expired
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
     let executed = 0;
     let failed = 0;
 

@@ -200,6 +200,8 @@ export async function POST(request: NextRequest) {
         entry_price: signal.entryPrice, // Peut être null pour market orders
         stop_loss: signal.stopLoss,
         take_profit: signal.takeProfit,
+        // Store all TP values so we can create one trade per TP later
+        all_tp: (signal.takeProfits || []).length > 0 ? signal.takeProfits : null,
         volume: signal.volume || 0.01,
         message_text: messageText,
         order_type: signal.orderType || orderType, // MARKET, LIMIT, ou STOP
@@ -281,6 +283,7 @@ async function parseSignal(messageText: string) {
     if (match) {
       // Détecter l'ordre des groupes selon le pattern
       let type, symbol, entryPrice, stopLoss, takeProfit;
+      let takeProfits: number[] = [];
 
       // Normaliser le type (BUY/SELL/ACHAT/LONG → BUY, VENTE/SHORT → SELL)
       const normalizeType = (t: string) => {
@@ -312,14 +315,17 @@ async function parseSignal(messageText: string) {
       if (pattern.source.includes("TP\\d")) {
         type = normalizeType(match[1]);
         symbol = cleanSymbol(match[2]);
-        entryPrice = match[3] ? parseFloat(match[3]) : null;
-        stopLoss = match[4] ? parseFloat(match[4]) : null;
-        // Prendre le dernier TP (match[5] ou match[6] selon le pattern)
-        takeProfit = match[5]
-          ? parseFloat(match[5])
-          : match[4]
-            ? parseFloat(match[4])
-            : null;
+        // This regex pattern captures only TP1/TP2/TP3 (no entry / no SL)
+        entryPrice = null;
+        stopLoss = null;
+        takeProfits = [match[3], match[4], match[5]]
+          .map((v) => (v ? parseFloat(v) : null))
+          .filter((v) => typeof v === "number" && !Number.isNaN(v)) as number[];
+
+        // Best TP kept for compatibility with existing columns/logic:
+        const sorted = [...takeProfits].sort((a, b) => a - b);
+        takeProfit =
+          sorted.length > 0 ? (type === "BUY" ? sorted[sorted.length - 1] : sorted[0]) : null;
       } else if (
         match[1].match(/^(BUY|SELL|ACHAT|VENTE|LONG|SHORT|🟢|🔴|✅|❌)$/i)
       ) {
@@ -329,6 +335,7 @@ async function parseSignal(messageText: string) {
         entryPrice = match[3] ? parseFloat(match[3]) : null;
         stopLoss = match[4] ? parseFloat(match[4]) : null;
         takeProfit = match[5] ? parseFloat(match[5]) : null;
+        takeProfits = takeProfit ? [takeProfit] : [];
       } else {
         // Format: Symbole en premier
         symbol = cleanSymbol(match[1]);
@@ -336,6 +343,7 @@ async function parseSignal(messageText: string) {
         entryPrice = match[3] ? parseFloat(match[3]) : null;
         stopLoss = match[4] ? parseFloat(match[4]) : null;
         takeProfit = match[5] ? parseFloat(match[5]) : null;
+        takeProfits = takeProfit ? [takeProfit] : [];
       }
 
       // Validation minimale: type et symbol requis
@@ -346,6 +354,7 @@ async function parseSignal(messageText: string) {
           entryPrice: entryPrice || null,
           stopLoss: stopLoss || null,
           takeProfit: takeProfit || null,
+          takeProfits: takeProfits || [],
           volume: 0.01, // Volume par défaut
         };
       }
@@ -457,21 +466,38 @@ Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
       return null;
     }
 
+    // Normalize take profits:
+    // - If AI returned `takeProfits` use that array
+    // - If AI returned only `takeProfit`, convert it to an array of length 1
+    const takeProfitsRaw = Array.isArray(parsed.takeProfits)
+      ? parsed.takeProfits
+      : parsed.takeProfit
+        ? [parsed.takeProfit]
+        : [];
+
+    const takeProfits = (takeProfitsRaw || [])
+      .map((v: any) => (v !== null && v !== undefined ? parseFloat(v) : null))
+      .filter((v: number | null): v is number => typeof v === "number" && !Number.isNaN(v));
+
+    const sorted = [...takeProfits].sort((a: number, b: number) => a - b);
+    const takeProfit =
+      sorted.length > 0
+        ? parsed.type.toUpperCase() === "BUY"
+          ? sorted[sorted.length - 1]
+          : sorted[0]
+        : null;
+
     return {
       type: parsed.type.toUpperCase(),
       symbol: parsed.symbol.toUpperCase(),
       entryPrice: parsed.entryPrice ? parseFloat(parsed.entryPrice) : null,
       stopLoss: parsed.stopLoss ? parseFloat(parsed.stopLoss) : null,
-      takeProfit: parsed.takeProfit ? parseFloat(parsed.takeProfit) : 
-                (Array.isArray(parsed.takeProfits) && parsed.takeProfits.length > 0) ?
-                (() => {
-                  const sorted = parsed.takeProfits.sort((a: number, b: number) => a - b);
-                  return parsed.type.toUpperCase() === "BUY" ? sorted[sorted.length - 1] : sorted[0];
-                })() : null,
+      takeProfit,
+      takeProfits,
       orderType: parsed.orderType || "MARKET",
       volume: parsed.volume ? parseFloat(parsed.volume) : 0.01,
       isPartialClose: parsed.isPartialClose || false,
-      closePercent: parsed.closePercent || 50
+      closePercent: parsed.closePercent || 50,
     };
   } catch (error) {
     console.error("Error parsing with AI:", error);
@@ -638,7 +664,7 @@ async function executeTradesForSignal(signalId: string) {
   const { data: signal } = await supabase
     .from("telegram_signals")
     .select(
-      "id, channel_id, signal_type, symbol, entry_price, stop_loss, take_profit, volume, order_type"
+      "id, channel_id, signal_type, symbol, entry_price, stop_loss, take_profit, all_tp, volume, order_type"
     )
     .eq("id", signalId)
     .single();
@@ -678,6 +704,36 @@ async function executeTradesForSignal(signalId: string) {
 
   // Normaliser le symbole du signal (XAUUSD -> GOLD, etc.)
   const normalizedSymbol = normalizeSymbol(signal.symbol);
+
+  // TP multiple support:
+  // - If `all_tp` exists, use it as the TP list
+  // - Otherwise fallback to the legacy single `take_profit`
+  const rawAllTp = (signal as any).all_tp;
+  const takeProfits: number[] = (() => {
+    if (Array.isArray(rawAllTp)) {
+      return rawAllTp
+        .map((v) => (v !== null && v !== undefined ? parseFloat(v as any) : NaN))
+        .filter((v) => !Number.isNaN(v));
+    }
+    if (typeof rawAllTp === "string") {
+      try {
+        const parsed = JSON.parse(rawAllTp);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .map((v) => (v !== null && v !== undefined ? parseFloat(v) : NaN))
+            .filter((v) => !Number.isNaN(v));
+        }
+      } catch {
+        // ignore
+      }
+    }
+    const tp = signal.take_profit ? parseFloat(signal.take_profit as any) : NaN;
+    return !Number.isNaN(tp) ? [tp] : [];
+  })();
+
+  // For market orders without TP, we still create exactly one trade (take_profit = null)
+  const tpValues: Array<number | null> =
+    takeProfits.length > 0 ? takeProfits : [signal.take_profit ? (parseFloat(signal.take_profit as any) || null) : null];
 
   console.log(`✅ ${activeUserIds.size} utilisateur(s) avec abonnement actif`);
 
@@ -768,32 +824,74 @@ async function executeTradesForSignal(signalId: string) {
       `✅ Symbole mappé: ${signal.symbol} → ${normalizedSymbol} → ${brokerSymbol} pour ${mt5Account.broker_name}`
     );
 
-    // Créer l'entrée de trade avec les données du signal et les paramètres utilisateur
-    // Note: entry_price peut être null pour market orders
-    const { error } = await supabase.from("telegram_trades").insert({
-      user_id: subscription.user_id,
-      signal_id: signalId,
-      mt5_account_id: mt5Account.id,
-      symbol: brokerSymbol, // Symbole du broker (mappé automatiquement)
-      signal_type: signal.signal_type,
-      order_type:
-        signal.order_type || (signal.entry_price ? "LIMIT" : "MARKET"),
-      volume: userVolume, // Volume calculé selon les paramètres utilisateur
-      entry_price: signal.entry_price, // null pour market orders
-      stop_loss: signal.stop_loss,
-      take_profit: signal.take_profit,
-      status: "pending",
-    });
+    // One trade per TP:
+    // - If there are 3 TPs => 3 trades
+    // - If there is 1 TP => 1 trade
+    // - For market orders without TP => 1 trade with `take_profit = null`
+    const tpCount = tpValues.length;
+    const roundLotStep = (v: number, step = 0.01) =>
+      Math.round(v / step) * step;
 
-    if (error) {
-      console.error(
-        `❌ Erreur création trade pour user ${subscription.user_id}:`,
-        error
-      );
-    } else {
-      console.log(
-        `✅ Trade créé pour user ${subscription.user_id}: ${brokerSymbol} ${userVolume} lots (status: pending)`
-      );
+    for (let i = 0; i < tpValues.length; i++) {
+      const tpValue = tpValues[i];
+
+      // Split volume equally across TPs (simple + predictable)
+      let volumeForTp =
+        tpCount > 1 ? roundLotStep(userVolume / tpCount) : userVolume;
+
+      // Ensure volume doesn't collapse to < 0.01 after rounding
+      volumeForTp = Math.max(0.01, volumeForTp);
+
+      // If rounding caused drift, fix the last TP so the sum stays close to `userVolume`
+      if (tpCount > 1 && i === tpValues.length - 1) {
+        const assignedSoFar = roundLotStep(userVolume / tpCount) * (tpCount - 1);
+        volumeForTp = Math.max(0.01, roundLotStep(userVolume - assignedSoFar));
+      }
+
+      // Prevent duplicate trades for the same signal/user/account/TP
+      let existingQuery: any = supabase
+        .from("telegram_trades")
+        .select("id")
+        .eq("user_id", subscription.user_id)
+        .eq("signal_id", signalId)
+        .eq("mt5_account_id", mt5Account.id)
+        .in("status", ["pending", "pending_partial", "executed"]);
+
+      existingQuery = tpValue === null ? existingQuery.is("take_profit", null) : existingQuery.eq("take_profit", tpValue);
+
+      const { data: existingTrade } = await existingQuery.limit(1).maybeSingle();
+      if (existingTrade) {
+        console.log(
+          `⏭️ Trade déjà existant (user ${subscription.user_id}, TP ${tpValue ?? "null"})`
+        );
+        continue;
+      }
+
+      const { error } = await supabase.from("telegram_trades").insert({
+        user_id: subscription.user_id,
+        signal_id: signalId,
+        mt5_account_id: mt5Account.id,
+        symbol: brokerSymbol,
+        signal_type: signal.signal_type,
+        order_type:
+          signal.order_type || (signal.entry_price ? "LIMIT" : "MARKET"),
+        volume: volumeForTp,
+        entry_price: signal.entry_price,
+        stop_loss: signal.stop_loss,
+        take_profit: tpValue,
+        status: "pending",
+      });
+
+      if (error) {
+        console.error(
+          `❌ Erreur création trade pour user ${subscription.user_id} (TP ${tpValue ?? "null"}):`,
+          error
+        );
+      } else {
+        console.log(
+          `✅ Trade créé pour user ${subscription.user_id}: ${brokerSymbol} ${volumeForTp} lots (TP ${tpValue ?? "null"})`
+        );
+      }
     }
   }
 }
