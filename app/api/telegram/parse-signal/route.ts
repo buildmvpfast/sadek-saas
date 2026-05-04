@@ -3,18 +3,24 @@ import { createClient } from "@supabase/supabase-js";
 
 export async function POST(request: NextRequest) {
   try {
-    const { channelId, channelUsername, messageText, messageId, replyToMessageId } = await request.json();
+    const {
+      channelId,
+      channelUsername,
+      messageText,
+      messageId,
+      replyToMessageId,
+    } = await request.json();
 
     if ((!channelId && !channelUsername) || !messageText || !messageId) {
       return NextResponse.json(
         { error: "Paramètres manquants" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
     );
 
     // Trouver le canal avec un token actif
@@ -25,7 +31,7 @@ export async function POST(request: NextRequest) {
         id,
         username,
         telegram_bot_tokens!inner(bot_token, is_active)
-      `
+      `,
       )
       .eq("telegram_bot_tokens.is_active", true)
       .eq("is_active", true);
@@ -41,28 +47,34 @@ export async function POST(request: NextRequest) {
     if (!channel) {
       return NextResponse.json(
         { error: "Canal non trouvé ou sans token actif" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
     // Gérer les messages d'annulation
-    const isCancelCommand = /annuler|cancel|effacer|supprimer|delete/i.test(messageText);
-    
+    const isCancelCommand = /annuler|cancel|effacer|supprimer|delete/i.test(
+      messageText,
+    );
+
     if (isCancelCommand) {
-      console.log(`⚠️ Commande d'annulation détectée dans ${channel.username}: "${messageText}"`);
-      
+      console.log(
+        `⚠️ Commande d'annulation détectée dans ${channel.username}: "${messageText}"`,
+      );
+
       let signalIdToCancel = null;
 
       // Cas 1: Annulation par réponse à un message
       if (replyToMessageId) {
-        console.log(`🔍 Recherche du signal à annuler (replyToMessageId: ${replyToMessageId})`);
+        console.log(
+          `🔍 Recherche du signal à annuler (replyToMessageId: ${replyToMessageId})`,
+        );
         const { data: originalSignal } = await supabase
           .from("telegram_signals")
           .select("id")
           .eq("channel_id", channel.id)
           .eq("message_id", replyToMessageId)
           .maybeSingle();
-        
+
         if (originalSignal) {
           signalIdToCancel = originalSignal.id;
           console.log(`✅ Signal trouvé par reply_to: ${signalIdToCancel}`);
@@ -71,7 +83,9 @@ export async function POST(request: NextRequest) {
 
       // Cas 2: Annulation du dernier pending si pas de réponse ou signal non trouvé
       if (!signalIdToCancel) {
-        console.log(`🔍 Recherche du dernier signal du canal avec des trades en attente...`);
+        console.log(
+          `🔍 Recherche du dernier signal du canal avec des trades en attente...`,
+        );
         // On cherche le dernier signal du canal qui a au moins un trade 'pending'
         const { data: lastPendingTrade } = await supabase
           .from("telegram_trades")
@@ -84,7 +98,9 @@ export async function POST(request: NextRequest) {
 
         if (lastPendingTrade) {
           signalIdToCancel = lastPendingTrade.signal_id;
-          console.log(`✅ Dernier signal en attente du canal trouvé: ${signalIdToCancel}`);
+          console.log(
+            `✅ Dernier signal en attente du canal trouvé: ${signalIdToCancel}`,
+          );
         }
       }
 
@@ -94,7 +110,7 @@ export async function POST(request: NextRequest) {
           .from("telegram_trades")
           .update({
             status: "failed",
-            error_message: "Annulé par commande Telegram"
+            error_message: "Annulé par commande Telegram",
           })
           .eq("signal_id", signalIdToCancel)
           .eq("status", "pending")
@@ -102,21 +118,26 @@ export async function POST(request: NextRequest) {
 
         if (cancelError) {
           console.error("❌ Erreur lors de l'annulation:", cancelError);
-          return NextResponse.json({ error: "Erreur lors de l'annulation" }, { status: 500 });
+          return NextResponse.json(
+            { error: "Erreur lors de l'annulation" },
+            { status: 500 },
+          );
         }
 
-        console.log(`✅ ${cancelledTrades?.length || 0} trade(s) annulé(s) pour le signal ${signalIdToCancel}`);
-        
+        console.log(
+          `✅ ${cancelledTrades?.length || 0} trade(s) annulé(s) pour le signal ${signalIdToCancel}`,
+        );
+
         return NextResponse.json({
           success: true,
           message: `${cancelledTrades?.length || 0} trade(s) annulé(s) avec succès`,
-          cancelledCount: cancelledTrades?.length || 0
+          cancelledCount: cancelledTrades?.length || 0,
         });
       } else {
         console.log("❌ Aucun trade en attente trouvé à annuler");
         return NextResponse.json({
           success: true,
-          message: "Aucun trade en attente trouvé à annuler"
+          message: "Aucun trade en attente trouvé à annuler",
         });
       }
     }
@@ -127,18 +148,22 @@ export async function POST(request: NextRequest) {
       /\bBE\b/i.test(messageText) ||
       /break[-\s]?even/i.test(messageText) ||
       /move\s*sl\s*(to|=)\s*(be|break\s*even|break-even)/i.test(messageText) ||
-      /sl\s*(to|=)\s*(be|break\s*even|break-even)/i.test(messageText)
+      /sl\s*(to|=)\s*(be|break\s*even|break-even)/i.test(messageText);
 
-    const slMatch = messageText.match(/\bS\/?L\b[:=\s]*([\d.]+)/i) || messageText.match(/\bSL\b[:=\s]*([\d.]+)/i)
-    const nextStopLoss = slMatch && slMatch[1] ? parseFloat(slMatch[1]) : null
+    const slMatch =
+      messageText.match(/\bS\/?L\b[:=\s]*([\d.]+)/i) ||
+      messageText.match(/\bSL\b[:=\s]*([\d.]+)/i);
+    const nextStopLoss = slMatch && slMatch[1] ? parseFloat(slMatch[1]) : null;
 
     const tpMatches = Array.from(
-      messageText.matchAll(/\bTP\d*\b[:=\s]*([\d.]+)/gi) as any
+      messageText.matchAll(/\bTP\d*\b[:=\s]*([\d.]+)/gi) as any,
     )
       .map((m: any) => (m && m[1] ? parseFloat(m[1]) : null))
-      .filter((v): v is number => typeof v === "number" && !Number.isNaN(v))
+      .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
 
-    const hasUpdate = Boolean(isBeUpdate || nextStopLoss !== null || tpMatches.length > 0)
+    const hasUpdate = Boolean(
+      isBeUpdate || nextStopLoss !== null || tpMatches.length > 0,
+    );
 
     // Require replyToMessageId so we only update the intended original positions
     if (hasUpdate && replyToMessageId) {
@@ -147,15 +172,16 @@ export async function POST(request: NextRequest) {
         .select("id")
         .eq("channel_id", channel.id)
         .eq("message_id", replyToMessageId)
-        .maybeSingle()
+        .maybeSingle();
 
       if (originalSignal?.id) {
-        const signalIdToUpdate = originalSignal.id
+        const signalIdToUpdate = originalSignal.id;
 
         // Fetch all executed trades for this original signal (1 trade per TP)
         const { data: executedTrades, error: tradesError } = await supabase
           .from("telegram_trades")
-          .select(`
+          .select(
+            `
             id,
             user_id,
             mt5_account_id,
@@ -165,62 +191,88 @@ export async function POST(request: NextRequest) {
             stop_loss,
             error_message,
             mt5_accounts!inner(metaapi_account_id)
-          `)
+          `,
+          )
           .eq("signal_id", signalIdToUpdate)
-          .eq("status", "executed")
+          .eq("status", "executed");
 
         if (tradesError) {
-          console.error("Error fetching executed trades for update:", tradesError)
+          console.error(
+            "Error fetching executed trades for update:",
+            tradesError,
+          );
         } else if (executedTrades && executedTrades.length > 0) {
           // For TP updates: map sorted TPs to sorted existing trades (null take_profit goes last)
-          const sortedTakeProfits = [...tpMatches].sort((a, b) => a - b)
+          const sortedTakeProfits = [...tpMatches].sort((a, b) => a - b);
           const sortedTradesByTp = [...executedTrades].sort((a, b) => {
-            const aTp = a.take_profit === null ? Number.POSITIVE_INFINITY : Number(a.take_profit)
-            const bTp = b.take_profit === null ? Number.POSITIVE_INFINITY : Number(b.take_profit)
-            return aTp - bTp
-          })
+            const aTp =
+              a.take_profit === null
+                ? Number.POSITIVE_INFINITY
+                : Number(a.take_profit);
+            const bTp =
+              b.take_profit === null
+                ? Number.POSITIVE_INFINITY
+                : Number(b.take_profit);
+            return aTp - bTp;
+          });
 
-          const metaToken = process.env.METAAPI_TOKEN
+          const metaToken = process.env.METAAPI_TOKEN;
           if (!metaToken) {
-            return NextResponse.json({ success: false, error: "METAAPI_TOKEN non configuré" }, { status: 500 })
+            return NextResponse.json(
+              { success: false, error: "METAAPI_TOKEN non configuré" },
+              { status: 500 },
+            );
           }
 
           for (let i = 0; i < executedTrades.length; i++) {
-            const trade = executedTrades[i] as any
-            const metaApiAccountId = trade.mt5_accounts?.metaapi_account_id
+            const trade = executedTrades[i] as any;
+            const metaApiAccountId = trade.mt5_accounts?.metaapi_account_id;
 
             const rawPositionId =
               trade.position_id ??
-              (trade.error_message && !Number.isNaN(parseInt(trade.error_message, 10))
+              (trade.error_message &&
+              !Number.isNaN(parseInt(trade.error_message, 10))
                 ? parseInt(trade.error_message, 10)
-                : null)
+                : null);
 
-            if (!metaApiAccountId || rawPositionId === null || rawPositionId === undefined) {
-              console.log(`⏭️ Skip update trade ${trade.id}: missing metaapi_account_id or position_id`)
-              continue
+            if (
+              !metaApiAccountId ||
+              rawPositionId === null ||
+              rawPositionId === undefined
+            ) {
+              console.log(
+                `⏭️ Skip update trade ${trade.id}: missing metaapi_account_id or position_id`,
+              );
+              continue;
             }
 
-            let updatedStopLoss: number | null = null
+            let updatedStopLoss: number | null = null;
             if (isBeUpdate) {
-              if (trade.entry_price !== null && trade.entry_price !== undefined) {
-                updatedStopLoss = parseFloat(trade.entry_price)
+              if (
+                trade.entry_price !== null &&
+                trade.entry_price !== undefined
+              ) {
+                updatedStopLoss = parseFloat(trade.entry_price);
               }
             } else if (nextStopLoss !== null) {
-              updatedStopLoss = nextStopLoss
+              updatedStopLoss = nextStopLoss;
             }
 
-            let updatedTakeProfit: number | null = null
+            let updatedTakeProfit: number | null = null;
             if (sortedTakeProfits.length > 0) {
-              const tpIndex = sortedTradesByTp.findIndex((t) => t.id === trade.id)
+              const tpIndex = sortedTradesByTp.findIndex(
+                (t) => t.id === trade.id,
+              );
               // Map by index in the sorted order
-              const mapped = sortedTakeProfits[tpIndex]
+              const mapped = sortedTakeProfits[tpIndex];
               // If the message doesn't specify enough TP values, don't wipe existing TP.
-              updatedTakeProfit = mapped !== undefined ? mapped : (trade.take_profit ?? null)
+              updatedTakeProfit =
+                mapped !== undefined ? mapped : (trade.take_profit ?? null);
             }
 
             // If nothing to change, skip
             if (updatedStopLoss === null && updatedTakeProfit === null) {
-              continue
+              continue;
             }
 
             const body: any = {
@@ -228,12 +280,12 @@ export async function POST(request: NextRequest) {
               positionId: rawPositionId.toString(),
               stopLossUnits: "ABSOLUTE_PRICE",
               takeProfitUnits: "ABSOLUTE_PRICE",
-            }
-            if (updatedStopLoss !== null) body.stopLoss = updatedStopLoss
-            if (updatedTakeProfit !== null) body.takeProfit = updatedTakeProfit
+            };
+            if (updatedStopLoss !== null) body.stopLoss = updatedStopLoss;
+            if (updatedTakeProfit !== null) body.takeProfit = updatedTakeProfit;
 
             try {
-              const modifyUrl = `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/trade`
+              const modifyUrl = `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/trade`;
               const resp = await fetch(modifyUrl, {
                 method: "POST",
                 headers: {
@@ -241,26 +293,42 @@ export async function POST(request: NextRequest) {
                   "auth-token": metaToken,
                 },
                 body: JSON.stringify(body),
-              })
+              });
 
               if (!resp.ok) {
-                const errData = await resp.json().catch(() => ({}))
-                console.error(`❌ POSITION_MODIFY failed for trade ${trade.id}:`, resp.status, errData)
-                continue
+                const errData = await resp.json().catch(() => ({}));
+                console.error(
+                  `❌ POSITION_MODIFY failed for trade ${trade.id}:`,
+                  resp.status,
+                  errData,
+                );
+                continue;
               }
             } catch (e: any) {
-              console.error(`❌ POSITION_MODIFY error for trade ${trade.id}:`, e.message)
-              continue
+              console.error(
+                `❌ POSITION_MODIFY error for trade ${trade.id}:`,
+                e.message,
+              );
+              continue;
             }
 
             // Update DB so subsequent updates know the last applied values
-            await supabase.from("telegram_trades").update({
-              stop_loss: updatedStopLoss !== null ? updatedStopLoss : trade.stop_loss,
-              take_profit: updatedTakeProfit !== null ? updatedTakeProfit : trade.take_profit,
-            }).eq("id", trade.id)
+            await supabase
+              .from("telegram_trades")
+              .update({
+                stop_loss:
+                  updatedStopLoss !== null ? updatedStopLoss : trade.stop_loss,
+                take_profit:
+                  updatedTakeProfit !== null
+                    ? updatedTakeProfit
+                    : trade.take_profit,
+              })
+              .eq("id", trade.id);
           }
         } else {
-          console.log(`⚠️ Aucune trade exécutée à mettre à jour pour signal ${signalIdToUpdate}`)
+          console.log(
+            `⚠️ Aucune trade exécutée à mettre à jour pour signal ${signalIdToUpdate}`,
+          );
         }
 
         return NextResponse.json({
@@ -268,14 +336,14 @@ export async function POST(request: NextRequest) {
           message: "Positions SL/TP mises à jour",
           signal_id: originalSignal.id,
           updated: true,
-        })
+        });
       }
     }
 
     // Parser le signal
     console.log(
       `📨 Parsing signal from ${channelUsername}:`,
-      messageText.substring(0, 100)
+      messageText.substring(0, 100),
     );
     const signal = await parseSignal(messageText);
 
@@ -291,7 +359,9 @@ export async function POST(request: NextRequest) {
 
     // GÉRER LES FERMETURES PARTIELLES (TP Hit, Prendre Profit)
     if (signal.isPartialClose) {
-      console.log(`📉 Commande de fermeture partielle détectée (${signal.closePercent}%)`);
+      console.log(
+        `📉 Commande de fermeture partielle détectée (${signal.closePercent}%)`,
+      );
       let signalIdToClose = null;
 
       if (replyToMessageId) {
@@ -332,7 +402,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
           success: true,
-          message: `${tradesToPartial?.length || 0} trade(s) en attente de fermeture partielle (${signal.closePercent}%)`
+          message: `${tradesToPartial?.length || 0} trade(s) en attente de fermeture partielle (${signal.closePercent}%)`,
         });
       }
     }
@@ -352,7 +422,8 @@ export async function POST(request: NextRequest) {
         stop_loss: signal.stopLoss,
         take_profit: signal.takeProfit,
         // Store all TP values so we can create one trade per TP later
-        all_tp: (signal.takeProfits || []).length > 0 ? signal.takeProfits : null,
+        all_tp:
+          (signal.takeProfits || []).length > 0 ? signal.takeProfits : null,
         volume: signal.volume || 0.01,
         message_text: messageText,
         order_type: signal.orderType || orderType, // MARKET, LIMIT, ou STOP
@@ -405,7 +476,7 @@ async function parseSignal(messageText: string) {
     }
   } else {
     console.warn(
-      "⚠️ OPENAI_API_KEY non configuré, utilisation du parsing regex basique"
+      "⚠️ OPENAI_API_KEY non configuré, utilisation du parsing regex basique",
     );
   }
 
@@ -452,10 +523,13 @@ async function parseSignal(messageText: string) {
         if (sym === "LIMIT" || sym === "STOP") {
           // On cherche un mot de 3 à 7 lettres qui ne soit pas un mot clé
           const words = messageText.split(/\s+/);
-          const potentialSymbol = words.find(w => 
-            w.length >= 3 && 
-            w.length <= 8 && 
-            !['BUY', 'SELL', 'LIMIT', 'STOP', 'ACHAT', 'VENTE'].includes(w.toUpperCase())
+          const potentialSymbol = words.find(
+            (w) =>
+              w.length >= 3 &&
+              w.length <= 8 &&
+              !["BUY", "SELL", "LIMIT", "STOP", "ACHAT", "VENTE"].includes(
+                w.toUpperCase(),
+              ),
           );
           if (potentialSymbol) sym = potentialSymbol.toUpperCase();
         }
@@ -475,7 +549,7 @@ async function parseSignal(messageText: string) {
         stopLoss = slMatch && slMatch[1] ? parseFloat(slMatch[1]) : null;
 
         const tpFromMsg = Array.from(
-          messageText.matchAll(/\bTP\d*\b[:=\s]*([\d.]+)/gi) as any
+          messageText.matchAll(/\bTP\d*\b[:=\s]*([\d.]+)/gi) as any,
         )
           .map((m: any) => (m && m[1] ? parseFloat(m[1]) : NaN))
           .filter((v: number) => !Number.isNaN(v));
@@ -489,7 +563,13 @@ async function parseSignal(messageText: string) {
               })()
             : null;
 
-        takeProfits = (tpFromMsg.length > 0 ? tpFromMsg : (tpGenericMatch !== null ? [tpGenericMatch] : [])) as number[];
+        takeProfits = (
+          tpFromMsg.length > 0
+            ? tpFromMsg
+            : tpGenericMatch !== null
+              ? [tpGenericMatch]
+              : []
+        ) as number[];
 
         // Best TP kept for compatibility with existing columns/logic:
         const sorted = [...takeProfits].sort((a, b) => a - b);
@@ -610,7 +690,7 @@ Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
 
     const content = data.choices[0]?.message?.content;
     console.log("🤖 OpenAI Raw Response:", content);
-    
+
     if (!content) {
       return null;
     }
@@ -650,7 +730,10 @@ Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
 
     const takeProfits = (takeProfitsRaw || [])
       .map((v: any) => (v !== null && v !== undefined ? parseFloat(v) : null))
-      .filter((v: number | null): v is number => typeof v === "number" && !Number.isNaN(v));
+      .filter(
+        (v: number | null): v is number =>
+          typeof v === "number" && !Number.isNaN(v),
+      );
 
     const sorted = [...takeProfits].sort((a: number, b: number) => a - b);
     const takeProfit =
@@ -691,13 +774,28 @@ function normalizeSymbol(symbol: string): string {
   }
 
   // Indices variations
-  if (upperSymbol.includes("US30") || upperSymbol.includes("DJ30") || upperSymbol.includes("WS30") || upperSymbol.includes("DOW")) {
+  if (
+    upperSymbol.includes("US30") ||
+    upperSymbol.includes("DJ30") ||
+    upperSymbol.includes("WS30") ||
+    upperSymbol.includes("DOW")
+  ) {
     return "US30";
   }
-  if (upperSymbol.includes("NAS100") || upperSymbol.includes("US100") || upperSymbol.includes("USTEC") || upperSymbol.includes("NASDAQ")) {
+  if (
+    upperSymbol.includes("NAS100") ||
+    upperSymbol.includes("US100") ||
+    upperSymbol.includes("USTEC") ||
+    upperSymbol.includes("NASDAQ")
+  ) {
     return "NAS100";
   }
-  if (upperSymbol.includes("GER40") || upperSymbol.includes("DAX") || upperSymbol.includes("DE40") || upperSymbol.includes("GER30")) {
+  if (
+    upperSymbol.includes("GER40") ||
+    upperSymbol.includes("DAX") ||
+    upperSymbol.includes("DE40") ||
+    upperSymbol.includes("GER30")
+  ) {
     return "GER40";
   }
 
@@ -722,7 +820,7 @@ function normalizeSymbol(symbol: string): string {
 async function mapSymbolToBroker(
   normalizedSymbol: string,
   brokerName: string | null,
-  supabase: any
+  supabase: any,
 ): Promise<string> {
   if (!brokerName) {
     return normalizedSymbol;
@@ -736,6 +834,7 @@ async function mapSymbolToBroker(
     "Raise Globale",
     "FXcess",
     "Axi",
+    "Vantage",
   ];
 
   // Normaliser le nom du broker (gérer les variations)
@@ -744,7 +843,7 @@ async function mapSymbolToBroker(
   // Si le broker n'est pas supporté, retourner le symbole tel quel
   if (!supportedBrokers.includes(normalizedBrokerName)) {
     console.log(
-      `⚠️ Broker ${normalizedBrokerName} non supporté, utilisation du symbole original: ${normalizedSymbol}`
+      `⚠️ Broker ${normalizedBrokerName} non supporté, utilisation du symbole original: ${normalizedSymbol}`,
     );
     return normalizedSymbol;
   }
@@ -760,14 +859,14 @@ async function mapSymbolToBroker(
 
     if (!error && symbolMapping?.broker_symbol) {
       console.log(
-        `✅ Mapping DB: ${normalizedSymbol} → ${symbolMapping.broker_symbol} pour ${normalizedBrokerName}`
+        `✅ Mapping DB: ${normalizedSymbol} → ${symbolMapping.broker_symbol} pour ${normalizedBrokerName}`,
       );
       return symbolMapping.broker_symbol;
     }
   } catch (error) {
     console.warn(
       `⚠️ Erreur lecture symbol_mappings, utilisation du fallback:`,
-      error
+      error,
     );
   }
 
@@ -780,15 +879,32 @@ async function mapSymbolToBroker(
       "Raise Globale": "XAUUSD",
       FXcess: "XAUUSD",
       Axi: "XAUUSD",
+      Vantage: "XAUUSD+",
     },
-    EURUSD: { "VT Markets": "EURUSD-ECN" },
-    GBPUSD: { "VT Markets": "GBPUSD-ECN" },
+    EURUSD: {
+      "VT Markets": "EURUSD-ECN",
+      Vantage: "EURUSD+",
+    },
+    GBPUSD: {
+      "VT Markets": "GBPUSD-ECN",
+      Vantage: "GBPUSD+",
+    },
+    USDJPY: { Vantage: "USDJPY+" },
     EURGBP: { "VT Markets": "EURGBP-ECN" },
     EURJPY: { "VT Markets": "EURJPY-ECN" },
     GBPJPY: { "VT Markets": "GBPJPY-ECN" },
-    US30: { "VT Markets": "US30.cash-ECN" },
-    NAS100: { "VT Markets": "NAS100.cash-ECN" },
-    GER40: { "VT Markets": "GER40.cash-ECN" },
+    US30: {
+      "VT Markets": "US30.cash-ECN",
+      Vantage: "DJ30",
+    },
+    NAS100: {
+      "VT Markets": "NAS100.cash-ECN",
+      Vantage: "NAS100",
+    },
+    GER40: {
+      "VT Markets": "GER40.cash-ECN",
+      Vantage: "GER40",
+    },
     SOL30: {
       "VT Markets": "SOL30",
       "Raise FX": "SOL30",
@@ -796,6 +912,7 @@ async function mapSymbolToBroker(
       "Raise Globale": "SOL30",
       FXcess: "SOL30",
       Axi: "SOL30",
+      Vantage: "SOL30",
     },
     BTC: {
       "VT Markets": "BTCUSD",
@@ -804,6 +921,7 @@ async function mapSymbolToBroker(
       "Raise Globale": "BTCUSD",
       FXcess: "BTCUSD",
       Axi: "BTCUSD",
+      Vantage: "BTCUSD",
     },
   };
 
@@ -815,14 +933,14 @@ async function mapSymbolToBroker(
     const mappedSymbol =
       fallbackMapping[normalizedSymbol][normalizedBrokerName];
     console.log(
-      `✅ Mapping fallback: ${normalizedSymbol} → ${mappedSymbol} pour ${normalizedBrokerName}`
+      `✅ Mapping fallback: ${normalizedSymbol} → ${mappedSymbol} pour ${normalizedBrokerName}`,
     );
     return mappedSymbol;
   }
 
   // 3. Si aucun mapping trouvé, retourner le symbole normalisé
   console.log(
-    `⚠️ Pas de mapping pour ${normalizedSymbol} sur ${normalizedBrokerName}, utilisation du symbole normalisé`
+    `⚠️ Pas de mapping pour ${normalizedSymbol} sur ${normalizedBrokerName}, utilisation du symbole normalisé`,
   );
   return normalizedSymbol;
 }
@@ -830,14 +948,14 @@ async function mapSymbolToBroker(
 async function executeTradesForSignal(signalId: string) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
   // Récupérer les données du signal
   const { data: signal } = await supabase
     .from("telegram_signals")
     .select(
-      "id, channel_id, signal_type, symbol, entry_price, stop_loss, take_profit, all_tp, volume, order_type"
+      "id, channel_id, signal_type, symbol, entry_price, stop_loss, take_profit, all_tp, volume, order_type",
     )
     .eq("id", signalId)
     .single();
@@ -867,12 +985,12 @@ async function executeTradesForSignal(signalId: string) {
     .select("user_id")
     .in(
       "user_id",
-      subscriptions.map((s: any) => s.user_id)
+      subscriptions.map((s: any) => s.user_id),
     )
     .in("status", ["active", "trialing"]);
 
   const activeUserIds = new Set(
-    activeSubscriptions?.map((s: any) => s.user_id) || []
+    activeSubscriptions?.map((s: any) => s.user_id) || [],
   );
 
   // Normaliser le symbole du signal (XAUUSD -> GOLD, etc.)
@@ -885,7 +1003,9 @@ async function executeTradesForSignal(signalId: string) {
   const takeProfits: number[] = (() => {
     if (Array.isArray(rawAllTp)) {
       return rawAllTp
-        .map((v) => (v !== null && v !== undefined ? parseFloat(v as any) : NaN))
+        .map((v) =>
+          v !== null && v !== undefined ? parseFloat(v as any) : NaN,
+        )
         .filter((v) => !Number.isNaN(v));
     }
     if (typeof rawAllTp === "string") {
@@ -906,7 +1026,13 @@ async function executeTradesForSignal(signalId: string) {
 
   // For market orders without TP, we still create exactly one trade (take_profit = null)
   const tpValues: Array<number | null> =
-    takeProfits.length > 0 ? takeProfits : [signal.take_profit ? (parseFloat(signal.take_profit as any) || null) : null];
+    takeProfits.length > 0
+      ? takeProfits
+      : [
+          signal.take_profit
+            ? parseFloat(signal.take_profit as any) || null
+            : null,
+        ];
 
   console.log(`✅ ${activeUserIds.size} utilisateur(s) avec abonnement actif`);
 
@@ -915,7 +1041,7 @@ async function executeTradesForSignal(signalId: string) {
     // Vérifier que l'utilisateur a un abonnement actif
     if (!activeUserIds.has(subscription.user_id)) {
       console.log(
-        `⚠️ Utilisateur ${subscription.user_id} n'a pas d'abonnement actif`
+        `⚠️ Utilisateur ${subscription.user_id} n'a pas d'abonnement actif`,
       );
       continue;
     }
@@ -930,13 +1056,13 @@ async function executeTradesForSignal(signalId: string) {
 
     if (!mt5Account?.metaapi_account_id) {
       console.log(
-        `⚠️ Pas de compte MT5 actif pour l'utilisateur ${subscription.user_id}`
+        `⚠️ Pas de compte MT5 actif pour l'utilisateur ${subscription.user_id}`,
       );
       continue;
     }
 
     console.log(
-      `✅ Compte MT5 trouvé pour user ${subscription.user_id}: ${mt5Account.broker_name}`
+      `✅ Compte MT5 trouvé pour user ${subscription.user_id}: ${mt5Account.broker_name}`,
     );
 
     // Récupérer les paramètres de trading de l'utilisateur
@@ -952,28 +1078,28 @@ async function executeTradesForSignal(signalId: string) {
     if (tradingSettings) {
       if (tradingSettings.position_sizing_type === "lot") {
         const lotMap: Record<string, string> = {
-          GOLD: 'gold_lot_size',
-          BTC: 'btc_lot_size',
-          ETH: 'eth_lot_size',
-          SOL30: 'sol_lot_size',
-          US30: 'us30_lot_size',
-          NAS100: 'nas100_lot_size',
-          GER40: 'ger40_lot_size',
-          UK100: 'uk100_lot_size',
-          SPX500: 'spx500_lot_size',
-          EURUSD: 'eurusd_lot_size',
-          GBPUSD: 'gbpusd_lot_size',
-          USDJPY: 'usdjpy_lot_size',
-          USDCHF: 'usdchf_lot_size',
-          USDCAD: 'usdcad_lot_size',
-          AUDUSD: 'audusd_lot_size',
-          NZDUSD: 'nzdusd_lot_size',
-          EURGBP: 'eurgbp_lot_size',
-          EURJPY: 'eurjpy_lot_size',
-          GBPJPY: 'gbpjpy_lot_size',
-        }
-        const key = lotMap[normalizedSymbol]
-        userVolume = key ? parseFloat(tradingSettings[key]) || 0.01 : 0.01
+          GOLD: "gold_lot_size",
+          BTC: "btc_lot_size",
+          ETH: "eth_lot_size",
+          SOL30: "sol_lot_size",
+          US30: "us30_lot_size",
+          NAS100: "nas100_lot_size",
+          GER40: "ger40_lot_size",
+          UK100: "uk100_lot_size",
+          SPX500: "spx500_lot_size",
+          EURUSD: "eurusd_lot_size",
+          GBPUSD: "gbpusd_lot_size",
+          USDJPY: "usdjpy_lot_size",
+          USDCHF: "usdchf_lot_size",
+          USDCAD: "usdcad_lot_size",
+          AUDUSD: "audusd_lot_size",
+          NZDUSD: "nzdusd_lot_size",
+          EURGBP: "eurgbp_lot_size",
+          EURJPY: "eurjpy_lot_size",
+          GBPJPY: "gbpjpy_lot_size",
+        };
+        const key = lotMap[normalizedSymbol];
+        userVolume = key ? parseFloat(tradingSettings[key]) || 0.01 : 0.01;
       } else if (tradingSettings.position_sizing_type === "percentage") {
         // Pourcentage: utiliser le pourcentage du signal comme base
         // TODO: améliorer avec le capital réel du compte
@@ -990,11 +1116,11 @@ async function executeTradesForSignal(signalId: string) {
     let brokerSymbol = await mapSymbolToBroker(
       normalizedSymbol,
       mt5Account.broker_name,
-      supabase
+      supabase,
     );
 
     console.log(
-      `✅ Symbole mappé: ${signal.symbol} → ${normalizedSymbol} → ${brokerSymbol} pour ${mt5Account.broker_name}`
+      `✅ Symbole mappé: ${signal.symbol} → ${normalizedSymbol} → ${brokerSymbol} pour ${mt5Account.broker_name}`,
     );
 
     // One trade per TP:
@@ -1017,7 +1143,8 @@ async function executeTradesForSignal(signalId: string) {
 
       // If rounding caused drift, fix the last TP so the sum stays close to `userVolume`
       if (tpCount > 1 && i === tpValues.length - 1) {
-        const assignedSoFar = roundLotStep(userVolume / tpCount) * (tpCount - 1);
+        const assignedSoFar =
+          roundLotStep(userVolume / tpCount) * (tpCount - 1);
         volumeForTp = Math.max(0.01, roundLotStep(userVolume - assignedSoFar));
       }
 
@@ -1030,12 +1157,17 @@ async function executeTradesForSignal(signalId: string) {
         .eq("mt5_account_id", mt5Account.id)
         .in("status", ["pending", "pending_partial", "executed"]);
 
-      existingQuery = tpValue === null ? existingQuery.is("take_profit", null) : existingQuery.eq("take_profit", tpValue);
+      existingQuery =
+        tpValue === null
+          ? existingQuery.is("take_profit", null)
+          : existingQuery.eq("take_profit", tpValue);
 
-      const { data: existingTrade } = await existingQuery.limit(1).maybeSingle();
+      const { data: existingTrade } = await existingQuery
+        .limit(1)
+        .maybeSingle();
       if (existingTrade) {
         console.log(
-          `⏭️ Trade déjà existant (user ${subscription.user_id}, TP ${tpValue ?? "null"})`
+          `⏭️ Trade déjà existant (user ${subscription.user_id}, TP ${tpValue ?? "null"})`,
         );
         continue;
       }
@@ -1058,11 +1190,11 @@ async function executeTradesForSignal(signalId: string) {
       if (error) {
         console.error(
           `❌ Erreur création trade pour user ${subscription.user_id} (TP ${tpValue ?? "null"}):`,
-          error
+          error,
         );
       } else {
         console.log(
-          `✅ Trade créé pour user ${subscription.user_id}: ${brokerSymbol} ${volumeForTp} lots (TP ${tpValue ?? "null"})`
+          `✅ Trade créé pour user ${subscription.user_id}: ${brokerSymbol} ${volumeForTp} lots (TP ${tpValue ?? "null"})`,
         );
       }
     }

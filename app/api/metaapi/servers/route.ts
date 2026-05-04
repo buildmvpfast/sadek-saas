@@ -93,6 +93,25 @@ const BROKERS_DATA = [
       "AxiTrader-Real02",
     ],
   },
+  {
+    name: "Vantage",
+    servers: [
+      "VantageInternational-Live",
+      "VantageInternational-Live 1",
+      "VantageInternational-Live 2",
+      "VantageInternational-Live 3",
+      "VantageInternational-Live 4",
+      "VantageInternational-Live 5",
+      "VantageInternational-Live 6",
+      "VantageInternational-Live 7",
+      "VantageInternational-Live 8",
+      "VantageInternational-Live 9",
+      "VantageInternational-Live 10",
+      "VantageInternational-Live 11",
+      "VantageInternational-Live 12",
+      "VantageInternational-Demo",
+    ],
+  },
 ];
 
 export async function GET(request: Request) {
@@ -103,7 +122,7 @@ export async function GET(request: Request) {
     if (!brokerName) {
       return NextResponse.json(
         { success: false, error: "Broker name required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -125,7 +144,7 @@ export async function GET(request: Request) {
     const broker = BROKERS_DATA.find(
       (b) =>
         b.name.toLowerCase().includes(brokerName.toLowerCase()) ||
-        brokerName.toLowerCase().includes(b.name.toLowerCase())
+        brokerName.toLowerCase().includes(b.name.toLowerCase()),
     );
 
     if (!broker) {
@@ -156,7 +175,7 @@ export async function GET(request: Request) {
     console.error("Error fetching servers:", error);
     return NextResponse.json(
       { success: false, error: error.message, servers: [] },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

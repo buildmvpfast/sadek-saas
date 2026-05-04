@@ -41,7 +41,7 @@ export async function GET() {
         total: getStaticBrokers().length,
         source: "static",
       },
-      { status: 200 }
+      { status: 200 },
     );
   }
 }
@@ -56,6 +56,8 @@ function extractBrokerName(profileName: string): string | null {
     "FXcess",
     "Axi",
     "AxiTrader",
+    // Matches "Vantage International", "VantageMarkets-...", etc. (must stay one token)
+    "Vantage",
   ];
 
   for (const keyword of brokerKeywords) {
@@ -140,6 +142,26 @@ function getStaticBrokers() {
         "Axi-MT5-Demo",
         "AxiTrader-Live",
         "AxiTrader-Demo",
+      ],
+    },
+    {
+      id: "vantage",
+      name: "Vantage",
+      servers: [
+        "VantageInternational-Live",
+        "VantageInternational-Live 1",
+        "VantageInternational-Live 2",
+        "VantageInternational-Live 3",
+        "VantageInternational-Live 4",
+        "VantageInternational-Live 5",
+        "VantageInternational-Live 6",
+        "VantageInternational-Live 7",
+        "VantageInternational-Live 8",
+        "VantageInternational-Live 9",
+        "VantageInternational-Live 10",
+        "VantageInternational-Live 11",
+        "VantageInternational-Live 12",
+        "VantageInternational-Demo",
       ],
     },
   ];

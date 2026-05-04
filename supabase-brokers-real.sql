@@ -1,11 +1,22 @@
--- Brokers RÉELS populaires pour MT5
--- À exécuter après le schéma principal pour ajouter plus de brokers
+-- Brokers RÉELS populaires pour MT5 (table OPTIONNELLE)
+-- L’app actuelle mappe surtout broker_name + /api/metaapi/brokers ; cette table sert de référence.
+-- Si tu vois "relation brokers does not exist", le bloc ci-dessous crée la table avant les INSERT.
+
+CREATE TABLE IF NOT EXISTS public.brokers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  server_address TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS brokers_name_server_unique
+  ON public.brokers (name, server_address);
 
 -- Supprimer les brokers démo si besoin
 -- DELETE FROM brokers;
 
 -- Brokers populaires avec serveurs LIVE
-INSERT INTO brokers (name, server_address) VALUES
+INSERT INTO public.brokers (name, server_address) VALUES
   -- IC Markets
   ('IC Markets Raw', 'ICMarketsEU-Live'),
   ('IC Markets Raw (SC)', 'ICMarketsSC-Live'),
@@ -88,8 +99,13 @@ INSERT INTO brokers (name, server_address) VALUES
   -- IG Markets
   ('IG Markets Live', 'IG-Live'),
   
+  -- Vantage Markets
+  ('Vantage Live', 'VantageInternational-Live 4'),
+  ('Vantage Demo', 'VantageInternational-Demo'),
+
   -- Autre/Personnalisé (pour serveurs custom)
-  ('Autre (serveur personnalisé)', 'CUSTOM');
+  ('Autre (serveur personnalisé)', 'CUSTOM')
+ON CONFLICT (name, server_address) DO NOTHING;
 
 -- Note: Les noms de serveur exacts peuvent varier
 -- Les utilisateurs peuvent toujours entrer un serveur custom si leur broker n'est pas listé

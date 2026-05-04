@@ -28,7 +28,8 @@ INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
   ('Raise Global', 'GOLD', 'XAUUSD'),
   ('Raise Globale', 'GOLD', 'XAUUSD'),
   ('FXcess', 'GOLD', 'XAUUSD'),
-  ('Axi', 'GOLD', 'XAUUSD')
+  ('Axi', 'GOLD', 'XAUUSD'),
+  ('Vantage', 'GOLD', 'XAUUSD+')
 ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
 SET broker_symbol = EXCLUDED.broker_symbol;
 
@@ -39,7 +40,8 @@ INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
   ('Raise Global', 'SOL30', 'SOL30'),
   ('Raise Globale', 'SOL30', 'SOL30'),
   ('FXcess', 'SOL30', 'SOL30'),
-  ('Axi', 'SOL30', 'SOL30')
+  ('Axi', 'SOL30', 'SOL30'),
+  ('Vantage', 'SOL30', 'SOL30')
 ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
 SET broker_symbol = EXCLUDED.broker_symbol;
 
@@ -50,7 +52,8 @@ INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
   ('Raise Global', 'BTC', 'BTCUSD'),
   ('Raise Globale', 'BTC', 'BTCUSD'),
   ('FXcess', 'BTC', 'BTCUSD'),
-  ('Axi', 'BTC', 'BTCUSD')
+  ('Axi', 'BTC', 'BTCUSD'),
+  ('Vantage', 'BTC', 'BTCUSD')
 ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
 SET broker_symbol = EXCLUDED.broker_symbol;
 
@@ -61,7 +64,8 @@ INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
   ('Raise Global', 'EURUSD', 'EURUSD'),
   ('Raise Globale', 'EURUSD', 'EURUSD'),
   ('FXcess', 'EURUSD', 'EURUSD'),
-  ('Axi', 'EURUSD', 'EURUSD')
+  ('Axi', 'EURUSD', 'EURUSD'),
+  ('Vantage', 'EURUSD', 'EURUSD+')
 ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
 SET broker_symbol = EXCLUDED.broker_symbol;
 
@@ -72,7 +76,17 @@ INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
   ('Raise Global', 'GBPUSD', 'GBPUSD'),
   ('Raise Globale', 'GBPUSD', 'GBPUSD'),
   ('FXcess', 'GBPUSD', 'GBPUSD'),
-  ('Axi', 'GBPUSD', 'GBPUSD')
+  ('Axi', 'GBPUSD', 'GBPUSD'),
+  ('Vantage', 'GBPUSD', 'GBPUSD+')
+ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
+SET broker_symbol = EXCLUDED.broker_symbol;
+
+-- Vantage — USDJPY + indices (US30 -> DJ30 sur MT5 Vantage)
+INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
+  ('Vantage', 'USDJPY', 'USDJPY+'),
+  ('Vantage', 'US30', 'DJ30'),
+  ('Vantage', 'NAS100', 'NAS100'),
+  ('Vantage', 'GER40', 'GER40')
 ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
 SET broker_symbol = EXCLUDED.broker_symbol;
 
@@ -83,7 +97,7 @@ SELECT
   broker_symbol,
   created_at
 FROM symbol_mappings 
-WHERE broker_name IN ('VT Markets', 'Raise FX', 'Raise Global', 'Raise Globale', 'FXcess', 'Axi')
+WHERE broker_name IN ('VT Markets', 'Raise FX', 'Raise Global', 'Raise Globale', 'FXcess', 'Axi', 'Vantage')
 ORDER BY broker_name, standard_symbol;
 
 -- Afficher le nombre de mappings par broker
@@ -91,7 +105,7 @@ SELECT
   broker_name, 
   COUNT(*) as nombre_mappings
 FROM symbol_mappings 
-WHERE broker_name IN ('VT Markets', 'Raise FX', 'Raise Global', 'Raise Globale', 'FXcess', 'Axi')
+WHERE broker_name IN ('VT Markets', 'Raise FX', 'Raise Global', 'Raise Globale', 'FXcess', 'Axi', 'Vantage')
 GROUP BY broker_name
 ORDER BY broker_name;
 
