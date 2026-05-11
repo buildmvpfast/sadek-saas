@@ -11,12 +11,28 @@ ADD COLUMN IF NOT EXISTS metaapi_account_id TEXT;
 ALTER TABLE mt5_accounts DROP CONSTRAINT IF EXISTS mt5_accounts_broker_id_fkey;
 ALTER TABLE mt5_accounts DROP COLUMN IF EXISTS broker_id;
 
--- 2. Modifier trading_settings pour avoir des lots par instrument
+-- 2. Modifier trading_settings pour avoir des lots par instrument (aligné page /settings)
 ALTER TABLE trading_settings 
 DROP COLUMN IF EXISTS position_size_value,
 ADD COLUMN IF NOT EXISTS gold_lot_size DECIMAL(10, 2) DEFAULT 0.01,
 ADD COLUMN IF NOT EXISTS sol_lot_size DECIMAL(10, 2) DEFAULT 0.01,
 ADD COLUMN IF NOT EXISTS btc_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS eth_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS us30_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS nas100_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS ger40_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS uk100_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS spx500_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS eurusd_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS gbpusd_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS usdjpy_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS usdchf_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS usdcad_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS audusd_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS nzdusd_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS eurgbp_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS eurjpy_lot_size DECIMAL(10, 2) DEFAULT 0.01,
+ADD COLUMN IF NOT EXISTS gbpjpy_lot_size DECIMAL(10, 2) DEFAULT 0.01,
 ADD COLUMN IF NOT EXISTS position_percentage DECIMAL(5, 2) DEFAULT 1.0;
 
 -- Garder position_sizing_type pour savoir si on utilise les lots fixes ou le %

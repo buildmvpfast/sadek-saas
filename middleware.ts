@@ -11,7 +11,8 @@ export async function middleware(req: NextRequest) {
   } = await supabase.auth.getSession()
 
   // Public routes (accessible sans connexion)
-  const publicRoutes = ['/', '/auth/login', '/auth/signup']
+  // /auth/reset-password : lien email Supabase (#access_token non visible au serveur → pas de session au 1er hit)
+  const publicRoutes = ['/', '/auth/login', '/auth/signup', '/auth/reset-password']
   const isPublicRoute = publicRoutes.includes(req.nextUrl.pathname)
   
   // Routes accessibles même sans abonnement (SEULEMENT le paywall et les routes publiques)

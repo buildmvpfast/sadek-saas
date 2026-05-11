@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -11,27 +11,84 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [recoveryReady, setRecoveryReady] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
 
-  useEffect(() => {
-    // Vérifier si on a un token de réinitialisation
-    const accessToken = searchParams.get('access_token')
-    const refreshToken = searchParams.get('refresh_token')
-    
+  const applyRecoverySession = useCallback(async () => {
+    setError('')
+
+    // Flux PKCE (Supabase récent) : ?code=...
+    const code = searchParams.get('code')
+    if (code) {
+      const { error: exchangeError } =
+        await supabase.auth.exchangeCodeForSession(code)
+      if (exchangeError) {
+        setError(exchangeError.message)
+        return
+      }
+      setRecoveryReady(true)
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', window.location.pathname)
+      }
+      return
+    }
+
+    // Flux classique : tokens dans le hash (#access_token=...&refresh_token=...&type=recovery)
+    // useSearchParams() ne lit pas le hash → on parse window.location.hash
+    const hash =
+      typeof window !== 'undefined' ? window.location.hash.replace(/^#/, '') : ''
+    const hashParams = new URLSearchParams(hash)
+    const accessToken =
+      hashParams.get('access_token') || searchParams.get('access_token')
+    const refreshToken =
+      hashParams.get('refresh_token') || searchParams.get('refresh_token')
+
     if (accessToken && refreshToken) {
-      // Définir la session avec les tokens
-      supabase.auth.setSession({
+      const { error: sessionError } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
       })
+      if (sessionError) {
+        setError(sessionError.message)
+        return
+      }
+      setRecoveryReady(true)
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', window.location.pathname)
+      }
+      return
     }
-  }, [searchParams, supabase.auth])
+
+    // Déjà une session (ex. rechargement après setSession)
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (session) {
+      setRecoveryReady(true)
+      return
+    }
+
+    setError(
+      'Lien invalide ou expiré. Redemandez un e-mail depuis la page de connexion (Mot de passe oublié).',
+    )
+  }, [searchParams, supabase])
+
+  useEffect(() => {
+    applyRecoverySession()
+  }, [applyRecoverySession])
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    if (!recoveryReady) {
+      setError(
+        'Lien de réinitialisation invalide ou expiré. Demandez un nouveau mail depuis la connexion.',
+      )
+      return
+    }
 
     if (password !== confirmPassword) {
       setError('Les mots de passe ne correspondent pas')
@@ -101,6 +158,13 @@ export default function ResetPasswordPage() {
           </div>
         )}
 
+        {!recoveryReady && !error && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded mb-4 text-sm">
+            Vérification du lien… Si rien ne change, ouvrez cette page depuis le
+            bouton du mail (pas une copie d’URL tronquée).
+          </div>
+        )}
+
         <form onSubmit={handleResetPassword} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">Nouveau mot de passe *</label>
@@ -128,7 +192,7 @@ export default function ResetPasswordPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !recoveryReady}
             className="btn btn-primary w-full"
           >
             {loading ? 'Mise à jour...' : 'Mettre à jour le mot de passe'}
