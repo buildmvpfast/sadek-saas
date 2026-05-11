@@ -175,7 +175,9 @@ export default function MT5AccountsPage() {
       const data = await response.json();
 
       if (data.success && data.servers) {
-        setServers(data.servers.map((s: any) => s.name));
+        setServers(
+          data.servers.map((s: { name: string }) => String(s.name).trim())
+        );
       } else {
         // Fallback: utiliser les serveurs du broker sélectionné
         const broker = brokers.find((b) => b.name === brokerName);
@@ -223,15 +225,21 @@ export default function MT5AccountsPage() {
         );
       }
 
-      // 1. Connecter le compte à MetaApi
+      const serverName = formData.server_name.trim().replace(/\s+/g, " ");
+      const login = String(formData.account_number).trim().replace(/\s/g, "");
+      if (!serverName || !login) {
+        throw new Error("Serveur et numéro de compte sont requis.");
+      }
+
+      // 1. Connecter le compte à MetaApi (vérifie MT5 CONNECTED avant succès)
       const metaApiResponse = await fetch("/api/metaapi/connect-account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: `User - ${formData.broker_name} - ${formData.account_number}`,
-          login: formData.account_number,
-          password: formData.password,
-          server: formData.server_name,
+          name: `User - ${formData.broker_name.trim()} - ${login}`,
+          login,
+          password: formData.password.trim(),
+          server: serverName,
           platform: "mt5",
           magic: 0,
         }),
@@ -246,15 +254,15 @@ export default function MT5AccountsPage() {
       }
 
       // 2. Enregistrer dans Supabase avec le metaapi_account_id
-      const passwordEncrypted = Buffer.from(formData.password).toString(
-        "base64"
-      );
+      const passwordEncrypted = Buffer.from(
+        formData.password.trim()
+      ).toString("base64");
 
       const { error } = await supabase.from("mt5_accounts").insert({
         user_id: session.user.id,
-        broker_name: formData.broker_name,
-        server_name: formData.server_name,
-        account_number: parseInt(formData.account_number),
+        broker_name: formData.broker_name.trim(),
+        server_name: serverName,
+        account_number: parseInt(login, 10),
         password_encrypted: passwordEncrypted,
         is_investor: formData.is_investor,
         is_admin_account: false, // Compte user, pas admin
@@ -484,7 +492,9 @@ export default function MT5AccountsPage() {
                 disabled={loadingSubmit || !formData.server_name}
                 className="btn btn-primary w-full"
               >
-                {loadingSubmit ? "Ajout en cours..." : "Ajouter le compte"}
+                {loadingSubmit
+                  ? "Connexion MetaAPI + MT5 (peut prendre 30–60 s)…"
+                  : "Ajouter le compte"}
               </button>
             </form>
           </div>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getStaticBrokersWithServers } from "@/lib/metaapi-broker-servers";
 
 // Cache simple en mémoire (5 minutes)
 let brokersCache: any = null;
@@ -18,7 +19,7 @@ export async function GET() {
 
     // Pour l'instant, on utilise les brokers statiques
     // TODO: Implémenter l'intégration MetaApi quand l'API sera clarifiée
-    const brokers = getStaticBrokers();
+    const brokers = getStaticBrokersWithServers();
 
     const result = {
       success: true,
@@ -37,8 +38,8 @@ export async function GET() {
     return NextResponse.json(
       {
         success: true,
-        brokers: getStaticBrokers(),
-        total: getStaticBrokers().length,
+        brokers: getStaticBrokersWithServers(),
+        total: getStaticBrokersWithServers().length,
         source: "static",
       },
       { status: 200 },
@@ -67,104 +68,6 @@ function extractBrokerName(profileName: string): string | null {
   }
 
   return null;
-}
-
-function getStaticBrokers() {
-  return [
-    {
-      id: "vtmarkets",
-      name: "VT Markets",
-      servers: [
-        "VT Markets-Live",
-        "VT Markets-Demo",
-        "VT Markets-Live01",
-        "VT Markets-Live02",
-        "VT Markets-Real",
-        "VT Markets-Real01",
-        "VT Markets-Real02",
-      ],
-    },
-    {
-      id: "raisefx",
-      name: "Raise FX",
-      servers: [
-        "RaiseFX-Live",
-        "RaiseFX-Demo",
-        "RaiseFX-Live01",
-        "RaiseFX-Live02",
-        "RaiseFX-Real",
-        "RaiseFX-Real01",
-        "RaiseFX-Real02",
-        "RaiseFX-MT5-Live",
-        "RaiseFX-MT5-Demo",
-      ],
-    },
-    {
-      id: "raiseglobal",
-      name: "Raise Global",
-      servers: [
-        "RaiseGlobal-Live",
-        "RaiseGlobal-Demo",
-        "RaiseGlobal-Live01",
-        "RaiseGlobal-Live02",
-        "RaiseGlobal-Real",
-        "RaiseGlobal-Real01",
-        "RaiseGlobal-Real02",
-      ],
-    },
-    {
-      id: "fxcess",
-      name: "FXcess",
-      servers: [
-        "FXcess-Live",
-        "FXcess-Demo",
-        "FXcess-Live01",
-        "FXcess-Live02",
-        "FXcess-Real",
-        "FXcess-Real01",
-        "FXcess-Real02",
-        "FXcess-MT5-Live",
-        "FXcess-MT5-Demo",
-      ],
-    },
-    {
-      id: "axi",
-      name: "Axi",
-      servers: [
-        "Axi-Live",
-        "Axi-Demo",
-        "Axi-Live01",
-        "Axi-Live02",
-        "Axi-Real",
-        "Axi-Real01",
-        "Axi-Real02",
-        "Axi-MT5-Live",
-        "Axi-MT5-Demo",
-        "AxiTrader-Live",
-        "AxiTrader-Demo",
-      ],
-    },
-    {
-      id: "vantage",
-      name: "Vantage",
-      servers: [
-        "VantageInternational-Live",
-        "VantageInternational-Live 1",
-        "VantageInternational-Live 2",
-        "VantageInternational-Live 3",
-        "VantageInternational-Live 4",
-        "VantageInternational-Live 5",
-        "VantageInternational-Live 6",
-        "VantageInternational-Live 7",
-        "VantageInternational-Live 8",
-        "VantageInternational-Live 9",
-        "VantageInternational-Live 10",
-        "VantageInternational-Live 11",
-        "VantageInternational-Live 12",
-        "VantageInternational-Demo",
-      ],
-    },
-  ];
 }
 
 // Ancienne version avec MetaApi SDK (garde pour référence)

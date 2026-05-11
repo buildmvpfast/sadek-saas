@@ -1,101 +1,250 @@
-import { NextResponse } from 'next/server'
+import { NextResponse } from "next/server";
+
+/** Vercel / hébergeur : augmente la limite pour laisser MT5 se connecter (MetaAPI). */
+export const maxDuration = 60;
+
+const PROVISIONING_BASE =
+  "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts";
+
+function normalizeServer(server: string): string {
+  return server.trim().replace(/\s+/g, " ");
+}
+
+function normalizeLogin(login: string | number): string {
+  const s = String(login).trim().replace(/\s/g, "");
+  if (/^\d+\.0+$/.test(s)) return s.replace(/\.\d+$/, "");
+  return s;
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchProvisioningAccount(
+  accountId: string,
+  token: string,
+): Promise<Record<string, unknown> | null> {
+  const r = await fetch(`${PROVISIONING_BASE}/${accountId}`, {
+    headers: { "auth-token": token },
+  });
+  if (!r.ok) return null;
+  return (await r.json()) as Record<string, unknown>;
+}
+
+async function deleteProvisioningAccount(
+  accountId: string,
+  token: string,
+): Promise<void> {
+  try {
+    await fetch(`${PROVISIONING_BASE}/${accountId}`, {
+      method: "DELETE",
+      headers: { "auth-token": token },
+    });
+  } catch {
+    // best-effort cleanup
+  }
+}
+
+/**
+ * Attend que MetaAPI signale DEPLOYED + CONNECTED (sinon pas d’insert Supabase).
+ */
+async function waitForMt5Connected(
+  accountId: string,
+  token: string,
+): Promise<{
+  ok: boolean;
+  last?: Record<string, unknown>;
+  errorFr?: string;
+}> {
+  // Sur Vercel gratuit (~10 s), définir METAAPI_CONNECT_MAX_WAIT_MS=7000 pour limiter le risque de 504.
+  const maxWaitMs = Math.min(
+    Math.max(
+      Number.parseInt(process.env.METAAPI_CONNECT_MAX_WAIT_MS || "38000", 10),
+      5000,
+    ),
+    120000,
+  );
+  const deadline = Date.now() + maxWaitMs;
+  let last: Record<string, unknown> | undefined;
+  let deployedDisconnectedStreak = 0;
+
+  while (Date.now() < deadline) {
+    const acc = await fetchProvisioningAccount(accountId, token);
+    if (acc) {
+      last = acc;
+      const state = String(acc.state ?? "");
+      const conn = String(acc.connectionStatus ?? "");
+
+      if (state === "DEPLOYED" && conn === "CONNECTED") {
+        return { ok: true, last: acc };
+      }
+
+      if (state === "DEPLOY_FAILED" || state === "UNDEPLOYED") {
+        return {
+          ok: false,
+          last: acc,
+          errorFr: `Échec côté MetaAPI (état: ${state}, connexion: ${conn}). Vérifiez le serveur MT5, le login et le mot de passe.`,
+        };
+      }
+
+      // Souvent mauvais serveur / MDP : déployé mais jamais connecté
+      if (state === "DEPLOYED" && conn === "DISCONNECTED") {
+        deployedDisconnectedStreak += 1;
+        if (deployedDisconnectedStreak >= 10) {
+          return {
+            ok: false,
+            last: acc,
+            errorFr:
+              "MT5 reste déconnecté après déploiement (serveur, numéro de compte ou mot de passe incorrect). Vérifiez le nom du serveur exactement comme dans MT5 (Fichier → Ouvrir un compte).",
+          };
+        }
+      } else {
+        deployedDisconnectedStreak = 0;
+      }
+    }
+
+    await sleep(1800);
+  }
+
+  return {
+    ok: false,
+    last,
+    errorFr: last
+      ? `Délai dépassé sans connexion MT5 (dernier état: ${String(last.state)}, connexion: ${String(last.connectionStatus)}). Vérifiez le nom du serveur (exactement comme dans MT5) et les identifiants.`
+      : "Délai dépassé — impossible de lire l’état du compte MetaAPI. Réessayez.",
+  };
+}
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const { name, login, password, server, platform, magic } = body
+    const body = await request.json();
+    const rawLogin = body.login;
+    const rawPassword = body.password;
+    const rawServer = body.server;
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const platform = body.platform || "mt5";
+    const magic = body.magic ?? 0;
+
+    const server = normalizeServer(String(rawServer ?? ""));
+    const login = normalizeLogin(rawLogin);
+    const password = String(rawPassword ?? "").trim();
+
+    if (!server || !login || !password) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Serveur, login et mot de passe sont requis.",
+        },
+        { status: 400 },
+      );
+    }
 
     if (!process.env.METAAPI_TOKEN) {
       return NextResponse.json(
-        { success: false, error: 'MetaApi token not configured' },
-        { status: 500 }
-      )
+        { success: false, error: "MetaApi token not configured" },
+        { status: 500 },
+      );
     }
 
-    // Créer un compte MetaApi via leur REST API
-    const response = await fetch(
-      'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'auth-token': process.env.METAAPI_TOKEN,
-        },
-        body: JSON.stringify({
-          name,
-          type: 'cloud',
-          login: login.toString(),
-          password,
-          server,
-          platform,
-          magic: magic || 0,
-          application: 'MetaApi',
-          region: 'london',
-        }),
-      }
-    )
+    const token = process.env.METAAPI_TOKEN;
 
-    const data = await response.json()
+    const response = await fetch(PROVISIONING_BASE, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "auth-token": token,
+      },
+      body: JSON.stringify({
+        name: name || `MT5 ${login}`,
+        type: "cloud",
+        login,
+        password,
+        server,
+        platform,
+        magic: magic || 0,
+        application: "MetaApi",
+        region: "london",
+      }),
+    });
 
-    console.log('MetaApi create account response:', response.status, JSON.stringify(data))
+    const data = (await response.json()) as Record<string, unknown> & {
+      id?: string;
+    };
+
+    console.log(
+      "MetaApi create account response:",
+      response.status,
+      JSON.stringify(data),
+    );
 
     if (!response.ok) {
-      console.error('MetaApi error:', data)
+      const msg =
+        (data.message as string) ||
+        (data.error as string) ||
+        "Échec de la création du compte MetaAPI";
       return NextResponse.json(
         {
           success: false,
-          error: data.message || 'Failed to connect account to MetaApi',
+          error: msg,
           details: data,
         },
-        { status: response.status }
-      )
+        { status: 200 },
+      );
     }
 
     if (!data.id) {
-      console.error('MetaApi returned no account ID:', data)
       return NextResponse.json(
         {
           success: false,
-          error: 'MetaApi did not return an account ID. Response: ' + JSON.stringify(data),
+          error:
+            "MetaApi n'a pas retourné d'ID de compte. " +
+            JSON.stringify(data),
         },
-        { status: 500 }
-      )
+        { status: 500 },
+      );
     }
 
-    // Déployer le compte (nécessaire pour qu'il soit actif)
-    if (data.id) {
-      const deployResponse = await fetch(
-        `https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${data.id}/deploy`,
-        {
-          method: 'POST',
-          headers: {
-            'auth-token': process.env.METAAPI_TOKEN,
-          },
-        }
-      )
+    const accountId = data.id as string;
 
-      if (!deployResponse.ok) {
-        const deployError = await deployResponse.json().catch(() => ({}))
-        console.warn('Deploy warning:', deployError)
-        // On continue quand même, le déploiement peut être en cours
-      }
+    const deployResponse = await fetch(
+      `${PROVISIONING_BASE}/${accountId}/deploy`,
+      {
+        method: "POST",
+        headers: { "auth-token": token },
+      },
+    );
 
-      // Attendre un peu que le déploiement commence (optionnel)
-      // Le compte sera déployé automatiquement par MetaAPI
+    if (!deployResponse.ok) {
+      const deployError = await deployResponse.json().catch(() => ({}));
+      console.warn("MetaAPI deploy non OK:", deployError);
+    }
+
+    const wait = await waitForMt5Connected(accountId, token);
+
+    if (!wait.ok) {
+      await deleteProvisioningAccount(accountId, token);
+      return NextResponse.json({
+        success: false,
+        error:
+          wait.errorFr ||
+          "Connexion MT5 impossible. Vérifiez serveur, numéro de compte et mot de passe.",
+        state: wait.last?.state,
+        connectionStatus: wait.last?.connectionStatus,
+      });
     }
 
     return NextResponse.json({
       success: true,
-      accountId: data.id,
-      state: data.state,
-      connectionStatus: data.connectionStatus,
-    })
-  } catch (error: any) {
-    console.error('Error connecting account:', error)
+      accountId,
+      state: wait.last?.state,
+      connectionStatus: wait.last?.connectionStatus,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Error connecting account:", error);
     return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    )
+      { success: false, error: message },
+      { status: 500 },
+    );
   }
 }
-

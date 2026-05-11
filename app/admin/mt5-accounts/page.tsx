@@ -108,7 +108,9 @@ export default function AdminMT5AccountsPage() {
       const data = await response.json()
 
       if (data.success && data.servers) {
-        setServers(data.servers.map((s: any) => s.name))
+        setServers(
+          data.servers.map((s: { name: string }) => String(s.name).trim())
+        )
       } else {
         const broker = brokers.find((b) => b.name === brokerName)
         setServers(broker?.servers || [])
@@ -143,15 +145,20 @@ export default function AdminMT5AccountsPage() {
         return
       }
 
-      // Connecter le compte à MetaApi
+      const serverName = formData.server_name.trim().replace(/\s+/g, ' ')
+      const login = String(formData.account_number).trim().replace(/\s/g, '')
+      if (!serverName || !login) {
+        throw new Error('Serveur et numéro de compte sont requis.')
+      }
+
       const response = await fetch('/api/metaapi/connect-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: `Admin - ${formData.broker_name} - ${formData.account_number}`,
-          login: formData.account_number,
-          password: formData.password,
-          server: formData.server_name,
+          name: `Admin - ${formData.broker_name.trim()} - ${login}`,
+          login,
+          password: formData.password.trim(),
+          server: serverName,
           platform: 'mt5',
           magic: 0,
         }),
@@ -166,10 +173,10 @@ export default function AdminMT5AccountsPage() {
       // Enregistrer dans Supabase
       const { error: dbError } = await supabase.from('mt5_accounts').insert({
         user_id: session.user.id,
-        broker_name: formData.broker_name,
-        server_name: formData.server_name,
-        account_number: parseInt(formData.account_number),
-        password_encrypted: btoa(formData.password), // Simple encoding, pas très sécurisé mais ok pour dev
+        broker_name: formData.broker_name.trim(),
+        server_name: serverName,
+        account_number: parseInt(login, 10),
+        password_encrypted: btoa(formData.password.trim()),
         is_active: true,
         is_admin_account: true, // IMPORTANT: Marquer comme compte admin
         metaapi_account_id: metaApiData.accountId,
