@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { postMetaApiTradeWithStopsFallback } from "@/lib/metaapi-trade-client";
 
 /**
  * Exécute les trades Telegram en attente via MetaAPI
@@ -104,10 +105,10 @@ export async function POST(request: NextRequest) {
           trade.signal_type === "BUY" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL";
       }
 
-      const order: any = {
+      const order: Record<string, unknown> = {
         symbol: trade.symbol,
         actionType,
-        volume: trade.volume || 0.01,
+        volume: Number(trade.volume) > 0 ? Number(trade.volume) : 0.01,
       };
 
       // Si c'est un limit ou stop order, ajouter le prix
@@ -138,73 +139,34 @@ export async function POST(request: NextRequest) {
         // Dans une implémentation réelle, on utiliserait l'endpoint /positions/{id}/close
       }
 
-      // Exécuter le trade via MetaAPI
+      // Exécuter le trade via MetaAPI (multi-URL + interprétation TRADE_RETCODE_*)
       try {
-        // Liste des URLs possibles à tester (double domaine nécessaire pour cet environnement)
-        const possibleUrls = [
-          `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
-          `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
-          `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
-          `https://metaapi-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`
-        ];
+        const result = await postMetaApiTradeWithStopsFallback(
+          mt5Account.metaapi_account_id,
+          order,
+          process.env.METAAPI_TOKEN!
+        );
 
-        let response = null;
-        let lastError = null;
-        let successUrl = null;
-
-        for (const url of possibleUrls) {
-          try {
-            console.log(`📡 Tentative d'exécution sur: ${url}`);
-            const body = JSON.stringify(order);
-            console.log(`📦 Body being sent: ${body}`);
-            response = await fetch(url, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "auth-token": process.env.METAAPI_TOKEN!,
-              },
-              body,
-            });
-
-            // Si on a un 404 HTML, on continue avec l'URL suivante
-            const contentType = response.headers.get("content-type");
-            if (response.status === 404 && contentType?.includes("text/html")) {
-              console.warn(`⚠️ 404 HTML reçu sur ${url}, essai suivant...`);
-              continue;
-            }
-
-            // Si on arrive ici, on a une réponse JSON (succès ou erreur API)
-            successUrl = url;
-            break;
-          } catch (e: any) {
-            console.error(`❌ Échec fetch sur ${url}:`, e.message);
-            lastError = e;
-          }
+        if (!result.ok) {
+          throw new Error(
+            result.error || `MetaAPI trade échoué (HTTP ${result.status})`
+          );
         }
 
-        if (!response || !successUrl) {
-          throw lastError || new Error("Impossible de joindre aucun endpoint MetaAPI (SSL ou URL incorrecte)");
-        }
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          console.error(`❌ MetaAPI Error (${response.status}):`, data);
-          throw new Error(data.message || `Trade failed with status ${response.status}`);
-        }
+        const data = result.data as Record<string, unknown>;
 
         // Mettre à jour le trade avec succès
         const rawPositionId =
-          (data as any).positionId ||
-          (data as any).numericPositionId ||
-          (data as any).position_id ||
-          (data as any).numericOrderId ||
-          (data as any).orderId ||
+          data.positionId ??
+          data.numericPositionId ??
+          data.position_id ??
+          data.numericOrderId ??
+          data.orderId ??
           null;
 
         const positionId =
           rawPositionId !== null && rawPositionId !== undefined
-            ? parseInt(rawPositionId.toString(), 10)
+            ? parseInt(String(rawPositionId), 10)
             : null;
 
         await supabase
@@ -212,10 +174,12 @@ export async function POST(request: NextRequest) {
           .update({
             status: isPartialClosure ? "partially_closed" : "executed",
             executed_at: new Date().toISOString(),
-            entry_price: data.price || trade.entry_price,
+            entry_price: data.price ?? trade.entry_price,
             position_id: positionId,
             // Sauvegarder l'ID de position/ordre pour les futures fermetures
-            error_message: data.orderId || data.numericOrderId || null 
+            error_message:
+              (data.orderId != null ? String(data.orderId) : null) ||
+              (data.numericOrderId != null ? String(data.numericOrderId) : null),
           })
           .eq("id", trade.id);
 

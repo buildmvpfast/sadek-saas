@@ -1,4 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  brokerMappingKeys,
+  staticBrokerSymbol,
+} from "@/lib/broker-symbol-fallback";
+import {
+  postMetaApiTradeWithStopsFallback,
+  metaApiTradeFailureMessage,
+} from "@/lib/metaapi-trade-client";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -414,31 +422,52 @@ export class MetaApiPositionMonitor {
     error?: string;
   }> {
     try {
-      const response = await fetch(
-        `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/trade`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "auth-token": process.env.METAAPI_TOKEN!,
-          },
-          body: JSON.stringify(order),
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return { success: false, error: data.message || "Trade failed" };
+      const token = process.env.METAAPI_TOKEN;
+      if (!token) {
+        return { success: false, error: "METAAPI_TOKEN manquant" };
       }
 
+      const body: Record<string, unknown> = {
+        symbol: order.symbol,
+        actionType: order.actionType,
+        volume: order.volume,
+      };
+      if (order.stopLoss != null) body.stopLoss = order.stopLoss;
+      if (order.takeProfit != null) body.takeProfit = order.takeProfit;
+
+      const result = await postMetaApiTradeWithStopsFallback(
+        metaApiAccountId,
+        body,
+        token,
+      );
+
+      if (!result.ok) {
+        const msg =
+          result.error ||
+          metaApiTradeFailureMessage(result.data) ||
+          "Trade failed";
+        return { success: false, error: msg };
+      }
+
+      const data = result.data as Record<string, unknown>;
+      const rawId =
+        data.positionId ??
+        data.orderId ??
+        data.numericPositionId ??
+        data.numericOrderId;
       return {
         success: true,
-        positionId: data.positionId || data.orderId,
-        openPrice: data.price,
+        positionId: rawId != null ? String(rawId) : undefined,
+        openPrice:
+          typeof data.price === "number"
+            ? data.price
+            : data.price != null
+              ? parseFloat(String(data.price))
+              : undefined,
       };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
     }
   }
 
@@ -538,15 +567,21 @@ export class MetaApiPositionMonitor {
     brokerName: string,
     brokerSymbol: string,
   ): Promise<string | null> {
-    const { data } = await supabase
-      .from("symbol_mappings")
-      .select("standard_symbol")
-      .eq("broker_name", brokerName)
-      .eq("broker_symbol", brokerSymbol)
-      .single();
-
-    if (data) {
-      return data.standard_symbol;
+    const keys = brokerMappingKeys(brokerName);
+    const brokerKeys =
+      keys.length > 0
+        ? keys
+        : brokerName?.trim()
+          ? [brokerName.trim()]
+          : [];
+    for (const bn of brokerKeys) {
+      const { data } = await supabase
+        .from("symbol_mappings")
+        .select("standard_symbol")
+        .eq("broker_name", bn)
+        .eq("broker_symbol", brokerSymbol)
+        .maybeSingle();
+      if (data?.standard_symbol) return data.standard_symbol;
     }
 
     // Fallback: deviner selon le nom
@@ -571,14 +606,22 @@ export class MetaApiPositionMonitor {
     brokerName: string,
     standardSymbol: string,
   ): Promise<string | null> {
-    const { data } = await supabase
-      .from("symbol_mappings")
-      .select("broker_symbol")
-      .eq("broker_name", brokerName)
-      .eq("standard_symbol", standardSymbol)
-      .single();
+    for (const bn of brokerMappingKeys(brokerName)) {
+      const { data } = await supabase
+        .from("symbol_mappings")
+        .select("broker_symbol")
+        .eq("broker_name", bn)
+        .eq("standard_symbol", standardSymbol)
+        .maybeSingle();
+      if (data?.broker_symbol) return data.broker_symbol;
+    }
 
-    return data?.broker_symbol || null;
+    for (const bn of brokerMappingKeys(brokerName)) {
+      const fb = staticBrokerSymbol(bn, standardSymbol);
+      if (fb) return fb;
+    }
+
+    return null;
   }
 
   /**

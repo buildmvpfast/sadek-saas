@@ -1,4 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  brokerMappingKeys,
+  staticBrokerSymbol,
+} from "../../../lib/broker-symbol-fallback";
+import {
+  postMetaApiTradeWithStopsFallback,
+  metaApiTradeFailureMessage,
+} from "../lib/metaapi-trade-client";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -193,8 +201,24 @@ export class MetaApiPositionMonitor {
         trading_settings(
           position_sizing_type,
           gold_lot_size,
-          sol_lot_size,
           btc_lot_size,
+          eth_lot_size,
+          sol_lot_size,
+          us30_lot_size,
+          nas100_lot_size,
+          ger40_lot_size,
+          uk100_lot_size,
+          spx500_lot_size,
+          eurusd_lot_size,
+          gbpusd_lot_size,
+          usdjpy_lot_size,
+          usdchf_lot_size,
+          usdcad_lot_size,
+          audusd_lot_size,
+          nzdusd_lot_size,
+          eurgbp_lot_size,
+          eurjpy_lot_size,
+          gbpjpy_lot_size,
           position_percentage,
           max_open_positions
         )
@@ -265,13 +289,32 @@ export class MetaApiPositionMonitor {
     let userVolume = 0.01; // Défaut
 
     if (settings && settings.position_sizing_type === "lot") {
-      // Utiliser les lots fixes selon l'instrument
-      if (standardSymbol === "GOLD") {
-        userVolume = parseFloat(settings.gold_lot_size) || 0.01;
-      } else if (standardSymbol === "SOL30") {
-        userVolume = parseFloat(settings.sol_lot_size) || 0.01;
-      } else if (standardSymbol === "BTC") {
-        userVolume = parseFloat(settings.btc_lot_size) || 0.01;
+      const lotMap: Record<string, string> = {
+        GOLD: "gold_lot_size",
+        BTC: "btc_lot_size",
+        ETH: "eth_lot_size",
+        SOL30: "sol_lot_size",
+        US30: "us30_lot_size",
+        NAS100: "nas100_lot_size",
+        GER40: "ger40_lot_size",
+        UK100: "uk100_lot_size",
+        SPX500: "spx500_lot_size",
+        EURUSD: "eurusd_lot_size",
+        GBPUSD: "gbpusd_lot_size",
+        USDJPY: "usdjpy_lot_size",
+        USDCHF: "usdchf_lot_size",
+        USDCAD: "usdcad_lot_size",
+        AUDUSD: "audusd_lot_size",
+        NZDUSD: "nzdusd_lot_size",
+        EURGBP: "eurgbp_lot_size",
+        EURJPY: "eurjpy_lot_size",
+        GBPJPY: "gbpjpy_lot_size",
+      };
+      const col = lotMap[standardSymbol];
+      const raw =
+        col != null ? (settings as Record<string, unknown>)[col] : undefined;
+      if (raw != null && raw !== "") {
+        userVolume = parseFloat(String(raw)) || 0.01;
       }
     } else if (settings && settings.position_sizing_type === "percentage") {
       // Calculer selon le pourcentage
@@ -362,31 +405,52 @@ export class MetaApiPositionMonitor {
     error?: string;
   }> {
     try {
-      const response = await fetch(
-        `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/trade`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "auth-token": process.env.METAAPI_TOKEN!,
-          },
-          body: JSON.stringify(order),
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return { success: false, error: data.message || "Trade failed" };
+      const token = process.env.METAAPI_TOKEN;
+      if (!token) {
+        return { success: false, error: "METAAPI_TOKEN manquant" };
       }
 
+      const body: Record<string, unknown> = {
+        symbol: order.symbol,
+        actionType: order.actionType,
+        volume: order.volume,
+      };
+      if (order.stopLoss != null) body.stopLoss = order.stopLoss;
+      if (order.takeProfit != null) body.takeProfit = order.takeProfit;
+
+      const result = await postMetaApiTradeWithStopsFallback(
+        metaApiAccountId,
+        body,
+        token,
+      );
+
+      if (!result.ok) {
+        const msg =
+          result.error ||
+          metaApiTradeFailureMessage(result.data) ||
+          "Trade failed";
+        return { success: false, error: msg };
+      }
+
+      const data = result.data as Record<string, unknown>;
+      const rawId =
+        data.positionId ??
+        data.orderId ??
+        data.numericPositionId ??
+        data.numericOrderId;
       return {
         success: true,
-        positionId: data.positionId || data.orderId,
-        openPrice: data.price,
+        positionId: rawId != null ? String(rawId) : undefined,
+        openPrice:
+          typeof data.price === "number"
+            ? data.price
+            : data.price != null
+              ? parseFloat(String(data.price))
+              : undefined,
       };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
     }
   }
 
@@ -486,15 +550,21 @@ export class MetaApiPositionMonitor {
     brokerName: string,
     brokerSymbol: string,
   ): Promise<string | null> {
-    const { data } = await supabase
-      .from("symbol_mappings")
-      .select("standard_symbol")
-      .eq("broker_name", brokerName)
-      .eq("broker_symbol", brokerSymbol)
-      .single();
-
-    if (data) {
-      return data.standard_symbol;
+    const keys = brokerMappingKeys(brokerName);
+    const brokerKeys =
+      keys.length > 0
+        ? keys
+        : brokerName?.trim()
+          ? [brokerName.trim()]
+          : [];
+    for (const bn of brokerKeys) {
+      const { data } = await supabase
+        .from("symbol_mappings")
+        .select("standard_symbol")
+        .eq("broker_name", bn)
+        .eq("broker_symbol", brokerSymbol)
+        .maybeSingle();
+      if (data?.standard_symbol) return data.standard_symbol;
     }
 
     // Fallback: deviner selon le nom
@@ -519,14 +589,22 @@ export class MetaApiPositionMonitor {
     brokerName: string,
     standardSymbol: string,
   ): Promise<string | null> {
-    const { data } = await supabase
-      .from("symbol_mappings")
-      .select("broker_symbol")
-      .eq("broker_name", brokerName)
-      .eq("standard_symbol", standardSymbol)
-      .single();
+    for (const bn of brokerMappingKeys(brokerName)) {
+      const { data } = await supabase
+        .from("symbol_mappings")
+        .select("broker_symbol")
+        .eq("broker_name", bn)
+        .eq("standard_symbol", standardSymbol)
+        .maybeSingle();
+      if (data?.broker_symbol) return data.broker_symbol;
+    }
 
-    return data?.broker_symbol || null;
+    for (const bn of brokerMappingKeys(brokerName)) {
+      const fb = staticBrokerSymbol(bn, standardSymbol);
+      if (fb) return fb;
+    }
+
+    return null;
   }
 
   /**

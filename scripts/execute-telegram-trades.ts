@@ -5,6 +5,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
+import { postMetaApiTradeWithStopsFallback } from "../lib/metaapi-trade-client";
 
 dotenv.config({ path: ".env.local" });
 
@@ -138,10 +139,10 @@ async function executePendingTrades() {
         trade.signal_type === "BUY" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL";
     }
 
-    const order: any = {
+    const order: Record<string, unknown> = {
       symbol: trade.symbol,
       actionType,
-      volume: trade.volume || 0.01,
+      volume: Number(trade.volume) > 0 ? Number(trade.volume) : 0.01,
     };
 
     // Si c'est un limit ou stop order, ajouter le prix
@@ -163,72 +164,40 @@ async function executePendingTrades() {
     }
 
     try {
-      // Liste des URLs possibles à tester (double domaine nécessaire pour cet environnement)
-      const possibleUrls = [
-        `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
-        `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
-        `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`,
-        `https://metaapi-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${mt5Account.metaapi_account_id}/trade`
-      ];
+      const result = await postMetaApiTradeWithStopsFallback(
+        mt5Account.metaapi_account_id,
+        order,
+        process.env.METAAPI_TOKEN!
+      );
 
-      let response = null;
-      let lastError = null;
-      let successUrl = null;
-
-      for (const url of possibleUrls) {
-        try {
-          console.log(`📡 Tentative d'exécution sur: ${url}`);
-          const body = JSON.stringify(order);
-          console.log(`📦 Body being sent: ${body}`);
-          response = await fetch(url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "auth-token": process.env.METAAPI_TOKEN!,
-            },
-            body,
-          });
-
-          // Si on a un 404 HTML, on continue avec l'URL suivante
-          const contentType = response.headers.get("content-type");
-          if (response.status === 404 && contentType?.includes("text/html")) {
-            console.warn(`⚠️ 404 HTML reçu sur ${url}, essai suivant...`);
-            continue;
-          }
-
-          // Si on arrive ici, on a une réponse JSON (succès ou erreur API)
-          successUrl = url;
-          break;
-        } catch (e: any) {
-          console.error(`❌ Échec fetch sur ${url}:`, e.message);
-          lastError = e;
-        }
+      if (!result.ok) {
+        throw new Error(
+          result.error || `MetaAPI trade échoué (HTTP ${result.status})`
+        );
       }
 
-      if (!response || !successUrl) {
-        throw lastError || new Error("Impossible de joindre aucun endpoint MetaAPI (SSL ou URL incorrecte)");
-      }
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.error(`❌ MetaAPI Error (${response.status}):`, data);
-        throw new Error(data.message || `Trade failed with status ${response.status}`);
-      }
+      const data = result.data as Record<string, unknown>;
 
       await supabase
         .from("telegram_trades")
         .update({
           status: "executed",
           executed_at: new Date().toISOString(),
-          entry_price: data.price || trade.entry_price,
+          entry_price: data.price ?? trade.entry_price,
+          position_id:
+            data.positionId != null
+              ? parseInt(String(data.positionId), 10)
+              : data.orderId != null
+                ? parseInt(String(data.orderId), 10)
+                : null,
+          error_message:
+            (data.orderId != null ? String(data.orderId) : null) ||
+            (data.numericOrderId != null ? String(data.numericOrderId) : null),
         })
         .eq("id", trade.id);
 
       executed++;
-      console.log(
-        `✅ Trade ${trade.id} exécuté: ${trade.signal_type} ${trade.symbol} ${trade.volume} lots`
-      );
+      console.log(`✅ Trade ${trade.id} exécuté avec succès`);
     } catch (error: any) {
       console.error(`❌ Erreur trade ${trade.id}:`, error.message);
 
