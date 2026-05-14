@@ -11,6 +11,7 @@ export function metaApiTradeUrls(accountId: string): string[] {
   return [
     `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${id}/trade`,
     `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${id}/trade`,
+    `https://mt-client-api-v1.singapore.agiliumtrade.ai/users/current/accounts/${id}/trade`,
     `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
     `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
     `https://metaapi-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
@@ -23,26 +24,71 @@ export function metaApiPositionsUrls(accountId: string): string[] {
   return [
     `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${id}/positions`,
     `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${id}/positions`,
+    `https://mt-client-api-v1.singapore.agiliumtrade.ai/users/current/accounts/${id}/positions`,
     `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/positions`,
     `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/positions`,
   ];
 }
 
+/** Codes string de succès (MetatraderTradeResponse, doc MetaAPI). */
+const META_API_TRADE_SUCCESS_STRING = new Set([
+  "ERR_NO_ERROR",
+  "TRADE_RETCODE_PLACED",
+  "TRADE_RETCODE_DONE",
+  "TRADE_RETCODE_DONE_PARTIAL",
+  "TRADE_RETCODE_NO_CHANGES",
+]);
+
+function normalizeMetaApiTradePayload(
+  data: unknown,
+): Record<string, unknown> | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  if (
+    typeof d.stringCode === "string" ||
+    typeof d.numericCode === "number" ||
+    typeof d.numericCode === "string"
+  ) {
+    return d;
+  }
+  const inner = d.response ?? d.result ?? d.data;
+  if (inner && typeof inner === "object") {
+    return inner as Record<string, unknown>;
+  }
+  return d;
+}
+
+function parseNumericCode(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 /**
- * Succès explicite uniquement (doc MetaAPI). Ne pas inférer depuis orderId seul
- * (sinon risque de marquer « ouvert » dans le SaaS alors que MT5 a refusé l’ordre).
+ * Succès selon la doc MetaAPI (numeric 0, 10008–10010, 10025 + strings listées).
+ * Ne pas inférer le succès depuis orderId seul (risque de faux positif).
  */
 export function isMetaApiTradeSuccess(data: unknown): boolean {
-  if (!data || typeof data !== "object") return false;
-  const d = data as Record<string, unknown>;
-  if (d.stringCode === "TRADE_RETCODE_DONE") return true;
-  if (d.numericCode === 10009) return true;
+  const d = normalizeMetaApiTradePayload(data);
+  if (!d) return false;
+  const sc = d.stringCode;
+  if (typeof sc === "string" && META_API_TRADE_SUCCESS_STRING.has(sc)) {
+    return true;
+  }
+  const nc = parseNumericCode(d.numericCode);
+  if (nc == null) return false;
+  if (nc === 0) return true;
+  if (nc === 10025) return true;
+  if (nc >= 10008 && nc <= 10010) return true;
   return false;
 }
 
 export function metaApiTradeFailureMessage(data: unknown): string {
-  if (!data || typeof data !== "object") return "Réponse MetaAPI invalide";
-  const d = data as Record<string, unknown>;
+  const d = normalizeMetaApiTradePayload(data);
+  if (!d) return "Réponse MetaAPI invalide";
   const parts = [
     d.message,
     d.stringCode,
@@ -211,6 +257,7 @@ export function metaApiClosePositionUrls(
   const roots = [
     "https://mt-client-api-v1.london.agiliumtrade.ai",
     "https://mt-client-api-v1.new-york.agiliumtrade.ai",
+    "https://mt-client-api-v1.singapore.agiliumtrade.ai",
     "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai",
     "https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai",
   ];

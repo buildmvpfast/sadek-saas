@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isMetaApiTradeSuccess } from "@/lib/metaapi-trade-client";
 
 export async function POST(request: NextRequest) {
   try {
@@ -295,12 +296,12 @@ export async function POST(request: NextRequest) {
                 body: JSON.stringify(body),
               });
 
-              if (!resp.ok) {
-                const errData = await resp.json().catch(() => ({}));
+              const respData = await resp.json().catch(() => ({}));
+              if (!resp.ok || !isMetaApiTradeSuccess(respData)) {
                 console.error(
                   `❌ POSITION_MODIFY failed for trade ${trade.id}:`,
                   resp.status,
-                  errData,
+                  respData,
                 );
                 continue;
               }
