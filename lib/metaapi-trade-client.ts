@@ -245,6 +245,8 @@ export async function postMetaApiClosePosition(
   }
   return { ok: false, error: last };
 }
+
+export async function fetchMetaApiPositionsJson(
   accountId: string,
   token: string,
 ): Promise<{ ok: true; positions: unknown[]; url: string } | { ok: false; error: string }> {
