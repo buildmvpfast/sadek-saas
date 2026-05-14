@@ -23,9 +23,11 @@ const STATIC_BROKER_SYMBOL: Record<string, Partial<Record<string, string>>> = {
 export function brokerMappingKeys(brokerName: string | null | undefined): string[] {
   if (!brokerName) return [];
   const t = brokerName.trim();
-  const keys = new Set<string>([t]);
-  if (/vantage/i.test(t)) keys.add("Vantage");
-  return [...keys];
+  const out: string[] = [t];
+  if (/vantage/i.test(t) && t !== "Vantage") {
+    out.push("Vantage");
+  }
+  return out;
 }
 
 export function staticBrokerSymbol(
