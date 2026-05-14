@@ -6,6 +6,8 @@ import {
 import {
   postMetaApiTradeWithStopsFallback,
   metaApiTradeFailureMessage,
+  fetchMetaApiPositionsJson,
+  postMetaApiClosePosition,
 } from "../lib/metaapi-trade-client";
 
 const supabase = createClient(
@@ -104,29 +106,28 @@ export class MetaApiPositionMonitor {
    */
   private async checkPositions(account: AdminAccount) {
     try {
-      // Appeler l'API MetaApi pour récupérer les positions
-      const response = await fetch(
-        `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${account.metaapi_account_id}/positions`,
-        {
-          headers: {
-            "auth-token": process.env.METAAPI_TOKEN!,
-          },
-        },
-      );
-
-      if (!response.ok) {
-        console.error(`Erreur API MetaApi: ${response.status}`);
+      const token = process.env.METAAPI_TOKEN;
+      if (!token) {
+        console.error("METAAPI_TOKEN manquant");
         return;
       }
 
-      const positions: Position[] = await response.json();
+      const result = await fetchMetaApiPositionsJson(
+        account.metaapi_account_id,
+        token,
+      );
 
-      // Traiter chaque position
+      if (!result.ok) {
+        console.error(`Erreur API MetaApi positions: ${result.error}`);
+        return;
+      }
+
+      const positions: Position[] = result.positions as Position[];
+
       for (const position of positions) {
         await this.handleNewPosition(account, position);
       }
 
-      // Vérifier les positions fermées
       await this.checkClosedPositions(account, positions);
     } catch (error) {
       console.error("Erreur lors de la vérification des positions:", error);
@@ -528,18 +529,11 @@ export class MetaApiPositionMonitor {
    * Ferme une position via MetaApi
    */
   private async closePosition(metaApiAccountId: string, positionId: string) {
-    const response = await fetch(
-      `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/positions/${positionId}/close`,
-      {
-        method: "POST",
-        headers: {
-          "auth-token": process.env.METAAPI_TOKEN!,
-        },
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Failed to close position: ${response.status}`);
+    const token = process.env.METAAPI_TOKEN;
+    if (!token) throw new Error("METAAPI_TOKEN manquant");
+    const r = await postMetaApiClosePosition(metaApiAccountId, positionId, token);
+    if (!r.ok) {
+      throw new Error(r.error || "Fermeture position refusée");
     }
   }
 

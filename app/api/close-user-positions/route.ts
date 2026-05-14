@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { postMetaApiClosePosition } from '@/lib/metaapi-trade-client'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,19 +52,15 @@ export async function POST(req: Request) {
         const metaApiAccountId = (trade.mt5_accounts as any)?.metaapi_account_id
 
         if (metaApiAccountId && trade.follower_ticket) {
-          // Close position via MetaApi REST
-          const closeResponse = await fetch(
-            `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/positions/${trade.follower_ticket}/close`,
-            {
-              method: 'POST',
-              headers: { 'auth-token': token },
-            }
+          const closeResult = await postMetaApiClosePosition(
+            metaApiAccountId,
+            String(trade.follower_ticket),
+            token,
           )
 
-          if (!closeResponse.ok) {
-            const errData = await closeResponse.json().catch(() => ({}))
-            console.error(`Erreur fermeture position ${trade.follower_ticket}:`, errData)
-            errors.push(`Trade ${trade.id}: ${errData.message || closeResponse.status}`)
+          if (!closeResult.ok) {
+            console.error(`Erreur fermeture position ${trade.follower_ticket}:`, closeResult.error)
+            errors.push(`Trade ${trade.id}: ${closeResult.error || 'close failed'}`)
           } else {
             closedCount++
           }

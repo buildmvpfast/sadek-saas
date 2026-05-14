@@ -1,7 +1,7 @@
 /**
- * Client MetaAPI REST pour POST .../trade
- * - Plusieurs URLs (comme execute-trades) car l’hôte varie selon l’environnement
- * - HTTP 200 peut quand même signifier échec MT (stringCode TRADE_RETCODE_REJECT)
+ * Client MetaAPI REST (trade + lecture positions)
+ * - Plusieurs URLs régionales (comme execute-trades)
+ * - HTTP 200 sur /trade peut contenir TRADE_RETCODE_REJECT → ne jamais traiter orderId seul comme succès
  */
 
 export type MetaApiTradeBody = Record<string, unknown>;
@@ -10,32 +10,33 @@ export function metaApiTradeUrls(accountId: string): string[] {
   const id = encodeURIComponent(accountId);
   return [
     `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${id}/trade`,
+    `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${id}/trade`,
     `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
     `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
     `https://metaapi-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
   ];
 }
 
-/** Réponse doc MetaAPI : succès = TRADE_RETCODE_DONE / numericCode 10009 */
+/** Hôtes client REST pour GET positions (doit coller à la région du compte côté MetaAPI). */
+export function metaApiPositionsUrls(accountId: string): string[] {
+  const id = encodeURIComponent(accountId);
+  return [
+    `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${id}/positions`,
+    `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${id}/positions`,
+    `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/positions`,
+    `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/positions`,
+  ];
+}
+
+/**
+ * Succès explicite uniquement (doc MetaAPI). Ne pas inférer depuis orderId seul
+ * (sinon risque de marquer « ouvert » dans le SaaS alors que MT5 a refusé l’ordre).
+ */
 export function isMetaApiTradeSuccess(data: unknown): boolean {
   if (!data || typeof data !== "object") return false;
   const d = data as Record<string, unknown>;
   if (d.stringCode === "TRADE_RETCODE_DONE") return true;
   if (d.numericCode === 10009) return true;
-  if (d.stringCode === "TRADE_RETCODE_REJECT") return false;
-  if (d.numericCode === 10006) return false;
-  // Anciennes réponses sans codes explicites mais avec id
-  if (d.orderId != null || d.positionId != null) {
-    if (d.numericCode != null && d.numericCode !== 10009) return false;
-    if (
-      typeof d.stringCode === "string" &&
-      d.stringCode !== "" &&
-      d.stringCode !== "TRADE_RETCODE_DONE"
-    ) {
-      return false;
-    }
-    return true;
-  }
   return false;
 }
 
@@ -80,7 +81,7 @@ export type PostMetaApiTradeResult = {
 };
 
 /**
- * POST trade : essaie les URLs jusqu’à une réponse JSON exploitable.
+ * POST trade : essaie les URLs jusqu’à une réponse JSON avec succès MT explicite.
  */
 export async function postMetaApiTrade(
   accountId: string,
@@ -101,6 +102,8 @@ export async function postMetaApiTrade(
       error: "Volume d’ordre invalide ou manquant",
     };
   }
+
+  let lastStatus = 0;
   let lastData: unknown = null;
   let lastUrl: string | undefined;
   let lastText = "";
@@ -143,7 +146,6 @@ export async function postMetaApiTrade(
       }
 
       lastText = metaApiTradeFailureMessage(data);
-      // 200 mais rejet MT : ne pas essayer d’autres URLs pour la même erreur métier
       return {
         ok: false,
         status: response.status,
@@ -197,4 +199,78 @@ export async function postMetaApiTradeWithStopsFallback(
   }
 
   return first;
+}
+
+/** POST .../positions/:id/close — mêmes bases que GET positions */
+export function metaApiClosePositionUrls(
+  accountId: string,
+  positionId: string,
+): string[] {
+  const id = encodeURIComponent(accountId);
+  const pid = encodeURIComponent(String(positionId));
+  const roots = [
+    "https://mt-client-api-v1.london.agiliumtrade.ai",
+    "https://mt-client-api-v1.new-york.agiliumtrade.ai",
+    "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai",
+    "https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai",
+  ];
+  return roots.map(
+    (r) =>
+      `${r}/users/current/accounts/${id}/positions/${pid}/close`,
+  );
+}
+
+export async function postMetaApiClosePosition(
+  accountId: string,
+  positionId: string,
+  token: string,
+): Promise<{ ok: boolean; error?: string }> {
+  let last = "";
+  for (const url of metaApiClosePositionUrls(accountId, positionId)) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "auth-token": token },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && isMetaApiTradeSuccess(data)) {
+        return { ok: true };
+      }
+      last =
+        metaApiTradeFailureMessage(data) ||
+        `HTTP ${response.status}`;
+    } catch (e: unknown) {
+      last = e instanceof Error ? e.message : String(e);
+    }
+  }
+  return { ok: false, error: last };
+}
+  accountId: string,
+  token: string,
+): Promise<{ ok: true; positions: unknown[]; url: string } | { ok: false; error: string }> {
+  let lastErr = "";
+  for (const url of metaApiPositionsUrls(accountId)) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "auth-token": token,
+          "Content-Type": "application/json",
+        },
+      });
+      if (!response.ok) {
+        const t = await response.text().catch(() => "");
+        lastErr = `HTTP ${response.status}: ${t.slice(0, 200)}`;
+        continue;
+      }
+      const data: unknown = await response.json();
+      if (!Array.isArray(data)) {
+        lastErr = "Réponse positions: JSON non tableau";
+        continue;
+      }
+      return { ok: true, positions: data, url };
+    } catch (e: unknown) {
+      lastErr = e instanceof Error ? e.message : String(e);
+    }
+  }
+  return { ok: false, error: lastErr || "Aucun endpoint positions MetaAPI joignable" };
 }

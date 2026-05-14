@@ -77,7 +77,7 @@ export default async function DashboardPage() {
       exit_time: t.closed_at || null,
       // Harmonisation des champs pour l'affichage
       order_type: `${t.signal_type} ${t.order_type || 'MARKET'}`,
-      display_status: t.status === 'executed' ? 'OUVERT' : t.status === 'closed' ? 'FERMÉ' : t.status === 'failed' ? 'ÉCHEC' : 'EN ATTENTE'
+      display_status: t.status === 'executed' ? 'EXÉCUTÉ (MT5)' : t.status === 'closed' ? 'FERMÉ' : t.status === 'failed' ? 'ÉCHEC' : 'EN ATTENTE'
     }))
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
