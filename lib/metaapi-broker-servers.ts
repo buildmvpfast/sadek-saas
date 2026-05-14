@@ -16,26 +16,49 @@ function uniqServers(servers: string[]): string[] {
   return out;
 }
 
+/**
+ * Serveurs VT tels qu’affichés dans MT5 / emails broker.
+ * La forme la plus courante est **VTMarkets** (sans espace) + `-Live` / `-Demo` / `-Live N`.
+ * « VT Markets- » (avec espace) existe encore sur certains comptes → on garde les deux préfixes.
+ */
+function buildVtMarketsServers(): string[] {
+  const list: string[] = [];
+  const prefixes = ["VTMarkets", "VT Markets"] as const;
+
+  for (const p of prefixes) {
+    list.push(`${p}-Live`, `${p}-Demo`);
+    for (let i = 1; i <= 25; i++) {
+      list.push(`${p}-Live ${i}`);
+    }
+    for (let i = 1; i <= 25; i++) {
+      list.push(`${p}-Live${i}`);
+    }
+    list.push(
+      `${p}-Live01`,
+      `${p}-Live02`,
+      `${p}-Live03`,
+      `${p}-Live04`,
+      `${p}-Live05`,
+      `${p}-Live06`,
+      `${p}-Live07`,
+      `${p}-Live08`,
+      `${p}-Live09`,
+    );
+    list.push(
+      `${p}-Real`,
+      `${p}-Real01`,
+      `${p}-Real02`,
+      `${p}-Real03`,
+    );
+  }
+
+  return uniqServers(list);
+}
+
 export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
   {
     name: "VT Markets",
-    servers: uniqServers([
-      // Variantes « VT Markets » et « VTMarkets » (selon broker / région)
-      "VT Markets-Live",
-      "VT Markets-Demo",
-      "VTMarkets-Demo",
-      "VTMarkets-Live 2",
-      "VTMarkets-Live 3",
-      "VTMarkets-Live 4",
-      "VTMarkets-Live 5",
-      "VTMarkets-Live 6",
-      "VTMarkets-Live7",
-      "VT Markets-Live01",
-      "VT Markets-Live02",
-      "VT Markets-Real",
-      "VT Markets-Real01",
-      "VT Markets-Real02",
-    ]),
+    servers: buildVtMarketsServers(),
   },
   {
     name: "Raise FX",

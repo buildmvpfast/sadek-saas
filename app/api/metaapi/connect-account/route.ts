@@ -16,6 +16,20 @@ function normalizeLogin(login: string | number): string {
   return s;
 }
 
+/** Serveur saisi ressemble à VT Markets / Vantage Markets (MT5). */
+function looksLikeVtMarketsServer(server: string): boolean {
+  const n = server.toLowerCase().replace(/\s+/g, " ");
+  return n.includes("vtmarket") || n.includes("vt markets");
+}
+
+function appendVtMarketsServerHint(message: string, server: string): string {
+  if (!looksLikeVtMarketsServer(server)) return message;
+  return (
+    message +
+    " Pour VT Markets : dans MT5 le serveur est souvent « VTMarkets-Live », « VTMarkets-Demo » ou « VTMarkets-Live N » (sans espace entre VT et Markets ; parfois un espace avant le numéro du nœud). Copiez-collez depuis Fichier → Ouvrir un compte de trading."
+  );
+}
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -148,6 +162,11 @@ export async function POST(request: Request) {
     }
 
     const token = process.env.METAAPI_TOKEN;
+    const provisioningRegion =
+      typeof process.env.METAAPI_PROVISIONING_REGION === "string" &&
+      process.env.METAAPI_PROVISIONING_REGION.trim().length > 0
+        ? process.env.METAAPI_PROVISIONING_REGION.trim()
+        : "london";
 
     const response = await fetch(PROVISIONING_BASE, {
       method: "POST",
@@ -164,7 +183,7 @@ export async function POST(request: Request) {
         platform,
         magic: magic || 0,
         application: "MetaApi",
-        region: "london",
+        region: provisioningRegion,
       }),
     });
 
@@ -186,7 +205,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: msg,
+          error: appendVtMarketsServerHint(msg, server),
           details: data,
         },
         { status: 200 },
@@ -224,11 +243,12 @@ export async function POST(request: Request) {
 
     if (!wait.ok) {
       await deleteProvisioningAccount(accountId, token);
+      const baseErr =
+        wait.errorFr ||
+        "Connexion MT5 impossible. Vérifiez serveur, numéro de compte et mot de passe.";
       return NextResponse.json({
         success: false,
-        error:
-          wait.errorFr ||
-          "Connexion MT5 impossible. Vérifiez serveur, numéro de compte et mot de passe.",
+        error: appendVtMarketsServerHint(baseErr, server),
         state: wait.last?.state,
         connectionStatus: wait.last?.connectionStatus,
       });

@@ -406,12 +406,26 @@ export default function MT5AccountsPage() {
                           })
                         }
                         className="input"
-                        placeholder="Ex: RaiseGlobal-Live"
+                        placeholder={
+                          formData.broker_name === "VT Markets"
+                            ? "Ex: VTMarkets-Live ou VTMarkets-Live 3"
+                            : "Ex: RaiseGlobal-Live"
+                        }
                         required
                       />
                       <p className="text-xs text-gray-500 mt-1">
                         Entrez le nom exact du serveur (visible dans MT5)
                       </p>
+                      {formData.broker_name === "VT Markets" && (
+                        <p className="text-xs text-amber-800/90 mt-1.5">
+                          VT : le plus courant est{" "}
+                          <span className="font-mono">VTMarkets-Live</span> /{" "}
+                          <span className="font-mono">VTMarkets-Demo</span>{" "}
+                          (sans espace après VT). Si MT5 affiche un nœud
+                          numéroté, gardez l’espace comme dans MT5, ex.{" "}
+                          <span className="font-mono">VTMarkets-Live 5</span>.
+                        </p>
+                      )}
                     </>
                   ) : (
                     <>
@@ -436,6 +450,14 @@ export default function MT5AccountsPage() {
                       <p className="text-xs text-gray-500 mt-1">
                         {servers.length} serveurs disponibles
                       </p>
+                      {formData.broker_name === "VT Markets" && (
+                        <p className="text-xs text-amber-800/90 mt-1.5">
+                          Si la liste ne contient pas votre nœud, saisie manuelle
+                          : copiez depuis MT5 — souvent{" "}
+                          <span className="font-mono">VTMarkets-Live</span> ou{" "}
+                          <span className="font-mono">VTMarkets-Live N</span>.
+                        </p>
+                      )}
                     </>
                   )}
                 </div>
