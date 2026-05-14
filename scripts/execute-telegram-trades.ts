@@ -6,6 +6,7 @@
 import { createClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
 import { postMetaApiTradeWithStopsFallback } from "../lib/metaapi-trade-client";
+import { snapVolumeForMetaApiSymbol } from "../lib/trade-volume";
 
 dotenv.config({ path: ".env.local" });
 
@@ -139,10 +140,12 @@ async function executePendingTrades() {
         trade.signal_type === "BUY" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL";
     }
 
+    const rawVol =
+      Number(trade.volume) > 0 ? Number(trade.volume) : 0.01;
     const order: Record<string, unknown> = {
       symbol: trade.symbol,
       actionType,
-      volume: Number(trade.volume) > 0 ? Number(trade.volume) : 0.01,
+      volume: snapVolumeForMetaApiSymbol(String(trade.symbol), rawVol),
     };
 
     // Si c'est un limit ou stop order, ajouter le prix

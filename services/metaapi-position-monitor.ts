@@ -9,6 +9,7 @@ import {
   fetchMetaApiPositionsJson,
   postMetaApiClosePosition,
 } from "@/lib/metaapi-trade-client";
+import { snapVolumeForMetaApiSymbol } from "@/lib/trade-volume";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -353,7 +354,7 @@ export class MetaApiPositionMonitor {
           position.type === "POSITION_TYPE_BUY"
             ? "ORDER_TYPE_BUY"
             : "ORDER_TYPE_SELL",
-        volume: userVolume,
+        volume: snapVolumeForMetaApiSymbol(userSymbol, userVolume),
         stopLoss: position.stopLoss,
         takeProfit: position.takeProfit,
       },

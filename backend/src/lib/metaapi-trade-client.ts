@@ -126,6 +126,37 @@ export type PostMetaApiTradeResult = {
   error?: string;
 };
 
+const TRADE_FETCH_TIMEOUT_MS = 45_000;
+const TRADE_FETCH_RETRIES = 2;
+
+async function fetchMetaApiTradePost(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < TRADE_FETCH_RETRIES; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TRADE_FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        ...init,
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      return response;
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e;
+      if (attempt < TRADE_FETCH_RETRIES - 1) {
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error(lastErr != null ? String(lastErr) : "fetch failed");
+}
+
 /**
  * POST trade : essaie les URLs jusqu’à une réponse JSON avec succès MT explicite.
  */
@@ -157,7 +188,7 @@ export async function postMetaApiTrade(
   for (const url of metaApiTradeUrls(accountId)) {
     lastUrl = url;
     try {
-      const response = await fetch(url, {
+      const response = await fetchMetaApiTradePost(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

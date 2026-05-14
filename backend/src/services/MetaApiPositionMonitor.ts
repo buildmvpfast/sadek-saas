@@ -9,6 +9,7 @@ import {
   fetchMetaApiPositionsJson,
   postMetaApiClosePosition,
 } from "../lib/metaapi-trade-client";
+import { snapVolumeForMetaApiSymbol } from "../../../lib/trade-volume";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -336,13 +337,7 @@ export class MetaApiPositionMonitor {
           position.type === "POSITION_TYPE_BUY"
             ? "ORDER_TYPE_BUY"
             : "ORDER_TYPE_SELL",
-        volume: userVolume,
-        stopLoss: position.stopLoss,
-        takeProfit: position.takeProfit,
-      },
-    );
-
-    if (orderResult.success) {
+        volume: snapVolumeForMetaApiSymbol(userSymbol, userVolume),
       console.log(`✅ Ordre copié pour user ${userAccount.account_number}`);
 
       // Enregistrer dans copy_trades

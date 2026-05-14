@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isMetaApiTradeSuccess } from "@/lib/metaapi-trade-client";
+import {
+  brokerMappingKeys,
+  staticBrokerSymbol,
+} from "@/lib/broker-symbol-fallback";
+import {
+  effectiveUserVolumeForIndexSplit,
+  lotStepForStandard,
+  volumePerTpForStandard,
+} from "@/lib/trade-volume";
 
 export async function POST(request: NextRequest) {
   try {
@@ -827,119 +836,134 @@ async function mapSymbolToBroker(
     return normalizedSymbol;
   }
 
-  // Liste des brokers supportés
-  const supportedBrokers = [
-    "VT Markets",
-    "Raise FX",
-    "Raise Global",
-    "Raise Globale",
-    "FXcess",
-    "Axi",
-    "Vantage",
-  ];
-
-  // Normaliser le nom du broker (gérer les variations)
   const normalizedBrokerName = brokerName.trim();
-
-  // Si le broker n'est pas supporté, retourner le symbole tel quel
-  if (!supportedBrokers.includes(normalizedBrokerName)) {
-    console.log(
-      `⚠️ Broker ${normalizedBrokerName} non supporté, utilisation du symbole original: ${normalizedSymbol}`,
-    );
-    return normalizedSymbol;
+  const namesOrdered: string[] = [];
+  for (const n of [
+    normalizedBrokerName,
+    ...brokerMappingKeys(normalizedBrokerName),
+  ]) {
+    if (n && !namesOrdered.includes(n)) namesOrdered.push(n);
   }
 
-  // 1. Essayer de récupérer depuis la table symbol_mappings
+  // 1. symbol_mappings (plusieurs noms possibles : "Vantage International" → "Vantage")
   try {
-    const { data: symbolMapping, error } = await supabase
+    const { data: rows, error } = await supabase
       .from("symbol_mappings")
-      .select("broker_symbol")
-      .eq("broker_name", normalizedBrokerName)
+      .select("broker_symbol, broker_name")
       .eq("standard_symbol", normalizedSymbol)
-      .single();
+      .in("broker_name", namesOrdered);
 
-    if (!error && symbolMapping?.broker_symbol) {
-      console.log(
-        `✅ Mapping DB: ${normalizedSymbol} → ${symbolMapping.broker_symbol} pour ${normalizedBrokerName}`,
+    if (!error && Array.isArray(rows) && rows.length > 0) {
+      rows.sort(
+        (a: { broker_name: string }, b: { broker_name: string }) =>
+          namesOrdered.indexOf(a.broker_name) - namesOrdered.indexOf(b.broker_name),
       );
-      return symbolMapping.broker_symbol;
+      const sym = rows[0]?.broker_symbol;
+      if (sym) {
+        console.log(
+          `✅ Mapping DB: ${normalizedSymbol} → ${sym} (${rows[0].broker_name})`,
+        );
+        return sym;
+      }
     }
   } catch (error) {
     console.warn(
-      `⚠️ Erreur lecture symbol_mappings, utilisation du fallback:`,
+      `⚠️ Erreur lecture symbol_mappings, utilisation des fallbacks:`,
       error,
     );
   }
 
-  // 2. Fallback: Mapping intelligent basé sur les conventions courantes
+  // 2. Fallback statique partagé (Vantage / VT Markets, etc.)
+  for (const name of namesOrdered) {
+    const mapped = staticBrokerSymbol(name, normalizedSymbol);
+    if (mapped) {
+      console.log(
+        `✅ Mapping static: ${normalizedSymbol} → ${mapped} (${name})`,
+      );
+      return mapped;
+    }
+  }
+
+  // 3. Table inline (brokers sans entrée STATIC dédiée)
   const fallbackMapping: Record<string, Record<string, string>> = {
     GOLD: {
-      "VT Markets": "XAUUSD-ECN",
       "Raise FX": "XAUUSD",
       "Raise Global": "XAUUSD",
       "Raise Globale": "XAUUSD",
       FXcess: "XAUUSD",
       Axi: "XAUUSD",
-      Vantage: "XAUUSD+",
     },
     EURUSD: {
-      "VT Markets": "EURUSD-ECN",
-      Vantage: "EURUSD+",
+      "Raise FX": "EURUSD",
+      "Raise Global": "EURUSD",
+      "Raise Globale": "EURUSD",
+      FXcess: "EURUSD",
+      Axi: "EURUSD",
     },
     GBPUSD: {
-      "VT Markets": "GBPUSD-ECN",
-      Vantage: "GBPUSD+",
+      "Raise FX": "GBPUSD",
+      "Raise Global": "GBPUSD",
+      "Raise Globale": "GBPUSD",
+      FXcess: "GBPUSD",
+      Axi: "GBPUSD",
     },
-    USDJPY: { Vantage: "USDJPY+" },
-    EURGBP: { "VT Markets": "EURGBP-ECN" },
-    EURJPY: { "VT Markets": "EURJPY-ECN" },
-    GBPJPY: { "VT Markets": "GBPJPY-ECN" },
+    USDJPY: {
+      "Raise FX": "USDJPY",
+      "Raise Global": "USDJPY",
+      FXcess: "USDJPY",
+      Axi: "USDJPY",
+    },
+    EURGBP: { "Raise FX": "EURGBP", "Raise Global": "EURGBP" },
+    EURJPY: { "Raise FX": "EURJPY", "Raise Global": "EURJPY" },
+    GBPJPY: { "Raise FX": "GBPJPY", "Raise Global": "GBPJPY" },
     US30: {
-      "VT Markets": "US30.cash-ECN",
-      Vantage: "DJ30",
+      "Raise FX": "US30",
+      "Raise Global": "US30",
+      "Raise Globale": "US30",
+      FXcess: "US30",
+      Axi: "US30",
     },
     NAS100: {
-      "VT Markets": "NAS100.cash-ECN",
-      Vantage: "NAS100",
+      "Raise FX": "NAS100",
+      "Raise Global": "NAS100",
+      FXcess: "NAS100",
+      Axi: "NAS100",
     },
     GER40: {
-      "VT Markets": "GER40.cash-ECN",
-      Vantage: "GER40",
+      "Raise FX": "GER40",
+      "Raise Global": "GER40",
+      FXcess: "GER40",
+      Axi: "GER40",
     },
     SOL30: {
-      "VT Markets": "SOL30",
       "Raise FX": "SOL30",
       "Raise Global": "SOL30",
       "Raise Globale": "SOL30",
       FXcess: "SOL30",
       Axi: "SOL30",
-      Vantage: "SOL30",
     },
     BTC: {
-      "VT Markets": "BTCUSD",
       "Raise FX": "BTCUSD",
       "Raise Global": "BTCUSD",
       "Raise Globale": "BTCUSD",
       FXcess: "BTCUSD",
       Axi: "BTCUSD",
-      Vantage: "BTCUSD",
     },
   };
 
-  // Vérifier si on a un mapping fallback
-  if (
-    fallbackMapping[normalizedSymbol] &&
-    fallbackMapping[normalizedSymbol][normalizedBrokerName]
-  ) {
-    const mappedSymbol =
-      fallbackMapping[normalizedSymbol][normalizedBrokerName];
-    console.log(
-      `✅ Mapping fallback: ${normalizedSymbol} → ${mappedSymbol} pour ${normalizedBrokerName}`,
-    );
-    return mappedSymbol;
+  const byStd = fallbackMapping[normalizedSymbol];
+  if (byStd) {
+    for (const name of namesOrdered) {
+      const sym = byStd[name];
+      if (sym) {
+        console.log(
+          `✅ Mapping fallback: ${normalizedSymbol} → ${sym} (${name})`,
+        );
+        return sym;
+      }
+    }
   }
 
-  // 3. Si aucun mapping trouvé, retourner le symbole normalisé
   console.log(
     `⚠️ Pas de mapping pour ${normalizedSymbol} sur ${normalizedBrokerName}, utilisation du symbole normalisé`,
   );
@@ -1108,7 +1132,8 @@ async function executeTradesForSignal(signalId: string) {
           ((signal.volume || 0.01) *
             (parseFloat(tradingSettings.position_percentage) || 1.0)) /
           100;
-        if (userVolume < 0.01) userVolume = 0.01; // Minimum
+        const { min: minLot } = lotStepForStandard(normalizedSymbol);
+        if (userVolume < minLot) userVolume = minLot;
       }
     }
 
@@ -1129,27 +1154,21 @@ async function executeTradesForSignal(signalId: string) {
     // - If there is 1 TP => 1 trade
     // - For market orders without TP => 1 trade with `take_profit = null`
     const tpCount = tpValues.length;
-    const roundLotStep = (v: number, step = 0.01) =>
-      Math.round(v / step) * step;
+    const effectiveUserVolume = effectiveUserVolumeForIndexSplit(
+      normalizedSymbol,
+      userVolume,
+      tpCount,
+    );
 
     for (let i = 0; i < tpValues.length; i++) {
       const tpValue = tpValues[i];
 
-      // Split volume equally across TPs (simple + predictable)
-      let volumeForTp =
-        tpCount > 1 ? roundLotStep(userVolume / tpCount) : userVolume;
-
-      // Ensure volume doesn't collapse to < 0.01 after rounding
-      volumeForTp = Math.max(0.01, volumeForTp);
-
-      // If rounding caused drift, fix the last TP so the sum stays close to `userVolume`
-      if (tpCount > 1 && i === tpValues.length - 1) {
-        const assignedSoFar =
-          roundLotStep(userVolume / tpCount) * (tpCount - 1);
-        volumeForTp = Math.max(0.01, roundLotStep(userVolume - assignedSoFar));
-      }
-
-      // Prevent duplicate trades for the same signal/user/account/TP
+      const volumeForTp = volumePerTpForStandard(
+        normalizedSymbol,
+        effectiveUserVolume,
+        tpCount,
+        i,
+      );
       let existingQuery: any = supabase
         .from("telegram_trades")
         .select("id")

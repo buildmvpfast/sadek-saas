@@ -59,7 +59,7 @@ SET broker_symbol = EXCLUDED.broker_symbol;
 
 -- EURUSD (Forex - généralement identique partout)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VT Markets', 'EURUSD', 'EURUSD'),
+  ('VT Markets', 'EURUSD', 'EURUSD-ECN'),
   ('Raise FX', 'EURUSD', 'EURUSD'),
   ('Raise Global', 'EURUSD', 'EURUSD'),
   ('Raise Globale', 'EURUSD', 'EURUSD'),
@@ -78,6 +78,17 @@ INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
   ('FXcess', 'GBPUSD', 'GBPUSD'),
   ('Axi', 'GBPUSD', 'GBPUSD'),
   ('Vantage', 'GBPUSD', 'GBPUSD+')
+ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
+SET broker_symbol = EXCLUDED.broker_symbol;
+
+-- VT Markets ECN — croisées + indices (symboles MT5 : DJ30.s, NAS100.s, GER40.s)
+INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
+  ('VT Markets', 'EURGBP', 'EURGBP-ECN'),
+  ('VT Markets', 'EURJPY', 'EURJPY-ECN'),
+  ('VT Markets', 'GBPJPY', 'GBPJPY-ECN'),
+  ('VT Markets', 'US30', 'DJ30.s'),
+  ('VT Markets', 'NAS100', 'NAS100.s'),
+  ('VT Markets', 'GER40', 'GER40.s')
 ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
 SET broker_symbol = EXCLUDED.broker_symbol;
 
