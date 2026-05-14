@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 
-/** Garde du temps pour deploy + JSON ; aligner METAAPI_CONNECT_MAX_WAIT_MS si besoin. */
+/** Garde du temps pour deploy + JSON ; doit rester aligné avec `maxDuration` (littéral requis par Next.js). */
 const CONNECT_ROUTE_MAX_DURATION_SEC = 120;
 
-/** Vercel / hébergeur : doit couvrir l’attente MetaAPI (connexion broker souvent 60–120 s). */
-export const maxDuration = CONNECT_ROUTE_MAX_DURATION_SEC;
+/** Vercel : littéral obligatoire (pas de référence à une autre constante). */
+export const maxDuration = 120;
 
 const PROVISIONING_BASE =
   "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts";

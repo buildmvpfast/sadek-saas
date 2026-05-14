@@ -44,7 +44,15 @@ export function brokerMappingKeys(brokerName: string | null | undefined): string
   if (/vtmarkets/i.test(compact) || /^vt\s*markets$/i.test(t)) {
     if (t !== "VT Markets") out.push("VT Markets");
   }
-  return [...new Set(out)];
+  const seen = new Set<string>();
+  const dedup: string[] = [];
+  for (const x of out) {
+    if (!seen.has(x)) {
+      seen.add(x);
+      dedup.push(x);
+    }
+  }
+  return dedup;
 }
 
 export function staticBrokerSymbol(
