@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { postMetaApiTradeWithStopsFallback } from "@/lib/metaapi-trade-client";
 import { snapVolumeForMetaApiSymbol } from "@/lib/trade-volume";
+import { parseLocaleNumber } from "@/lib/locale-number";
+import { resolvePendingOrderKind } from "@/lib/order-type";
 
 /**
  * Exécute les trades Telegram en attente via MetaAPI
@@ -39,7 +41,12 @@ export async function POST(request: NextRequest) {
         stop_loss,
         take_profit,
         error_message,
-        mt5_accounts!inner(metaapi_account_id)
+        status,
+        mt5_accounts!inner(metaapi_account_id),
+        telegram_signals (
+          entry_price,
+          order_type
+        )
       `
       )
       .in("status", ["pending", "pending_partial"])
@@ -81,15 +88,44 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Préparer l'ordre MetaAPI
-      // Déterminer le type d'ordre selon order_type ou entry_price
-      const orderType =
-        (trade as any).order_type || (!trade.entry_price ? "MARKET" : "LIMIT");
-      const isMarketOrder = orderType === "MARKET";
-      const isLimitOrder = orderType === "LIMIT";
-      const isStopOrder = orderType === "STOP";
+      const sigRaw = trade.telegram_signals as
+        | { entry_price?: unknown; order_type?: unknown }
+        | { entry_price?: unknown; order_type?: unknown }[]
+        | null;
+      const signalRow = Array.isArray(sigRaw) ? sigRaw[0] : sigRaw;
 
-      // Déterminer actionType selon le type d'ordre
+      const entryFromTrade = parseLocaleNumber(trade.entry_price);
+      const entryFromSignal = parseLocaleNumber(signalRow?.entry_price);
+      const entryParsed =
+        Number.isFinite(entryFromTrade) && entryFromTrade > 0
+          ? entryFromTrade
+          : Number.isFinite(entryFromSignal) && entryFromSignal > 0
+            ? entryFromSignal
+            : Number.NaN;
+
+      const orderKind = resolvePendingOrderKind(
+        trade.order_type,
+        signalRow?.order_type,
+        entryParsed,
+      );
+
+      const isLimitOrder = orderKind === "LIMIT";
+      const isStopOrder = orderKind === "STOP";
+
+      if (
+        (isLimitOrder || isStopOrder) &&
+        (!Number.isFinite(entryParsed) || entryParsed <= 0)
+      ) {
+        const msg = `Ordre ${orderKind} sans prix d'entrée valide (trade / signal).`;
+        console.error(`❌ ${msg} trade ${trade.id}`);
+        await supabase
+          .from("telegram_trades")
+          .update({ status: "failed", error_message: msg })
+          .eq("id", trade.id);
+        failed++;
+        continue;
+      }
+
       let actionType: string;
       if (isStopOrder) {
         actionType =
@@ -114,26 +150,30 @@ export async function POST(request: NextRequest) {
         volume: snapVolumeForMetaApiSymbol(String(trade.symbol), rawVol),
       };
 
-      // Si c'est un limit ou stop order, ajouter le prix
-      if ((isLimitOrder || isStopOrder) && trade.entry_price) {
-        order.openPrice = parseFloat(trade.entry_price.toString());
+      if (isLimitOrder || isStopOrder) {
+        order.openPrice = entryParsed;
         console.log(
-          `📤 ${orderType} order: ${trade.signal_type} ${trade.symbol} @ ${order.openPrice}`
+          `📤 ${orderKind} order: ${trade.signal_type} ${trade.symbol} @ ${order.openPrice}`,
         );
       } else {
-        // Market order (par défaut) - pas besoin de price
         console.log(`📤 MARKET order: ${trade.signal_type} ${trade.symbol}`);
       }
 
       if (trade.stop_loss) {
-        order.stopLoss = parseFloat(trade.stop_loss.toString());
+        const sl = parseLocaleNumber(trade.stop_loss);
+        if (Number.isFinite(sl)) {
+          order.stopLoss = sl;
+        }
       }
       if (trade.take_profit) {
-        order.takeProfit = parseFloat(trade.take_profit.toString());
+        const tp = parseLocaleNumber(trade.take_profit);
+        if (Number.isFinite(tp)) {
+          order.takeProfit = tp;
+        }
       }
 
       // GESTION FERMETURE PARTIELLE
-      const isPartialClosure = (trade as any).status === "pending_partial";
+      const isPartialClosure = trade.status === "pending_partial";
       if (isPartialClosure) {
         // Pour une fermeture partielle, MetaAPI demande le ticket de la position originale
         // On récupère le ticket ID stocké dans error_message ou via une recherche

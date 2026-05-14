@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
+import { parseLocaleNumberOr } from '@/lib/locale-number'
 
 type TradingSettings = {
   id?: string
@@ -70,20 +71,69 @@ type LotInputProps = {
   onChange: (field: keyof TradingSettings, value: number) => void
 }
 
+function formatDecimalDisplay(n: number): string {
+  if (!Number.isFinite(n)) return ''
+  return String(n).replace('.', ',')
+}
+
+function LocaleDecimalField({
+  value,
+  min,
+  max,
+  onChange,
+  required,
+  className = 'input',
+}: {
+  value: number
+  min: number
+  max: number
+  onChange: (n: number) => void
+  required?: boolean
+  className?: string
+}) {
+  const [text, setText] = useState(() => formatDecimalDisplay(value))
+  useEffect(() => {
+    setText(formatDecimalDisplay(value))
+  }, [value])
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className={className}
+      value={text}
+      required={required}
+      onChange={(e) => {
+        const v = e.target.value
+        setText(v)
+        const n = parseLocaleNumberOr(v, Number.NaN)
+        if (Number.isFinite(n) && n >= min && n <= max) {
+          onChange(n)
+        }
+      }}
+      onBlur={() => {
+        const n = parseLocaleNumberOr(text, Number.NaN)
+        const clamped = Number.isFinite(n)
+          ? Math.min(max, Math.max(min, n))
+          : value
+        onChange(clamped)
+        setText(formatDecimalDisplay(clamped))
+      }}
+    />
+  )
+}
+
 function LotInput({ label, emoji, field, settings, onChange }: LotInputProps) {
   return (
     <div>
       <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
         {emoji} {label}
       </label>
-      <input
-        type="number"
-        step="0.01"
-        min="0.01"
-        max="100"
-        className="input"
+      <LocaleDecimalField
         value={settings[field] as number}
-        onChange={(e) => onChange(field, parseFloat(e.target.value) || 0.01)}
+        min={0.01}
+        max={100}
+        onChange={(n) => onChange(field, n)}
         required
       />
     </div>
@@ -123,26 +173,26 @@ export default function SettingsPage() {
       setSettings({
         id: data.id,
         position_sizing_type: data.position_sizing_type,
-        gold_lot_size: parseFloat(data.gold_lot_size) || 0.01,
-        btc_lot_size: parseFloat(data.btc_lot_size) || 0.01,
-        eth_lot_size: parseFloat(data.eth_lot_size) || 0.01,
-        sol_lot_size: parseFloat(data.sol_lot_size) || 0.01,
-        us30_lot_size: parseFloat(data.us30_lot_size) || 0.01,
-        nas100_lot_size: parseFloat(data.nas100_lot_size) || 0.01,
-        ger40_lot_size: parseFloat(data.ger40_lot_size) || 0.01,
-        uk100_lot_size: parseFloat(data.uk100_lot_size) || 0.01,
-        spx500_lot_size: parseFloat(data.spx500_lot_size) || 0.01,
-        eurusd_lot_size: parseFloat(data.eurusd_lot_size) || 0.01,
-        gbpusd_lot_size: parseFloat(data.gbpusd_lot_size) || 0.01,
-        usdjpy_lot_size: parseFloat(data.usdjpy_lot_size) || 0.01,
-        usdchf_lot_size: parseFloat(data.usdchf_lot_size) || 0.01,
-        usdcad_lot_size: parseFloat(data.usdcad_lot_size) || 0.01,
-        audusd_lot_size: parseFloat(data.audusd_lot_size) || 0.01,
-        nzdusd_lot_size: parseFloat(data.nzdusd_lot_size) || 0.01,
-        eurgbp_lot_size: parseFloat(data.eurgbp_lot_size) || 0.01,
-        eurjpy_lot_size: parseFloat(data.eurjpy_lot_size) || 0.01,
-        gbpjpy_lot_size: parseFloat(data.gbpjpy_lot_size) || 0.01,
-        position_percentage: parseFloat(data.position_percentage) || 1.0,
+        gold_lot_size: parseLocaleNumberOr(data.gold_lot_size, 0.01),
+        btc_lot_size: parseLocaleNumberOr(data.btc_lot_size, 0.01),
+        eth_lot_size: parseLocaleNumberOr(data.eth_lot_size, 0.01),
+        sol_lot_size: parseLocaleNumberOr(data.sol_lot_size, 0.01),
+        us30_lot_size: parseLocaleNumberOr(data.us30_lot_size, 0.01),
+        nas100_lot_size: parseLocaleNumberOr(data.nas100_lot_size, 0.01),
+        ger40_lot_size: parseLocaleNumberOr(data.ger40_lot_size, 0.01),
+        uk100_lot_size: parseLocaleNumberOr(data.uk100_lot_size, 0.01),
+        spx500_lot_size: parseLocaleNumberOr(data.spx500_lot_size, 0.01),
+        eurusd_lot_size: parseLocaleNumberOr(data.eurusd_lot_size, 0.01),
+        gbpusd_lot_size: parseLocaleNumberOr(data.gbpusd_lot_size, 0.01),
+        usdjpy_lot_size: parseLocaleNumberOr(data.usdjpy_lot_size, 0.01),
+        usdchf_lot_size: parseLocaleNumberOr(data.usdchf_lot_size, 0.01),
+        usdcad_lot_size: parseLocaleNumberOr(data.usdcad_lot_size, 0.01),
+        audusd_lot_size: parseLocaleNumberOr(data.audusd_lot_size, 0.01),
+        nzdusd_lot_size: parseLocaleNumberOr(data.nzdusd_lot_size, 0.01),
+        eurgbp_lot_size: parseLocaleNumberOr(data.eurgbp_lot_size, 0.01),
+        eurjpy_lot_size: parseLocaleNumberOr(data.eurjpy_lot_size, 0.01),
+        gbpjpy_lot_size: parseLocaleNumberOr(data.gbpjpy_lot_size, 0.01),
+        position_percentage: parseLocaleNumberOr(data.position_percentage, 1.0),
         max_open_positions: data.max_open_positions || 10,
       })
     }
@@ -378,17 +428,14 @@ export default function SettingsPage() {
                 <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
                   Pourcentage par position (%)
                 </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  max="100"
-                  className="input"
+                <LocaleDecimalField
                   value={settings.position_percentage}
-                  onChange={(e) =>
+                  min={0.1}
+                  max={100}
+                  onChange={(n) =>
                     setSettings({
                       ...settings,
-                      position_percentage: parseFloat(e.target.value) || 1.0,
+                      position_percentage: n,
                     })
                   }
                   required
@@ -417,20 +464,20 @@ export default function SettingsPage() {
               <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
                 Nombre maximum de positions ouvertes
               </label>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                className="input"
-                value={settings.max_open_positions}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    max_open_positions: parseInt(e.target.value) || 10,
-                  })
-                }
-                required
-              />
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  className="input"
+                  value={settings.max_open_positions}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      max_open_positions: parseInt(e.target.value, 10) || 10,
+                    })
+                  }
+                  required
+                />
               <p className="text-sm mt-2 opacity-75" style={{ color: '#9b30a8' }}>
                 Limite de positions simultanées pour gérer le risque
               </p>

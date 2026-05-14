@@ -7,9 +7,12 @@ import {
 } from "@/lib/broker-symbol-fallback";
 import {
   effectiveUserVolumeForIndexSplit,
+  isIndexStandard,
   lotStepForStandard,
   volumePerTpForStandard,
 } from "@/lib/trade-volume";
+import { parseLocaleNumber, parseLocaleNumberOr } from "@/lib/locale-number";
+import { resolvePendingOrderKind } from "@/lib/order-type";
 
 export async function POST(request: NextRequest) {
   try {
@@ -739,7 +742,9 @@ Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
         : [];
 
     const takeProfits = (takeProfitsRaw || [])
-      .map((v: any) => (v !== null && v !== undefined ? parseFloat(v) : null))
+      .map((v: any) =>
+        v !== null && v !== undefined ? parseLocaleNumber(v) : null,
+      )
       .filter(
         (v: number | null): v is number =>
           typeof v === "number" && !Number.isNaN(v),
@@ -753,15 +758,22 @@ Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
           : sorted[0]
         : null;
 
+    const entryPriceNorm = parsed.entryPrice
+      ? parseLocaleNumber(parsed.entryPrice)
+      : Number.NaN;
+    const stopLossNorm = parsed.stopLoss
+      ? parseLocaleNumber(parsed.stopLoss)
+      : Number.NaN;
+
     return {
       type: parsed.type.toUpperCase(),
       symbol: parsed.symbol.toUpperCase(),
-      entryPrice: parsed.entryPrice ? parseFloat(parsed.entryPrice) : null,
-      stopLoss: parsed.stopLoss ? parseFloat(parsed.stopLoss) : null,
+      entryPrice: Number.isFinite(entryPriceNorm) ? entryPriceNorm : null,
+      stopLoss: Number.isFinite(stopLossNorm) ? stopLossNorm : null,
       takeProfit,
       takeProfits,
       orderType: parsed.orderType || "MARKET",
-      volume: parsed.volume ? parseFloat(parsed.volume) : 0.01,
+      volume: parsed.volume ? parseLocaleNumberOr(parsed.volume, 0.01) : 0.01,
       isPartialClose: parsed.isPartialClose || false,
       closePercent: parsed.closePercent || 50,
     };
@@ -1124,13 +1136,15 @@ async function executeTradesForSignal(signalId: string) {
           GBPJPY: "gbpjpy_lot_size",
         };
         const key = lotMap[normalizedSymbol];
-        userVolume = key ? parseFloat(tradingSettings[key]) || 0.01 : 0.01;
+        userVolume = key
+          ? parseLocaleNumberOr(tradingSettings[key], 0.01)
+          : 0.01;
       } else if (tradingSettings.position_sizing_type === "percentage") {
         // Pourcentage: utiliser le pourcentage du signal comme base
         // TODO: améliorer avec le capital réel du compte
         userVolume =
           ((signal.volume || 0.01) *
-            (parseFloat(tradingSettings.position_percentage) || 1.0)) /
+            parseLocaleNumberOr(tradingSettings.position_percentage, 1.0)) /
           100;
         const { min: minLot } = lotStepForStandard(normalizedSymbol);
         if (userVolume < minLot) userVolume = minLot;
@@ -1149,11 +1163,72 @@ async function executeTradesForSignal(signalId: string) {
       `✅ Symbole mappé: ${signal.symbol} → ${normalizedSymbol} → ${brokerSymbol} pour ${mt5Account.broker_name}`,
     );
 
-    // One trade per TP:
-    // - If there are 3 TPs => 3 trades
-    // - If there is 1 TP => 1 trade
-    // - For market orders without TP => 1 trade with `take_profit = null`
+    // Indices + MARKET + plusieurs TP : 1 seule position (volume = lot réglages), 1er TP sur l’ordre.
+    // Sinon : un trade par TP (forex / index en LIMIT, ou 1 seul TP).
     const tpCount = tpValues.length;
+    const entryN = parseLocaleNumber(signal.entry_price);
+    const orderTypeResolved = resolvePendingOrderKind(
+      signal.order_type,
+      signal.order_type,
+      entryN,
+    );
+    const isMarketLike =
+      orderTypeResolved === "MARKET" ||
+      (!signal.entry_price && orderTypeResolved !== "LIMIT");
+
+    if (isIndexStandard(normalizedSymbol) && tpCount > 1 && isMarketLike) {
+      const volumeOne = volumePerTpForStandard(
+        normalizedSymbol,
+        userVolume,
+        1,
+        0,
+      );
+      const firstTp = tpValues[0];
+
+      const { data: existingAny } = await supabase
+        .from("telegram_trades")
+        .select("id")
+        .eq("user_id", subscription.user_id)
+        .eq("signal_id", signalId)
+        .eq("mt5_account_id", mt5Account.id)
+        .in("status", ["pending", "pending_partial", "executed"])
+        .limit(1)
+        .maybeSingle();
+
+      if (existingAny) {
+        console.log(
+          `⏭️ Trade déjà existant (index multi-TP → 1 ordre) user ${subscription.user_id}`,
+        );
+        continue;
+      }
+
+      const { error: insErr } = await supabase.from("telegram_trades").insert({
+        user_id: subscription.user_id,
+        signal_id: signalId,
+        mt5_account_id: mt5Account.id,
+        symbol: brokerSymbol,
+        signal_type: signal.signal_type,
+        order_type: orderTypeResolved,
+        volume: volumeOne,
+        entry_price: signal.entry_price,
+        stop_loss: signal.stop_loss,
+        take_profit: firstTp,
+        status: "pending",
+      });
+
+      if (insErr) {
+        console.error(
+          `❌ Erreur création trade index (1 ordre) user ${subscription.user_id}:`,
+          insErr,
+        );
+      } else {
+        console.log(
+          `✅ Trade index unique: ${brokerSymbol} ${volumeOne} lot(s), TP1=${firstTp} (+ ${tpCount - 1} autres TP à gérer côté canal / manuel)`,
+        );
+      }
+      continue;
+    }
+
     const effectiveUserVolume = effectiveUserVolumeForIndexSplit(
       normalizedSymbol,
       userVolume,
@@ -1198,8 +1273,7 @@ async function executeTradesForSignal(signalId: string) {
         mt5_account_id: mt5Account.id,
         symbol: brokerSymbol,
         signal_type: signal.signal_type,
-        order_type:
-          signal.order_type || (signal.entry_price ? "LIMIT" : "MARKET"),
+        order_type: orderTypeResolved,
         volume: volumeForTp,
         entry_price: signal.entry_price,
         stop_loss: signal.stop_loss,

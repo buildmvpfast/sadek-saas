@@ -1,5 +1,5 @@
 /**
- * Lots MetaAPI / MT5 : le forex utilise souvent 0.01, les indices (DJ30, US30…) souvent 1 contrat entier.
+ * Lots MetaAPI / MT5 : forex 0.01 ; indices (DJ30.s, NAS100.s…) souvent pas 0.01 — step 0.1 / min 0.1 sur VT ECN.
  */
 
 const INDEX_STANDARDS = new Set([
@@ -9,6 +9,10 @@ const INDEX_STANDARDS = new Set([
   "UK100",
   "SPX500",
 ]);
+
+export function isIndexStandard(standardSymbol: string): boolean {
+  return INDEX_STANDARDS.has(standardSymbol);
+}
 
 /** Symbole tel qu’envoyé au broker (ex. DJ30, US30.cash-ECN). */
 export function isLikelyIndexMt5Symbol(symbol: string): boolean {
@@ -34,7 +38,7 @@ export function lotStepForStandard(standardSymbol: string): {
   min: number;
 } {
   if (INDEX_STANDARDS.has(standardSymbol)) {
-    return { step: 1, min: 1 };
+    return { step: 0.1, min: 0.1 };
   }
   return { step: 0.01, min: 0.01 };
 }
@@ -44,15 +48,20 @@ export function roundLotToStep(volume: number, step: number): number {
   return Math.round(volume / step) * step;
 }
 
-/** Volume minimal total si plusieurs TP sur indice (chaque jambe ≥ 1 lot). */
+/**
+ * Volume total minimal si on répartit sur plusieurs TP (forex / index en mode multi-ordres).
+ * Ne gonfle le total que si une répartition égale passerait sous le lot mini par jambe.
+ */
 export function effectiveUserVolumeForIndexSplit(
   standardSymbol: string,
   userVolume: number,
   tpCount: number,
 ): number {
   const { min } = lotStepForStandard(standardSymbol);
-  if (!INDEX_STANDARDS.has(standardSymbol) || tpCount <= 1) return userVolume;
-  return Math.max(userVolume, min * tpCount);
+  if (tpCount <= 1) return userVolume;
+  const per = userVolume / tpCount;
+  if (per + 1e-9 >= min) return userVolume;
+  return min * tpCount;
 }
 
 export function volumePerTpForStandard(
@@ -80,8 +89,10 @@ export function volumePerTpForStandard(
 export function snapVolumeForMetaApiSymbol(mt5Symbol: string, volume: number): number {
   if (!Number.isFinite(volume) || volume <= 0) return volume;
   if (isLikelyIndexMt5Symbol(mt5Symbol)) {
-    const v = Math.max(1, Math.round(volume));
-    return v;
+    const step = 0.1;
+    const minV = 0.1;
+    const snapped = Math.round(volume / step) * step;
+    return Math.max(minV, snapped);
   }
   return Math.round(volume * 100) / 100;
 }

@@ -214,13 +214,23 @@ export default function AdminMT5AccountsPage() {
   const deleteAccount = async (accountId: string) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce compte admin?')) return
 
-    const { error } = await supabase.from('mt5_accounts').delete().eq('id', accountId)
-
-    if (!error) {
+    setError('')
+    setSuccess('')
+    try {
+      const res = await fetch('/api/metaapi/disconnect-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mt5AccountId: accountId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || 'Erreur lors de la suppression')
+      }
       setSuccess('Compte supprimé')
       fetchAdminAccounts()
-    } else {
-      setError('Erreur lors de la suppression')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      setError(message)
     }
   }
 

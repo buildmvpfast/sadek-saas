@@ -1,14 +1,17 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
+import {
+  deleteProvisioningAccount,
+  fetchProvisioningAccount,
+  METAAPI_PROVISIONING_ACCOUNTS_URL,
+  removeDuplicateProvisioningAccounts,
+} from "@/lib/metaapi-provisioning";
 
 /** Garde du temps pour deploy + JSON ; doit rester aligné avec `maxDuration` (littéral requis par Next.js). */
 const CONNECT_ROUTE_MAX_DURATION_SEC = 120;
 
 /** Vercel : littéral obligatoire (pas de référence à une autre constante). */
 export const maxDuration = 120;
-
-const PROVISIONING_BASE =
-  "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts";
 
 function normalizeServer(server: string): string {
   return server.trim().replace(/\s+/g, " ");
@@ -43,31 +46,6 @@ function connectionBrokerHint(connectionStatus: string | undefined): string {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-async function fetchProvisioningAccount(
-  accountId: string,
-  token: string,
-): Promise<Record<string, unknown> | null> {
-  const r = await fetch(`${PROVISIONING_BASE}/${accountId}`, {
-    headers: { "auth-token": token },
-  });
-  if (!r.ok) return null;
-  return (await r.json()) as Record<string, unknown>;
-}
-
-async function deleteProvisioningAccount(
-  accountId: string,
-  token: string,
-): Promise<void> {
-  try {
-    await fetch(`${PROVISIONING_BASE}/${accountId}`, {
-      method: "DELETE",
-      headers: { "auth-token": token },
-    });
-  } catch {
-    // best-effort cleanup
-  }
 }
 
 /**
@@ -184,6 +162,9 @@ export async function POST(request: Request) {
     }
 
     const token = process.env.METAAPI_TOKEN;
+
+    await removeDuplicateProvisioningAccounts(token, login, server);
+
     const provisioningRegion =
       typeof process.env.METAAPI_PROVISIONING_REGION === "string" &&
       process.env.METAAPI_PROVISIONING_REGION.trim().length > 0
@@ -211,7 +192,7 @@ export async function POST(request: Request) {
       createBody.keywords = ["VT Markets", "VTMarkets", "Vantage"];
     }
 
-    const response = await fetch(PROVISIONING_BASE, {
+    const response = await fetch(METAAPI_PROVISIONING_ACCOUNTS_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -261,7 +242,7 @@ export async function POST(request: Request) {
     const accountId = data.id as string;
 
     const deployResponse = await fetch(
-      `${PROVISIONING_BASE}/${accountId}/deploy`,
+      `${METAAPI_PROVISIONING_ACCOUNTS_URL}/${accountId}/deploy`,
       {
         method: "POST",
         headers: { "auth-token": token },
