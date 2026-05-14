@@ -4,18 +4,38 @@
  */
 export type BrokerServersEntry = { name: string; servers: string[] };
 
+function uniqServers(servers: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of servers) {
+    const t = s.trim().replace(/\s+/g, " ");
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
+}
+
 export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
   {
     name: "VT Markets",
-    servers: [
+    servers: uniqServers([
+      // Variantes « VT Markets » et « VTMarkets » (selon broker / région)
       "VT Markets-Live",
       "VT Markets-Demo",
+      "VTMarkets-Demo",
+      "VTMarkets-Live 2",
+      "VTMarkets-Live 3",
+      "VTMarkets-Live 4",
+      "VTMarkets-Live 5",
+      "VTMarkets-Live 6",
+      "VTMarkets-Live7",
       "VT Markets-Live01",
       "VT Markets-Live02",
       "VT Markets-Real",
       "VT Markets-Real01",
       "VT Markets-Real02",
-    ],
+    ]),
   },
   {
     name: "Raise FX",
@@ -38,8 +58,10 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
   },
   {
     name: "Raise Global",
-    servers: [
+    servers: uniqServers([
+      "RaiseGroup-Server",
       "RaiseGlobal-Live",
+      "RaiseGlobalSA-LIVE",
       "RaiseGlobal-Demo",
       "RaiseGlobal-Live01",
       "RaiseGlobal-Live02",
@@ -53,7 +75,7 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
       "RaiseGlobal-MT5-Real",
       "RaiseGlobal-MT5-Real01",
       "RaiseGlobal-MT5-Real02",
-    ],
+    ]),
   },
   {
     name: "FXcess",
@@ -100,22 +122,39 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
   },
   {
     name: "Vantage",
-    servers: [
+    servers: uniqServers([
+      "VantageFX-Live",
+      "VantageFX-Demo",
+      "VantageFXInternational-Live",
+      "VantageInternational-Demo",
       "VantageInternational-Live",
-      "VantageInternational-Live 1",
-      "VantageInternational-Live 2",
+      "VantageGlobalPrimeLLP-Live",
+      "VantageGlobalPrimeLLP-Live 2",
+      "VantagePrimeLimited-Live",
       "VantageInternational-Live 3",
       "VantageInternational-Live 4",
       "VantageInternational-Live 5",
       "VantageInternational-Live 6",
       "VantageInternational-Live 7",
       "VantageInternational-Live 8",
-      "VantageInternational-Live 9",
+      "VantagePrimeLimited-Demo",
       "VantageInternational-Live 10",
       "VantageInternational-Live 11",
+      "VantageInternational-Live 13",
+      "VantageGlobalPrimeAU-Live",
+      "VantageInternational-Live 14",
+      "VantageInternational-Live 15",
+      "VantageInternational-Live 19",
+      "VantageInternational-Live21",
+      "VantageInternational-Live 21",
+      // Autres nœuds souvent listés par MetaAPI / anciens presets
+      "VantageInternational-Live 1",
+      "VantageInternational-Live 2",
+      "VantageInternational-Live 9",
       "VantageInternational-Live 12",
-      "VantageInternational-Demo",
-    ],
+      "VantageInternational-Live 16",
+      "VantageInternational-Live 18",
+    ]),
   },
 ];
 

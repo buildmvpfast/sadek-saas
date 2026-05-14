@@ -56,13 +56,14 @@ async function waitForMt5Connected(
   last?: Record<string, unknown>;
   errorFr?: string;
 }> {
-  // Sur Vercel gratuit (~10 s), définir METAAPI_CONNECT_MAX_WAIT_MS=7000 pour limiter le risque de 504.
+  // Connexion MT5 : les serveurs saisis à la main peuvent mettre 60–120 s (MetaAPI + broker).
+  // Sur Vercel Hobby (~10 s max route), définir METAAPI_CONNECT_MAX_WAIT_MS=9000 pour éviter 504.
   const maxWaitMs = Math.min(
     Math.max(
-      Number.parseInt(process.env.METAAPI_CONNECT_MAX_WAIT_MS || "38000", 10),
-      5000,
+      Number.parseInt(process.env.METAAPI_CONNECT_MAX_WAIT_MS || "90000", 10),
+      8000,
     ),
-    120000,
+    180000,
   );
   const deadline = Date.now() + maxWaitMs;
   let last: Record<string, unknown> | undefined;
@@ -87,10 +88,10 @@ async function waitForMt5Connected(
         };
       }
 
-      // Souvent mauvais serveur / MDP : déployé mais jamais connecté
+      // Déployé mais pas encore CONNECTED : laisser plus de cycles (serveur manuel / latence broker)
       if (state === "DEPLOYED" && conn === "DISCONNECTED") {
         deployedDisconnectedStreak += 1;
-        if (deployedDisconnectedStreak >= 10) {
+        if (deployedDisconnectedStreak >= 22) {
           return {
             ok: false,
             last: acc,
@@ -103,7 +104,7 @@ async function waitForMt5Connected(
       }
     }
 
-    await sleep(1800);
+    await sleep(2000);
   }
 
   return {

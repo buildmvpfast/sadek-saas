@@ -493,7 +493,7 @@ export default function MT5AccountsPage() {
                 className="btn btn-primary w-full"
               >
                 {loadingSubmit
-                  ? "Connexion MetaAPI + MT5 (peut prendre 30–60 s)…"
+                  ? "Connexion MetaAPI + MT5 (jusqu’à ~90 s, serveur manuel inclus)…"
                   : "Ajouter le compte"}
               </button>
             </form>
