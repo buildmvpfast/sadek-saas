@@ -1,7 +1,11 @@
+import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 
-/** Vercel / hébergeur : augmente la limite pour laisser MT5 se connecter (MetaAPI). */
-export const maxDuration = 60;
+/** Garde du temps pour deploy + JSON ; aligner METAAPI_CONNECT_MAX_WAIT_MS si besoin. */
+const CONNECT_ROUTE_MAX_DURATION_SEC = 120;
+
+/** Vercel / hébergeur : doit couvrir l’attente MetaAPI (connexion broker souvent 60–120 s). */
+export const maxDuration = CONNECT_ROUTE_MAX_DURATION_SEC;
 
 const PROVISIONING_BASE =
   "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts";
@@ -26,8 +30,15 @@ function appendVtMarketsServerHint(message: string, server: string): string {
   if (!looksLikeVtMarketsServer(server)) return message;
   return (
     message +
-    " Pour VT Markets : dans MT5 le serveur est souvent « VTMarkets-Live », « VTMarkets-Demo » ou « VTMarkets-Live N » (sans espace entre VT et Markets ; parfois un espace avant le numéro du nœud). Copiez-collez depuis Fichier → Ouvrir un compte de trading."
+    " Pour VT Markets : serveur souvent « VTMarkets-Live » / « VTMarkets-Demo » (copier depuis MT5). Utilisez le mot de passe principal MT5, pas seulement le mot de passe investisseur, si la connexion échoue."
   );
+}
+
+function connectionBrokerHint(connectionStatus: string | undefined): string {
+  if (connectionStatus === "DISCONNECTED_FROM_BROKER") {
+    return " Le broker a refusé la session (login, mot de passe principal MT5, ou nom de serveur). Un mot de passe investisseur seul peut empêcher la connexion cloud.";
+  }
+  return "";
 }
 
 function sleep(ms: number) {
@@ -70,14 +81,20 @@ async function waitForMt5Connected(
   last?: Record<string, unknown>;
   errorFr?: string;
 }> {
-  // Connexion MT5 : les serveurs saisis à la main peuvent mettre 60–120 s (MetaAPI + broker).
-  // Sur Vercel Hobby (~10 s max route), définir METAAPI_CONNECT_MAX_WAIT_MS=9000 pour éviter 504.
+  // Connexion MT5 : 60–120 s fréquent ; ne pas dépasser le budget route (sinon 504 Vercel).
+  const routeCapMs = Math.max(CONNECT_ROUTE_MAX_DURATION_SEC * 1000 - 12_000, 15_000);
   const maxWaitMs = Math.min(
-    Math.max(
-      Number.parseInt(process.env.METAAPI_CONNECT_MAX_WAIT_MS || "90000", 10),
-      8000,
+    Math.min(
+      Math.max(
+        Number.parseInt(
+          process.env.METAAPI_CONNECT_MAX_WAIT_MS || "110000",
+          10,
+        ),
+        8000,
+      ),
+      175000,
     ),
-    180000,
+    routeCapMs,
   );
   const deadline = Date.now() + maxWaitMs;
   let last: Record<string, unknown> | undefined;
@@ -98,19 +115,24 @@ async function waitForMt5Connected(
         return {
           ok: false,
           last: acc,
-          errorFr: `Échec côté MetaAPI (état: ${state}, connexion: ${conn}). Vérifiez le serveur MT5, le login et le mot de passe.`,
+          errorFr:
+            `Échec côté MetaAPI (état: ${state}, connexion: ${conn}). Vérifiez le serveur MT5, le login et le mot de passe.${connectionBrokerHint(conn)}`,
         };
       }
 
       // Déployé mais pas encore CONNECTED : laisser plus de cycles (serveur manuel / latence broker)
-      if (state === "DEPLOYED" && conn === "DISCONNECTED") {
+      if (
+        state === "DEPLOYED" &&
+        (conn === "DISCONNECTED" || conn === "DISCONNECTED_FROM_BROKER")
+      ) {
         deployedDisconnectedStreak += 1;
         if (deployedDisconnectedStreak >= 22) {
           return {
             ok: false,
             last: acc,
             errorFr:
-              "MT5 reste déconnecté après déploiement (serveur, numéro de compte ou mot de passe incorrect). Vérifiez le nom du serveur exactement comme dans MT5 (Fichier → Ouvrir un compte).",
+              "MT5 reste déconnecté après déploiement (serveur, numéro de compte ou mot de passe incorrect). Vérifiez le nom du serveur exactement comme dans MT5 (Fichier → Ouvrir un compte)." +
+              connectionBrokerHint(conn),
           };
         }
       } else {
@@ -125,7 +147,7 @@ async function waitForMt5Connected(
     ok: false,
     last,
     errorFr: last
-      ? `Délai dépassé sans connexion MT5 (dernier état: ${String(last.state)}, connexion: ${String(last.connectionStatus)}). Vérifiez le nom du serveur (exactement comme dans MT5) et les identifiants.`
+      ? `Délai dépassé sans connexion MT5 (dernier état: ${String(last.state)}, connexion: ${String(last.connectionStatus)}). Vérifiez le nom du serveur (exactement comme dans MT5) et les identifiants.${connectionBrokerHint(String(last.connectionStatus ?? ""))}`
       : "Délai dépassé — impossible de lire l’état du compte MetaAPI. Réessayez.",
   };
 }
@@ -168,23 +190,35 @@ export async function POST(request: Request) {
         ? process.env.METAAPI_PROVISIONING_REGION.trim()
         : "london";
 
+    const accountTypeRaw =
+      process.env.METAAPI_ACCOUNT_TYPE?.trim().toLowerCase() ?? "";
+    const accountType =
+      accountTypeRaw === "cloud-g1" ? "cloud-g1" : "cloud-g2";
+
+    const createBody: Record<string, unknown> = {
+      name: name || `MT5 ${login}`,
+      type: accountType,
+      login,
+      password,
+      server,
+      platform,
+      magic: magic || 0,
+      application: "MetaApi",
+      region: provisioningRegion,
+      reliability: "high",
+    };
+    if (looksLikeVtMarketsServer(server)) {
+      createBody.keywords = ["VT Markets", "VTMarkets", "Vantage"];
+    }
+
     const response = await fetch(PROVISIONING_BASE, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "auth-token": token,
+        "transaction-id": randomBytes(16).toString("hex"),
       },
-      body: JSON.stringify({
-        name: name || `MT5 ${login}`,
-        type: "cloud",
-        login,
-        password,
-        server,
-        platform,
-        magic: magic || 0,
-        application: "MetaApi",
-        region: provisioningRegion,
-      }),
+      body: JSON.stringify(createBody),
     });
 
     const data = (await response.json()) as Record<string, unknown> & {
@@ -235,8 +269,27 @@ export async function POST(request: Request) {
     );
 
     if (!deployResponse.ok) {
-      const deployError = await deployResponse.json().catch(() => ({}));
-      console.warn("MetaAPI deploy non OK:", deployError);
+      const deployStatus = deployResponse.status;
+      const deployError = (await deployResponse.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      console.warn("MetaAPI deploy non OK:", deployStatus, deployError);
+      const deployMsg =
+        (typeof deployError.message === "string" &&
+          deployError.message.trim()) ||
+        (deployStatus === 401
+          ? "MetaAPI n'a pas pu authentifier le compte auprès du broker (serveur, login ou mot de passe)."
+          : `Échec du déploiement MetaAPI (HTTP ${deployStatus}).`);
+      const detail =
+        typeof deployError.details === "string" ? deployError.details : "";
+      const full = detail ? `${deployMsg} (${detail})` : deployMsg;
+      await deleteProvisioningAccount(accountId, token);
+      return NextResponse.json({
+        success: false,
+        error: appendVtMarketsServerHint(full, server),
+        details: deployError,
+      });
     }
 
     const wait = await waitForMt5Connected(accountId, token);
