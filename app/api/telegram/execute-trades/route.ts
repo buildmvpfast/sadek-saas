@@ -88,9 +88,13 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      type SignalEmbed = {
+        entry_price?: string | number | null;
+        order_type?: string | null;
+      };
       const sigRaw = trade.telegram_signals as
-        | { entry_price?: unknown; order_type?: unknown }
-        | { entry_price?: unknown; order_type?: unknown }[]
+        | SignalEmbed
+        | SignalEmbed[]
         | null;
       const signalRow = Array.isArray(sigRaw) ? sigRaw[0] : sigRaw;
 
