@@ -135,7 +135,10 @@ export async function POST(req: Request) {
               `${process.env.NEXT_PUBLIC_APP_URL}/api/close-user-positions`,
               {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${process.env.INTERNAL_API_SECRET}`,
+                },
                 body: JSON.stringify({ user_id: subData.user_id }),
               }
             );
@@ -179,7 +182,10 @@ export async function POST(req: Request) {
               `${process.env.NEXT_PUBLIC_APP_URL}/api/close-user-positions`,
               {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${process.env.INTERNAL_API_SECRET}`,
+                },
                 body: JSON.stringify({ user_id: subData.user_id }),
               }
             );
@@ -195,6 +201,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true });
   } catch (err: any) {
     console.error("Error processing webhook:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: 'An error occurred' }, { status: 500 });
   }
 }

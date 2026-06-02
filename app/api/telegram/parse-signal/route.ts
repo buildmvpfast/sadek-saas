@@ -13,8 +13,12 @@ import {
 } from "@/lib/trade-volume";
 import { parseLocaleNumber, parseLocaleNumberOr } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
+import { requireInternalSecret } from "@/lib/internal-auth";
 
 export async function POST(request: NextRequest) {
+  const authError = requireInternalSecret(request);
+  if (authError) return authError;
+
   try {
     const {
       channelId,
@@ -459,6 +463,7 @@ export async function POST(request: NextRequest) {
         process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
       await fetch(`${baseUrl}/api/telegram/execute-trades`, {
         method: "POST",
+        headers: { Authorization: `Bearer ${process.env.INTERNAL_API_SECRET}` },
       });
     } catch (error) {
       console.error("Error triggering trade execution:", error);
@@ -471,7 +476,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error("Error parsing signal:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

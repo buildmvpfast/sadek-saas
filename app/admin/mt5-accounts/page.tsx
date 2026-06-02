@@ -176,7 +176,7 @@ export default function AdminMT5AccountsPage() {
         broker_name: formData.broker_name.trim(),
         server_name: serverName,
         account_number: parseInt(login, 10),
-        password_encrypted: btoa(formData.password.trim()),
+        password_encrypted: "STORED_BY_METAAPI", // Password managed by MetaAPI
         is_active: true,
         is_admin_account: true, // IMPORTANT: Marquer comme compte admin
         metaapi_account_id: metaApiData.accountId,

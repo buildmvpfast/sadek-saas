@@ -254,9 +254,8 @@ export default function MT5AccountsPage() {
       }
 
       // 2. Enregistrer dans Supabase avec le metaapi_account_id
-      const passwordEncrypted = Buffer.from(
-        formData.password.trim()
-      ).toString("base64");
+      // Password is managed by MetaAPI — never store plaintext or base64 in DB
+      const passwordEncrypted = "STORED_BY_METAAPI";
 
       const { error } = await supabase.from("mt5_accounts").insert({
         user_id: session.user.id,

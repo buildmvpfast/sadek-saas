@@ -6,9 +6,11 @@ export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
 
+  // getUser() verifies the JWT server-side (more secure than getSession())
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+  } = await supabase.auth.getUser()
+  const session = user ? { user } : null
 
   // Public routes (accessible sans connexion)
   // /auth/reset-password : lien email Supabase (#access_token non visible au serveur → pas de session au 1er hit)
@@ -34,7 +36,7 @@ export async function middleware(req: NextRequest) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('is_admin')
-      .eq('id', session.user.id)
+      .eq('id', user!.id)
       .single()
 
     // Les admins n'ont pas besoin d'abonnement
@@ -43,7 +45,7 @@ export async function middleware(req: NextRequest) {
       const { data: subscription } = await supabase
         .from('subscriptions')
         .select('status')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user!.id)
         .single()
       
       // Rediriger vers le paywall si pas d'abonnement actif

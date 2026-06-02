@@ -4,12 +4,16 @@ import { postMetaApiTradeWithStopsFallback } from "@/lib/metaapi-trade-client";
 import { snapVolumeForMetaApiSymbol } from "@/lib/trade-volume";
 import { parseLocaleNumber } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
+import { requireInternalSecret } from "@/lib/internal-auth";
 
 /**
  * Exécute les trades Telegram en attente via MetaAPI
- * Cette route peut être appelée manuellement ou via un cron job
+ * Route interne — requiert Authorization: Bearer <INTERNAL_API_SECRET>
  */
 export async function POST(request: NextRequest) {
+  const authError = requireInternalSecret(request);
+  if (authError) return authError;
+
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -256,6 +260,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error("Error executing trades:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

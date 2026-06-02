@@ -1,3 +1,6 @@
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import { rateLimit } from '@/lib/rate-limit';
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
@@ -131,6 +134,17 @@ async function waitForMt5Connected(
 }
 
 export async function POST(request: Request) {
+  // Verify authenticated user
+  const supabaseAuth = createRouteHandlerClient({ cookies });
+  const { data: { user } } = await supabaseAuth.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Rate limit: max 5 MetaAPI connections per IP per hour
+  const rlError = rateLimit(request as any, "connect-account", { limit: 5, windowMs: 60 * 60 * 1000 });
+  if (rlError) return rlError;
+
   try {
     const body = await request.json();
     const rawLogin = body.login;
@@ -297,8 +311,9 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Error connecting account:", error);
+    console.error("Error connecting account:", error);
     return NextResponse.json(
-      { success: false, error: message },
+      { success: false, error: "An error occurred. Please try again." },
       { status: 500 },
     );
   }

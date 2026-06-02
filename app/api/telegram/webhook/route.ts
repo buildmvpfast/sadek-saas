@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  // Validate Telegram webhook secret token
+  const telegramSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (telegramSecret) {
+    const headerSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
+    if (headerSecret !== telegramSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
+  // Rate limit: max 60 webhook calls per minute per IP (Telegram sends at most ~30/min)
+  const rlError = rateLimit(request, "tg-webhook", { limit: 60, windowMs: 60 * 1000 });
+  if (rlError) return rlError;
+
   try {
     const body = await request.json();
 
@@ -115,7 +129,10 @@ export async function POST(request: NextRequest) {
         process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
       const response = await fetch(`${baseUrl}/api/telegram/parse-signal`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.INTERNAL_API_SECRET}`,
+        },
         body: JSON.stringify({
           channelId: channel.id,
           channelUsername: channel.username,

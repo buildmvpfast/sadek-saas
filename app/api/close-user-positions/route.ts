@@ -1,3 +1,4 @@
+import { requireInternalSecret } from '@/lib/internal-auth'
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { postMetaApiClosePosition } from '@/lib/metaapi-trade-client'
@@ -8,6 +9,9 @@ const supabase = createClient(
 )
 
 export async function POST(req: Request) {
+  const authError = requireInternalSecret(req as any);
+  if (authError) return authError;
+
   try {
     const { user_id } = await req.json()
 
@@ -91,6 +95,6 @@ export async function POST(req: Request) {
     })
   } catch (err: any) {
     console.error('Erreur close-user-positions:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
