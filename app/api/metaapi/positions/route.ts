@@ -1,12 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { cookies } from "next/headers";
 import { fetchMetaApiPositionsJson } from "@/lib/metaapi-trade-client";
 
 export async function GET(request: NextRequest) {
+  // Verify authenticated user and ownership of the account
+  const supabase = createRouteHandlerClient({ cookies });
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const accountId = request.nextUrl.searchParams.get('accountId')
 
     if (!accountId) {
       return NextResponse.json({ error: 'accountId requis' }, { status: 400 })
+    }
+
+    // Verify the user owns this MetaAPI account
+    const { data: mt5Account } = await supabase
+      .from('mt5_accounts')
+      .select('id')
+      .eq('metaapi_account_id', accountId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (!mt5Account) {
+      return NextResponse.json({ error: 'Compte non trouvé' }, { status: 403 });
     }
 
     const token = process.env.METAAPI_TOKEN
@@ -35,7 +56,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: result.error,
+          error: 'Erreur MetaAPI',
           positions: [],
         },
         { status: 502 },
@@ -49,7 +70,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error fetching positions:', error)
-    return NextResponse.json({ success: false, error: error.message, positions: [] }, { status: 500 })
+    return NextResponse.json({ success: false, error: 'Internal server error', positions: [] }, { status: 500 })
   }
 }
 

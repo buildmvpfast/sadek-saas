@@ -11,17 +11,17 @@ export async function POST(req: Request) {
     const supabase = createServerClient()
 
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
     }
 
     const { data: subscription, error: subError } = await supabase
       .from('subscriptions')
       .select('stripe_customer_id, status')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single()
 
     if (subError || !subscription) {
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   } catch (err: any) {
     console.error('Error creating portal session:', err)
     return NextResponse.json({ 
-      error: err.message || 'Erreur lors de la création de la session du portail' 
+      error: 'Internal server error' || 'Erreur lors de la création de la session du portail' 
     }, { status: 500 })
   }
 }

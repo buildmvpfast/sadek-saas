@@ -33,13 +33,13 @@
 ### Étape 2 : Configurer le Webhook avec l'URL Vercel
 
 ```bash
-curl -X POST "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook" \
   -d "url=https://TON-URL-VERCEL.vercel.app/api/telegram/webhook"
 ```
 
 **Exemple :**
 ```bash
-curl -X POST "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook" \
   -d "url=https://sadek-saas.vercel.app/api/telegram/webhook"
 ```
 
@@ -134,7 +134,7 @@ Si tu n'as que des workers et pas de service web, il faut créer le service web 
 Une fois le webhook configuré, vérifie :
 
 ```bash
-curl "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/getWebhookInfo"
+curl "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/getWebhookInfo"
 ```
 
 Tu devrais voir :

@@ -9,10 +9,10 @@ export async function POST(request: Request) {
   try {
     const supabase = createServerClient();
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
       .from("mt5_accounts")
       .select("id, metaapi_account_id, user_id")
       .eq("id", mt5AccountId)
-      .eq("user_id", session.user.id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
     if (selErr) {
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       .from("mt5_accounts")
       .delete()
       .eq("id", mt5AccountId)
-      .eq("user_id", session.user.id);
+      .eq("user_id", user.id);
 
     if (delErr) {
       return NextResponse.json({ error: delErr.message }, { status: 500 });

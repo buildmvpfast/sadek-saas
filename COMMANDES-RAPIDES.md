@@ -27,19 +27,19 @@ Dans Render Dashboard → Ton service → Copie l'URL (ex: `https://sadek-bot-sa
 ### Étape 2 : Configurer le Webhook
 ```bash
 # Remplace TON-URL-RENDER par ta vraie URL Render
-curl -X POST "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook" \
   -d "url=https://TON-URL-RENDER.onrender.com/api/telegram/webhook"
 ```
 
 **Exemple :**
 ```bash
-curl -X POST "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook" \
   -d "url=https://sadek-bot-saas.onrender.com/api/telegram/webhook"
 ```
 
 ### Étape 3 : Vérifier
 ```bash
-curl "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/getWebhookInfo"
+curl "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/getWebhookInfo"
 ```
 
 **✅ Si tu vois `"url": "https://ton-app.onrender.com/api/telegram/webhook"` → C'est bon !**

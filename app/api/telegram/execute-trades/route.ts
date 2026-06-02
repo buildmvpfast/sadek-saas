@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     if (fetchError) {
       console.error("❌ Erreur récupération trades:", fetchError);
-      return NextResponse.json({ error: fetchError.message }, { status: 500 });
+      return NextResponse.json({ error: Internal server error }, { status: 500 });
     }
 
     if (!pendingTrades || pendingTrades.length === 0) {

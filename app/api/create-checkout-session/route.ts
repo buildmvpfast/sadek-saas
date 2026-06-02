@@ -13,17 +13,17 @@ export async function POST(req: Request) {
     const plan = body.plan || 'monthly' // 'monthly' or 'yearly'
 
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { data: profile } = await supabase
       .from('profiles')
       .select('email')
-      .eq('id', session.user.id)
+      .eq('id', user.id)
       .single()
 
     // Produits Stripe
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
       success_url: `${appUrl}/subscription?success=true`,
       cancel_url: `${appUrl}/subscription?canceled=true`,
       metadata: {
-        user_id: session.user.id,
+        user_id: user.id,
         plan: plan,
       },
     })
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ url: checkoutSession.url })
   } catch (err: any) {
     console.error('Error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 

@@ -144,13 +144,13 @@ Puisque ton app est sur Vercel, le webhook Stripe doit pointer vers Vercel:
 Le webhook Telegram doit aussi pointer vers Vercel:
 
 ```bash
-curl -X POST "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook" \
   -d "url=https://ton-app.vercel.app/api/telegram/webhook"
 ```
 
 **Vérifier:**
 ```bash
-curl "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/getWebhookInfo"
+curl "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/getWebhookInfo"
 ```
 
 ---

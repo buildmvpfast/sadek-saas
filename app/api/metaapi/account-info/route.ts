@@ -1,7 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { cookies } from "next/headers";
 
 export async function GET(request: NextRequest) {
+  // Verify authenticated user and ownership
+  const supabase = createRouteHandlerClient({ cookies });
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const accountId = request.nextUrl.searchParams.get("accountId");
+
+  // Verify ownership before hitting MetaAPI
+  if (accountId) {
+    const { data: mt5Account } = await supabase
+      .from("mt5_accounts")
+      .select("id")
+      .eq("metaapi_account_id", accountId)
+      .eq("user_id", user.id)
+      .single();
+    if (!mt5Account) {
+      return NextResponse.json({ error: "Compte non trouvé" }, { status: 403 });
+    }
+  }
 
   try {
     if (!accountId) {

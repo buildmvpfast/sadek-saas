@@ -5,11 +5,13 @@ import { rateLimit } from "@/lib/rate-limit";
 export async function POST(request: NextRequest) {
   // Validate Telegram webhook secret token
   const telegramSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (telegramSecret) {
-    const headerSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
-    if (headerSecret !== telegramSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!telegramSecret) {
+    console.error("TELEGRAM_WEBHOOK_SECRET is not configured");
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+  const headerSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
+  if (headerSecret !== telegramSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Rate limit: max 60 webhook calls per minute per IP (Telegram sends at most ~30/min)

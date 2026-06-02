@@ -39,7 +39,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 # Stripe (LIVE)
-STRIPE_SECRET_KEY=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
+STRIPE_SECRET_KEY=sk_live_<REDACTED>
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_51SItfhGW0nj93dcTiMDkrrlH1YzEKkGBIiYxMlPCJH0gynRAmX0ROwFKEtHpQHnDEIVOr6yowYdvqUSBIAFLuICC00YnVByz
 STRIPE_WEBHOOK_SECRET=whsec_... (à récupérer après configuration du webhook)
 
@@ -169,14 +169,14 @@ Une fois l'app déployée sur Render, récupère l'URL:
 Une fois l'app déployée, configurer le webhook Telegram:
 
 ```bash
-curl -X POST "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook" \
   -d "url=https://sadek-bot-saas.onrender.com/api/telegram/webhook"
 ```
 
 ### Étape 2: Vérifier le Webhook
 
 ```bash
-curl "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/getWebhookInfo"
+curl "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/getWebhookInfo"
 ```
 
 Tu devrais voir:

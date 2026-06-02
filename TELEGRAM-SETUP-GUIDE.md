@@ -60,7 +60,7 @@ SELL SOL @180 SL:185 TP:175
 ### Webhook ne fonctionne pas
 ```bash
 # Vérifier le webhook
-curl "https://api.telegram.org/bot8496815756:AAEFOf60xHTGEWlXWtzgSIMwNJzwDhCra4M/getWebhookInfo"
+curl "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/getWebhookInfo"
 ```
 
 ### Canal non trouvé

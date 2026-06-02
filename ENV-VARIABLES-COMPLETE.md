@@ -69,12 +69,12 @@ METAAPI_TOKEN=eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9...
 
 ### 2. Configurer le webhook Telegram pour le canal de test:
 ```bash
-curl -X POST "https://api.telegram.org/bot8496815756:AAGnDGVRcoA7JmTOz5N3HLJKD_YgmsmnuXI/setWebhook?url=https://sadek-saas.vercel.app/api/telegram/webhook"
+curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook?url=https://sadek-saas.vercel.app/api/telegram/webhook"
 ```
 
 ### 3. Vérifier le webhook:
 ```bash
-curl "https://api.telegram.org/bot8496815756:AAGnDGVRcoA7JmTOz5N3HLJKD_YgmsmnuXI/getWebhookInfo"
+curl "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/getWebhookInfo"
 ```
 
 ---
@@ -132,7 +132,7 @@ WHERE channel_id = (SELECT id FROM telegram_channels WHERE username = 'imprimbot
 
 2. **Configurer le webhook:**
    ```bash
-   curl -X POST "https://api.telegram.org/bot8496815756:AAGnDGVRcoA7JmTOz5N3HLJKD_YgmsmnuXI/setWebhook?url=https://sadek-saas.vercel.app/api/telegram/webhook"
+   curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook?url=https://sadek-saas.vercel.app/api/telegram/webhook"
    ```
 
 3. **Envoyer un message de test:**

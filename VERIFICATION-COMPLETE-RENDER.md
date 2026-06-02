@@ -54,7 +54,7 @@ Vérifier dans Render Dashboard → Worker → Environment:
 
 ```bash
 # Vérifier le webhook
-curl "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/getWebhookInfo"
+curl "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/getWebhookInfo"
 ```
 
 **Doit retourner:**
@@ -71,7 +71,7 @@ curl "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc
 
 Si ce n'est pas bon, configurer:
 ```bash
-curl -X POST "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook" \
   -d "url=https://ton-app.onrender.com/api/telegram/webhook"
 ```
 
@@ -274,7 +274,7 @@ FROM symbol_mappings;
 **Solution:**
 ```bash
 # Reconfigurer le webhook
-curl -X POST "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook" \
   -d "url=https://ton-app.onrender.com/api/telegram/webhook"
 ```
 

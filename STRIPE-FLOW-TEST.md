@@ -11,7 +11,7 @@
 Vérifier que toutes ces variables sont configurées avec les clés **LIVE** :
 
 ```env
-STRIPE_SECRET_KEY=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
+STRIPE_SECRET_KEY=sk_live_<REDACTED>
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_51SItfhGW0nj93dcTiMDkrrlH1YzEKkGBIiYxMlPCJH0gynRAmX0ROwFKEtHpQHnDEIVOr6yowYdvqUSBIAFLuICC00YnVByz
 STRIPE_WEBHOOK_SECRET=whsec_... (secret du webhook LIVE)
 NEXT_PUBLIC_APP_URL=https://sadek-saas.vercel.app

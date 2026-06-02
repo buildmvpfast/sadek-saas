@@ -43,14 +43,14 @@ OPENAI_API_KEY=sk-...
 #### Étape 1 : Configurer le Webhook
 
 ```bash
-curl -X POST "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/setWebhook" \
   -d "url=https://ton-domaine.com/api/telegram/webhook"
 ```
 
 #### Étape 2 : Vérifier le Webhook
 
 ```bash
-curl "https://api.telegram.org/bot7958247845:AAFPfntvvND10uCs7AX6UPC5Dz4a_Dc17bc/getWebhookInfo"
+curl "https://api.telegram.org/bot<BOT_ID>:<REDACTED_TOKEN>/getWebhookInfo"
 ```
 
 #### Étape 3 : Ajouter le Bot au Canal

@@ -3,7 +3,7 @@
 ## 📋 Informations Fournies
 
 - **Clé Publique (Live):** `pk_live_51SItfhGW0nj93dcTiMDkrrlH1YzEKkGBIiYxMlPCJH0gynRAmX0ROwFKEtHpQHnDEIVOr6yowYdvqUSBIAFLuICC00YnVByz`
-- **Clé Secrète (Live):** `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`
+- **Clé Secrète (Live):** `sk_live_<REDACTED>`
 - **Plan Basic Mensuel:** `prod_TOJi07OHG8AVUc`
 - **Plan Basic Annuel:** `prod_TOJkO0xDiqmvZn`
 

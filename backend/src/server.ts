@@ -9,9 +9,30 @@ dotenv.config()
 const app = express()
 const PORT = process.env.PORT || 4000
 
+// Only allow calls from our own Next.js server in production
+const BACKEND_API_SECRET = process.env.BACKEND_API_SECRET || process.env.INTERNAL_API_SECRET
+
 // Middleware
-app.use(cors())
+app.use(cors({
+  origin: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+  methods: ['GET', 'POST', 'DELETE'],
+}))
 app.use(express.json())
+
+// Auth middleware for state-changing routes
+function requireBackendSecret(req: Request, res: Response, next: Function) {
+  if (!BACKEND_API_SECRET) {
+    console.error('BACKEND_API_SECRET or INTERNAL_API_SECRET not configured')
+    res.status(500).json({ error: 'Server misconfiguration' })
+    return
+  }
+  const auth = req.headers['authorization']
+  if (auth !== `Bearer ${BACKEND_API_SECRET}`) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+  next()
+}
 
 // Service instance
 let monitor: MetaApiPositionMonitor | null = null
@@ -28,7 +49,7 @@ app.get('/health', (req: Request, res: Response) => {
 })
 
 // Start monitoring
-app.post('/api/start', async (req: Request, res: Response) => {
+app.post('/api/start', requireBackendSecret, async (req: Request, res: Response) => {
   try {
     if (monitor) {
       return res.json({
@@ -55,7 +76,7 @@ app.post('/api/start', async (req: Request, res: Response) => {
 })
 
 // Stop monitoring
-app.post('/api/stop', async (req: Request, res: Response) => {
+app.post('/api/stop', requireBackendSecret, async (req: Request, res: Response) => {
   try {
     if (!monitor) {
       return res.json({
