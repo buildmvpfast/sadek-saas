@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   } catch (err: any) {
     console.error('Error creating portal session:', err)
     return NextResponse.json({ 
-      error: 'Internal server error' || 'Erreur lors de la création de la session du portail' 
+      error: 'Internal server error' 
     }, { status: 500 })
   }
 }
