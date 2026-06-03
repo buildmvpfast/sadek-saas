@@ -1,6 +1,6 @@
 # MT5 Copy Trading SaaS
 
-Plateforme de copy trading MetaTrader 5 avec abonnement et gestion multi-comptes.
+Plateforme de copy trading MetaTrader 5 avec abonnement et gestion multi-comptes. 
 
 ## 🚀 Fonctionnalités
 
