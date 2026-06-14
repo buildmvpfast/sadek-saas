@@ -2,13 +2,20 @@
  * Source unique pour les listes broker + serveurs (UI + /api/metaapi/servers + /api/metaapi/brokers).
  * Le nom du serveur doit correspondre exactement à MT5 / MetaAPI.
  */
-export type BrokerServersEntry = { name: string; servers: string[] };
+import { resolveServerName } from "@/lib/server-aliases";
+
+export type BrokerServersEntry = {
+  name: string;
+  servers: string[];
+  /** MT4 uniquement pour certains brokers (ex. FXCess). */
+  platform?: "mt5" | "mt4";
+};
 
 function uniqServers(servers: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const s of servers) {
-    const t = s.trim().replace(/\s+/g, " ");
+    const t = resolveServerName(s.trim());
     if (!t || seen.has(t)) continue;
     seen.add(t);
     out.push(t);
@@ -16,55 +23,108 @@ function uniqServers(servers: string[]): string[] {
   return out;
 }
 
-/**
- * Serveurs VT tels qu’affichés dans MT5 / emails broker.
- * La forme la plus courante est **VTMarkets** (sans espace) + `-Live` / `-Demo` / `-Live N`.
- * « VT Markets- » (avec espace) existe encore sur certains comptes → on garde les deux préfixes.
- */
+function buildNumberedLive(prefix: string, numbers: number[]): string[] {
+  const list: string[] = [];
+  for (const n of numbers) {
+    list.push(`${prefix}-Live ${n}`, `${prefix}-Live${n}`);
+  }
+  return list;
+}
+
 function buildVtMarketsServers(): string[] {
   const list: string[] = [];
   const prefixes = ["VTMarkets", "VT Markets"] as const;
 
   for (const p of prefixes) {
-    list.push(`${p}-Live`, `${p}-Demo`);
+    list.push(`${p}-Live`, `${p}-Demo`, "Démo de VTMarkets");
     for (let i = 1; i <= 25; i++) {
-      list.push(`${p}-Live ${i}`);
+      list.push(`${p}-Live ${i}`, `${p}-Live${i}`);
     }
-    for (let i = 1; i <= 25; i++) {
-      list.push(`${p}-Live${i}`);
+    for (let i = 1; i <= 9; i++) {
+      list.push(`${p}-Live0${i}`);
     }
-    list.push(
-      `${p}-Live01`,
-      `${p}-Live02`,
-      `${p}-Live03`,
-      `${p}-Live04`,
-      `${p}-Live05`,
-      `${p}-Live06`,
-      `${p}-Live07`,
-      `${p}-Live08`,
-      `${p}-Live09`,
-    );
-    list.push(
-      `${p}-Real`,
-      `${p}-Real01`,
-      `${p}-Real02`,
-      `${p}-Real03`,
-    );
+    list.push(`${p}-Real`, `${p}-Real01`, `${p}-Real02`, `${p}-Real03`);
   }
 
   return uniqServers(list);
+}
+
+function buildVantageMarketsServers(): string[] {
+  const prefix = "VantageMarkets";
+  return uniqServers([
+    `${prefix}-Demo`,
+    `${prefix}-Live`,
+    ...buildNumberedLive(prefix, [3, 4, 5, 6, 7, 8, 10, 11, 13, 14, 15, 19, 21]),
+  ]);
+}
+
+function buildVantageInternationalServers(): string[] {
+  const prefix = "VantageInternational";
+  return uniqServers([
+    `${prefix}-Demo`,
+    `${prefix}-Live`,
+    ...buildNumberedLive(prefix, [
+      3, 4, 5, 6, 7, 8, 10, 11, 13, 14, 15, 19, 21,
+    ]),
+    "VantageInternational-Live 1",
+    "VantageInternational-Live 2",
+    "VantageInternational-Live 9",
+    "VantageInternational-Live 12",
+    "VantageInternational-Live 16",
+    "VantageInternational-Live 18",
+  ]);
+}
+
+function buildAxiServers(): string[] {
+  return uniqServers([
+    "Axi-US52-Live",
+    "Axi-US51-Live",
+    "Axi-US88-Live",
+    "Axi-US50-Demo",
+    "Axi-US50-Live",
+    "Axi-UK55-Live",
+    "Axi-US03-Live",
+    "Axi-US05-Live",
+    "Axi-US06-Live",
+    "Axi-US09-Live",
+    "Axi-US16-Live",
+    "Axi-US18-Live",
+    "Axi-Live",
+    "Axi-Demo",
+    "Axi-Live01",
+    "Axi-Live02",
+    "Axi-Live03",
+    "Axi-Real",
+    "Axi-Real01",
+    "Axi-Real02",
+    "Axi-Real03",
+    "Axi-MT5-Live",
+    "Axi-MT5-Demo",
+    "Axi-MT5-Real",
+    "Axi-MT5-Real01",
+    "Axi-MT5-Real02",
+    "AxiTrader-Live",
+    "AxiTrader-Demo",
+    "AxiTrader-Real",
+    "AxiTrader-Real01",
+    "AxiTrader-Real02",
+  ]);
 }
 
 export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
   {
     name: "VT Markets",
     servers: buildVtMarketsServers(),
+    platform: "mt5",
   },
   {
     name: "Raise FX",
-    servers: [
+    servers: uniqServers([
+      "RaiseGroup-Server",
       "RaiseFX-Live",
       "RaiseFX-Demo",
+      "RaiseGlobal-Live",
+      "RaiseGlobalSA-LIVE",
       "RaiseFX-Live01",
       "RaiseFX-Live02",
       "RaiseFX-Live03",
@@ -77,7 +137,8 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
       "RaiseFX-MT5-Real",
       "RaiseFX-MT5-Real01",
       "RaiseFX-MT5-Real02",
-    ],
+    ]),
+    platform: "mt5",
   },
   {
     name: "Raise Global",
@@ -99,10 +160,12 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
       "RaiseGlobal-MT5-Real01",
       "RaiseGlobal-MT5-Real02",
     ]),
+    platform: "mt5",
   },
   {
     name: "FXcess",
-    servers: [
+    servers: uniqServers([
+      "FXCESS-Live01",
       "FXcess-Live",
       "FXcess-Demo",
       "FXcess-Live01",
@@ -117,31 +180,13 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
       "FXcess-MT5-Real",
       "FXcess-MT5-Real01",
       "FXcess-MT5-Real02",
-    ],
+    ]),
+    platform: "mt4",
   },
   {
     name: "Axi",
-    servers: [
-      "Axi-Live",
-      "Axi-Demo",
-      "Axi-Live01",
-      "Axi-Live02",
-      "Axi-Live03",
-      "Axi-Real",
-      "Axi-Real01",
-      "Axi-Real02",
-      "Axi-Real03",
-      "Axi-MT5-Live",
-      "Axi-MT5-Demo",
-      "Axi-MT5-Real",
-      "Axi-MT5-Real01",
-      "Axi-MT5-Real02",
-      "AxiTrader-Live",
-      "AxiTrader-Demo",
-      "AxiTrader-Real",
-      "AxiTrader-Real01",
-      "AxiTrader-Real02",
-    ],
+    servers: buildAxiServers(),
+    platform: "mt5",
   },
   {
     name: "Vantage",
@@ -149,35 +194,15 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
       "VantageFX-Live",
       "VantageFX-Demo",
       "VantageFXInternational-Live",
-      "VantageInternational-Demo",
-      "VantageInternational-Live",
+      ...buildVantageInternationalServers(),
+      ...buildVantageMarketsServers(),
       "VantageGlobalPrimeLLP-Live",
       "VantageGlobalPrimeLLP-Live 2",
-      "VantagePrimeLimited-Live",
-      "VantageInternational-Live 3",
-      "VantageInternational-Live 4",
-      "VantageInternational-Live 5",
-      "VantageInternational-Live 6",
-      "VantageInternational-Live 7",
-      "VantageInternational-Live 8",
-      "VantagePrimeLimited-Demo",
-      "VantageInternational-Live 10",
-      "VantageInternational-Live 11",
-      "VantageInternational-Live 13",
       "VantageGlobalPrimeAU-Live",
-      "VantageInternational-Live 14",
-      "VantageInternational-Live 15",
-      "VantageInternational-Live 19",
-      "VantageInternational-Live21",
-      "VantageInternational-Live 21",
-      // Autres nœuds souvent listés par MetaAPI / anciens presets
-      "VantageInternational-Live 1",
-      "VantageInternational-Live 2",
-      "VantageInternational-Live 9",
-      "VantageInternational-Live 12",
-      "VantageInternational-Live 16",
-      "VantageInternational-Live 18",
+      "VantagePrimeLimited-Live",
+      "VantagePrimeLimited-Demo",
     ]),
+    platform: "mt5",
   },
 ];
 
@@ -195,5 +220,16 @@ export function getStaticBrokersWithServers() {
     id: SLUG[b.name] ?? b.name.toLowerCase().replace(/\s+/g, "-"),
     name: b.name,
     servers: b.servers,
+    platform: b.platform ?? "mt5",
   }));
+}
+
+export function findBrokerByName(
+  brokerName: string,
+): BrokerServersEntry | undefined {
+  const q = brokerName.toLowerCase();
+  return METAAPI_BROKER_SERVERS.find(
+    (b) =>
+      b.name.toLowerCase().includes(q) || q.includes(b.name.toLowerCase()),
+  );
 }

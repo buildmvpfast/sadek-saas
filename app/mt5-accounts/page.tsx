@@ -240,6 +240,7 @@ export default function MT5AccountsPage() {
           login,
           password: formData.password.trim(),
           server: serverName,
+          broker_name: formData.broker_name.trim(),
           platform: "mt5",
           magic: 0,
         }),

@@ -7,10 +7,13 @@ import {
 } from "@/lib/broker-symbol-fallback";
 import {
   effectiveUserVolumeForIndexSplit,
-  isIndexStandard,
   lotStepForStandard,
   volumePerTpForStandard,
 } from "@/lib/trade-volume";
+import {
+  lotSettingKeyForSymbol,
+  normalizeSymbol,
+} from "@/lib/symbol-normalizer";
 import { parseLocaleNumber, parseLocaleNumberOr } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
 import { requireInternalSecret } from "@/lib/internal-auth";
@@ -425,7 +428,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Déterminer order_type: MARKET si pas de entry_price, LIMIT si entry_price existe
-    const orderType = signal.entryPrice ? "LIMIT" : "MARKET";
+    const orderType =
+      (signal as { orderType?: string }).orderType ||
+      (signal.entryPrice ? "LIMIT" : "MARKET");
 
     // Sauvegarder le signal
     const { data: savedSignal, error } = await supabase
@@ -515,7 +520,9 @@ async function parseSignal(messageText: string) {
     // Pattern 7: BUY XAUUSD SL 2640 TP 2670 (sans entry price)
     /(BUY|SELL|ACHAT|VENTE|LONG|SHORT)\s+([A-Z0-9./]+)\s+SL\s+([\d.]+)\s+TP\s+([\d.]+)/i,
     // Pattern 8: Multiple TP - BUY XAUUSD TP1:2670 TP2:2680 TP3:2690
-    /(BUY|SELL|ACHAT|VENTE|LONG|SHORT)\s+([A-Z0-9./]+).*?TP\d*:?\s*([\d.]+).*?TP\d*:?\s*([\d.]+).*?TP\d*:?\s*([\d.]+)/i,
+    /(BUY|SELL|ACHAT|VENTE|LONG|SHORT)\s+([A-Z0-9./]+).*?TP\d*:?\s*([\d.]+).*?TP\d*:?\s*([\d.]+)/i,
+    // Pattern 9: Buy limit gold 4832.5-4833
+    /(BUY|SELL|ACHAT|VENTE)\s+(?:LIMIT|LIMITE|STOP)\s+([A-Z0-9./]+)\s+([\d.,\s-]+)/i,
   ];
 
   for (const pattern of patterns) {
@@ -554,61 +561,35 @@ async function parseSignal(messageText: string) {
         return sym.replace(/[\/_]/g, "");
       };
 
-      // Pattern avec multiple TP (TP1, TP2, TP3)
+      // Pattern avec multiple TP (TP1, TP2, TP3) ou format limit/stop
       if (pattern.source.includes("TP\\d")) {
         type = normalizeType(match[1]);
         symbol = cleanSymbol(match[2]);
-        // This regex capture only TP values, so SL/entry are parsed from the full message.
         entryPrice = null;
-
-        const slMatch =
-          messageText.match(/\bS\/?L\b[:=\s]*([\d.]+)/i) ||
-          messageText.match(/\bSL\b[:=\s]*([\d.]+)/i);
-        stopLoss = slMatch && slMatch[1] ? parseFloat(slMatch[1]) : null;
-
-        const tpFromMsg = Array.from(
-          messageText.matchAll(/\bTP\d*\b[:=\s]*([\d.]+)/gi) as any,
-        )
-          .map((m: any) => (m && m[1] ? parseFloat(m[1]) : NaN))
-          .filter((v: number) => !Number.isNaN(v));
-
-        // Fallback in case message uses plain "TP:" without TP1/TP2 prefixes
-        const tpGenericMatch =
-          tpFromMsg.length === 0
-            ? (() => {
-                const m = messageText.match(/\bTP\b[:=\s]*([\d.]+)/i);
-                return m && m[1] ? parseFloat(m[1]) : null;
-              })()
-            : null;
-
-        takeProfits = (
-          tpFromMsg.length > 0
-            ? tpFromMsg
-            : tpGenericMatch !== null
-              ? [tpGenericMatch]
-              : []
-        ) as number[];
-
-        // Best TP kept for compatibility with existing columns/logic:
-        const sorted = [...takeProfits].sort((a, b) => a - b);
-        takeProfit =
-          sorted.length > 0
-            ? type === "BUY"
-              ? sorted[sorted.length - 1]
-              : sorted[0]
-            : null;
       } else if (
         match[1].match(/^(BUY|SELL|ACHAT|VENTE|LONG|SHORT|🟢|🔴|✅|❌)$/i)
       ) {
-        // Format: BUY/SELL en premier
         type = normalizeType(match[1]);
         symbol = cleanSymbol(match[2]);
-        entryPrice = match[3] ? parseFloat(match[3]) : null;
+        if (match[3] && /[\d]/.test(match[3])) {
+          const parts = String(match[3])
+            .split(/[-–—]/)
+            .map((p) => parseLocaleNumber(p.trim()))
+            .filter((n) => Number.isFinite(n));
+          const isSell = type === "SELL";
+          entryPrice =
+            parts.length > 1
+              ? isSell
+                ? parts[parts.length - 1]
+                : parts[0]
+              : parts[0] ?? null;
+        } else {
+          entryPrice = match[3] ? parseFloat(match[3]) : null;
+        }
         stopLoss = match[4] ? parseFloat(match[4]) : null;
         takeProfit = match[5] ? parseFloat(match[5]) : null;
         takeProfits = takeProfit ? [takeProfit] : [];
       } else {
-        // Format: Symbole en premier
         symbol = cleanSymbol(match[1]);
         type = normalizeType(match[2]);
         entryPrice = match[3] ? parseFloat(match[3]) : null;
@@ -617,16 +598,53 @@ async function parseSignal(messageText: string) {
         takeProfits = takeProfit ? [takeProfit] : [];
       }
 
+      const slFromMsg =
+        messageText.match(/\bS\/?L\b[:=\s]*([\d.,]+)/i) ||
+        messageText.match(/\bSL\b[:=\s]*([\d.,]+)/i);
+      if (slFromMsg?.[1]) {
+        stopLoss = parseLocaleNumber(slFromMsg[1]);
+      }
+
+      const tpFromMsg = Array.from(
+        messageText.matchAll(/\bTP\d*\b[:=\s]*([\d.,]+)/gi) as any,
+      )
+        .map((m: any) =>
+          m?.[1] ? parseLocaleNumber(String(m[1])) : Number.NaN,
+        )
+        .filter((v: number) => Number.isFinite(v));
+
+      if (tpFromMsg.length > 0) {
+        takeProfits = tpFromMsg;
+        const sorted = [...takeProfits].sort((a, b) => a - b);
+        takeProfit =
+          sorted.length > 0
+            ? type === "BUY"
+              ? sorted[sorted.length - 1]
+              : sorted[0]
+            : null;
+      } else if (!takeProfit) {
+        const tpGeneric = messageText.match(/\bTP\b[:=\s]*([\d.,]+)/i);
+        if (tpGeneric?.[1]) {
+          takeProfit = parseLocaleNumber(tpGeneric[1]);
+          takeProfits = [takeProfit];
+        }
+      }
+
+      let orderType: string | undefined;
+      if (/LIMIT|LIMITE/i.test(messageText)) orderType = "LIMIT";
+      else if (/\bSTOP\b/i.test(messageText)) orderType = "STOP";
+
       // Validation minimale: type et symbol requis
       if (type && symbol && symbol !== "LIMIT" && symbol !== "STOP") {
         return {
           type,
-          symbol,
+          symbol: normalizeSymbol(symbol),
           entryPrice: entryPrice || null,
           stopLoss: stopLoss || null,
           takeProfit: takeProfit || null,
           takeProfits: takeProfits || [],
-          volume: 0.01, // Volume par défaut
+          orderType,
+          volume: 0.01,
         };
       }
     }
@@ -656,38 +674,51 @@ async function parseSignalWithAI(messageText: string): Promise<any | null> {
         messages: [
           {
             role: "system",
-            content: `Tu es un expert en parsing de signaux de trading MT5. Ton rôle est d'extraire les informations d'un message Telegram de trading, PEU IMPORTE le format utilisé.
+            content: `Tu es un expert en parsing de signaux de trading MT5/Telegram. Extrais les infos d'un message, PEU IMPORTE le format (FR/EN, emojis, lignes séparées).
 
-8. Gestion des TP multiples: Si plusieurs TP sont listés (TP1, TP2...), EXTRAIS-LES TOUS dans un tableau "takeProfits". Le système choisira automatiquement le meilleur (le plus haut pour BUY, le plus bas pour SELL).
-9. Fermetures Partielles / TP Hit: Si le message mentionne "TP HIT", "TAKE PROFIT TOUCHÉ", "PRENDRE DES PROFITS", "SÉCURISER", "CLOSE HALF", "PRENDRE UNE PARTIE", indique "isPartialClose": true. 
-   - Cherche un pourcentage (ex: "50%", "CLOSE HALF" -> 50). Par défaut "closePercent": 50.
+RÈGLE TP MULTIPLES (CRITIQUE):
+- Si plusieurs TP (TP1, TP2, Tp1, TP: 2670, etc.), EXTRAIS-TOUS dans "takeProfits" dans l'ordre du message.
+- Chaque TP deviendra une position séparée côté exécution — ne fusionne jamais en un seul TP.
 
-RÈGLES CRITIQUES:
-1. Type d'ordre: Cherche "BUY", "SELL", "ACHAT", "VENTE", "LONG", "SHORT", emojis 🟢/🔴.
-2. Mode d'exécution: Détermine s'il s'agit de "MARKET" (exécuté maintenant), "LIMIT" (souvent écrit "Buy Limit", "Sell Limit" ou avec "@") ou "STOP".
+TYPE & ORDRE:
+- type: "BUY" ou "SELL" (ACHAT/LONG/🟢 → BUY ; VENTE/SHORT/🔴 → SELL)
+- orderType: "MARKET" | "LIMIT" | "STOP"
+  - "Buy Limit" / "Sell Limit" / "limite" → LIMIT
+  - "Buy Stop" / "Sell Stop" → STOP
+  - Sans prix d'entrée explicite → MARKET
+- Plage d'entrée "4832.5-4833" → entryPrice = premier nombre pour BUY LIMIT, dernier pour SELL LIMIT
 
-INFORMATIONS À EXTRAIRE:
-- type: "BUY", "SELL" ou "CLOSE" (si fermeture partielle)
-- symbol: Le symbole
-- entryPrice: Nombre
-- stopLoss: Nombre
-- takeProfits: Tableau de nombres [2670, 2680, 2690]
-- isPartialClose: Boolean
-- closePercent: Nombre (ex: 50)
+SYMBOLES — normalise vers ces clés:
+- Or: GOLD (alias: XAUUSD, XAU/USD, GOLD, OR, gold)
+- Crypto: BTC, ETH, SOL30 (alias: BTCUSD, ETHUSD, SOL, SOLUSD)
+- Indices: US30 (Dow,DJ30), NAS100 (Nasdaq,USTEC), SPX500 (S&P500), GER40 (DAX), UK100 (FTSE)
+- Forex: EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD, AUDUSD, NZDUSD + croisées EURGBP, EURJPY, GBPJPY, EURCHF, GBPCHF, CHFJPY, CADJPY, AUDJPY, NZDJPY, AUDCAD, AUDCHF, AUDNZD, CADCHF, EURAUD, EURCAD, EURNZD, GBPAUD, GBPCAD, GBPNZD, NZDCAD, NZDCHF
+- Exotiques si présents: USDTRY, EURTRY, USDZAR, GBPZAR, USDMXN, USDSGD, USDCNH, USDHKD, USDNOK, USDSEK, USDDKK, EURNOK, EURSEK, EURPLN
+- Accepte EUR/USD, XAU/USD avec slash
 
-Réponds UNIQUEMENT avec un JSON valide:
+SL / TP:
+- SL, S/L, Sl, stop loss → stopLoss (nombre)
+- TP, TP1, TP2, Tp1, take profit → takeProfits[] (tous les niveaux)
+- Virgule ou point décimal acceptés
+
+MISES À JOUR (si message de suivi — géré ailleurs, mais reconnais):
+- BE, break even, SL to BE → pas un nouveau signal d'ouverture
+
+FERMETURES PARTIELLES:
+- "TP HIT", "PRENDRE PROFIT", "CLOSE HALF", "SÉCURISER" → isPartialClose: true
+- closePercent: cherche 25%, 50%, 75% ; "CLOSE HALF" = 50 ; défaut 50
+
+JSON UNIQUEMENT (ou null si type+symbol impossibles):
 {
   "type": "BUY",
-  "orderType": "MARKET",
+  "orderType": "LIMIT",
   "symbol": "GOLD",
-  "entryPrice": null,
-  "stopLoss": 2640,
-  "takeProfits": [2670, 2680, 2690],
+  "entryPrice": 4832.5,
+  "stopLoss": 4828.5,
+  "takeProfits": [4841, 4868.7],
   "isPartialClose": false,
   "closePercent": null
-}
-
-Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
+}`,
           },
           {
             role: "user",
@@ -770,14 +801,19 @@ Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
       ? parseLocaleNumber(parsed.stopLoss)
       : Number.NaN;
 
+    const orderTypeRaw = String(parsed.orderType || "MARKET").toUpperCase();
+    let orderType = "MARKET";
+    if (orderTypeRaw.includes("LIMIT")) orderType = "LIMIT";
+    else if (orderTypeRaw.includes("STOP")) orderType = "STOP";
+
     return {
       type: parsed.type.toUpperCase(),
-      symbol: parsed.symbol.toUpperCase(),
+      symbol: normalizeSymbol(parsed.symbol),
       entryPrice: Number.isFinite(entryPriceNorm) ? entryPriceNorm : null,
       stopLoss: Number.isFinite(stopLossNorm) ? stopLossNorm : null,
       takeProfit,
       takeProfits,
-      orderType: parsed.orderType || "MARKET",
+      orderType,
       volume: parsed.volume ? parseLocaleNumberOr(parsed.volume, 0.01) : 0.01,
       isPartialClose: parsed.isPartialClose || false,
       closePercent: parsed.closePercent || 50,
@@ -786,58 +822,6 @@ Si tu ne peux PAS extraire type ET symbol de manière fiable, retourne null.`,
     console.error("Error parsing with AI:", error);
     return null;
   }
-}
-
-/**
- * Normalise un symbole (XAUUSD -> GOLD, XAUUSD.I -> GOLD, GOLD -> GOLD, etc.)
- * Gère tous les formats: XAUUSD, XAUUSD.I, GOLD, GOLDUSD, etc.
- */
-function normalizeSymbol(symbol: string): string {
-  const upperSymbol = symbol.toUpperCase().trim();
-
-  // GOLD variations: XAUUSD, XAUUSD.I, GOLD, GOLDUSD, XAU/USD, etc.
-  if (upperSymbol.includes("XAU") || upperSymbol.includes("GOLD")) {
-    return "GOLD";
-  }
-
-  // Indices variations
-  if (
-    upperSymbol.includes("US30") ||
-    upperSymbol.includes("DJ30") ||
-    upperSymbol.includes("WS30") ||
-    upperSymbol.includes("DOW")
-  ) {
-    return "US30";
-  }
-  if (
-    upperSymbol.includes("NAS100") ||
-    upperSymbol.includes("US100") ||
-    upperSymbol.includes("USTEC") ||
-    upperSymbol.includes("NASDAQ")
-  ) {
-    return "NAS100";
-  }
-  if (
-    upperSymbol.includes("GER40") ||
-    upperSymbol.includes("DAX") ||
-    upperSymbol.includes("DE40") ||
-    upperSymbol.includes("GER30")
-  ) {
-    return "GER40";
-  }
-
-  // SOL variations: SOL, SOL30, SOLUSDT, etc.
-  if (upperSymbol.includes("SOL")) {
-    return "SOL30";
-  }
-
-  // BTC variations: BTC, BTCUSD, BITCOIN, etc.
-  if (upperSymbol.includes("BTC") || upperSymbol.includes("BITCOIN")) {
-    return "BTC";
-  }
-
-  // Par défaut, retourner le symbole tel quel (sans les points/underscores/slashes pour compatibilité)
-  return upperSymbol.replace(/[._\/]/g, "");
 }
 
 /**
@@ -1119,28 +1103,7 @@ async function executeTradesForSignal(signalId: string) {
 
     if (tradingSettings) {
       if (tradingSettings.position_sizing_type === "lot") {
-        const lotMap: Record<string, string> = {
-          GOLD: "gold_lot_size",
-          BTC: "btc_lot_size",
-          ETH: "eth_lot_size",
-          SOL30: "sol_lot_size",
-          US30: "us30_lot_size",
-          NAS100: "nas100_lot_size",
-          GER40: "ger40_lot_size",
-          UK100: "uk100_lot_size",
-          SPX500: "spx500_lot_size",
-          EURUSD: "eurusd_lot_size",
-          GBPUSD: "gbpusd_lot_size",
-          USDJPY: "usdjpy_lot_size",
-          USDCHF: "usdchf_lot_size",
-          USDCAD: "usdcad_lot_size",
-          AUDUSD: "audusd_lot_size",
-          NZDUSD: "nzdusd_lot_size",
-          EURGBP: "eurgbp_lot_size",
-          EURJPY: "eurjpy_lot_size",
-          GBPJPY: "gbpjpy_lot_size",
-        };
-        const key = lotMap[normalizedSymbol];
+        const key = lotSettingKeyForSymbol(normalizedSymbol);
         userVolume = key
           ? parseLocaleNumberOr(tradingSettings[key], 0.01)
           : 0.01;
@@ -1177,62 +1140,6 @@ async function executeTradesForSignal(signalId: string) {
       signal.order_type,
       entryN,
     );
-    const isMarketLike =
-      orderTypeResolved === "MARKET" ||
-      (!signal.entry_price && orderTypeResolved !== "LIMIT");
-
-    if (isIndexStandard(normalizedSymbol) && tpCount > 1 && isMarketLike) {
-      const volumeOne = volumePerTpForStandard(
-        normalizedSymbol,
-        userVolume,
-        1,
-        0,
-      );
-      const firstTp = tpValues[0];
-
-      const { data: existingAny } = await supabase
-        .from("telegram_trades")
-        .select("id")
-        .eq("user_id", subscription.user_id)
-        .eq("signal_id", signalId)
-        .eq("mt5_account_id", mt5Account.id)
-        .in("status", ["pending", "pending_partial", "executed"])
-        .limit(1)
-        .maybeSingle();
-
-      if (existingAny) {
-        console.log(
-          `⏭️ Trade déjà existant (index multi-TP → 1 ordre) user ${subscription.user_id}`,
-        );
-        continue;
-      }
-
-      const { error: insErr } = await supabase.from("telegram_trades").insert({
-        user_id: subscription.user_id,
-        signal_id: signalId,
-        mt5_account_id: mt5Account.id,
-        symbol: brokerSymbol,
-        signal_type: signal.signal_type,
-        order_type: orderTypeResolved,
-        volume: volumeOne,
-        entry_price: signal.entry_price,
-        stop_loss: signal.stop_loss,
-        take_profit: firstTp,
-        status: "pending",
-      });
-
-      if (insErr) {
-        console.error(
-          `❌ Erreur création trade index (1 ordre) user ${subscription.user_id}:`,
-          insErr,
-        );
-      } else {
-        console.log(
-          `✅ Trade index unique: ${brokerSymbol} ${volumeOne} lot(s), TP1=${firstTp} (+ ${tpCount - 1} autres TP à gérer côté canal / manuel)`,
-        );
-      }
-      continue;
-    }
 
     const effectiveUserVolume = effectiveUserVolumeForIndexSplit(
       normalizedSymbol,
@@ -1240,6 +1147,7 @@ async function executeTradesForSignal(signalId: string) {
       tpCount,
     );
 
+    // 1 position MetaAPI par TP (forex, indices, métaux — tous types d'ordres)
     for (let i = 0; i < tpValues.length; i++) {
       const tpValue = tpValues[i];
 

@@ -1,4 +1,6 @@
--- Créer la table symbol_mappings si elle n'existe pas
+-- Pack complet PDF : métaux, crypto, indices, forex majeures + croisées
+-- Brokers : VT Markets, Raise FX, Raise Global, FXcess, Axi, Vantage
+
 CREATE TABLE IF NOT EXISTS symbol_mappings (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   broker_name TEXT NOT NULL,
@@ -8,115 +10,74 @@ CREATE TABLE IF NOT EXISTS symbol_mappings (
   UNIQUE(broker_name, standard_symbol)
 );
 
--- Activer RLS
 ALTER TABLE symbol_mappings ENABLE ROW LEVEL SECURITY;
 
--- Policy: Tout le monde peut lire les mappings
 DROP POLICY IF EXISTS "Everyone can view symbol mappings" ON symbol_mappings;
 CREATE POLICY "Everyone can view symbol mappings" ON symbol_mappings
   FOR SELECT USING (true);
 
--- Policy: Seul le service role peut modifier (via service_role_key)
-DROP POLICY IF EXISTS "Only service role can modify symbol mappings" ON symbol_mappings;
-CREATE POLICY "Only service role can modify symbol mappings" ON symbol_mappings
-  FOR ALL USING (false);
-
--- GOLD (XAU/USD) - Mapping pour tous les brokers supportés
+-- Helper macro via INSERT batches
+-- VT Markets (ECN suffixes indices / certaines paires)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
   ('VT Markets', 'GOLD', 'XAUUSD'),
-  ('Raise FX', 'GOLD', 'XAUUSD'),
-  ('Raise Global', 'GOLD', 'XAUUSD'),
-  ('Raise Globale', 'GOLD', 'XAUUSD'),
-  ('FXcess', 'GOLD', 'XAUUSD'),
-  ('Axi', 'GOLD', 'XAUUSD'),
-  ('Vantage', 'GOLD', 'XAUUSD+')
-ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
-SET broker_symbol = EXCLUDED.broker_symbol;
-
--- SOL30 (Solana)
-INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VT Markets', 'SOL30', 'SOL30'),
-  ('Raise FX', 'SOL30', 'SOL30'),
-  ('Raise Global', 'SOL30', 'SOL30'),
-  ('Raise Globale', 'SOL30', 'SOL30'),
-  ('FXcess', 'SOL30', 'SOL30'),
-  ('Axi', 'SOL30', 'SOL30'),
-  ('Vantage', 'SOL30', 'SOL30')
-ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
-SET broker_symbol = EXCLUDED.broker_symbol;
-
--- BTC (Bitcoin)
-INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
   ('VT Markets', 'BTC', 'BTCUSD'),
-  ('Raise FX', 'BTC', 'BTCUSD'),
-  ('Raise Global', 'BTC', 'BTCUSD'),
-  ('Raise Globale', 'BTC', 'BTCUSD'),
-  ('FXcess', 'BTC', 'BTCUSD'),
-  ('Axi', 'BTC', 'BTCUSD'),
-  ('Vantage', 'BTC', 'BTCUSD')
-ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
-SET broker_symbol = EXCLUDED.broker_symbol;
-
--- EURUSD (Forex - généralement identique partout)
-INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
+  ('VT Markets', 'ETH', 'ETHUSD'),
+  ('VT Markets', 'SOL30', 'SOL30'),
   ('VT Markets', 'EURUSD', 'EURUSD-ECN'),
-  ('Raise FX', 'EURUSD', 'EURUSD'),
-  ('Raise Global', 'EURUSD', 'EURUSD'),
-  ('Raise Globale', 'EURUSD', 'EURUSD'),
-  ('FXcess', 'EURUSD', 'EURUSD'),
-  ('Axi', 'EURUSD', 'EURUSD'),
-  ('Vantage', 'EURUSD', 'EURUSD+')
-ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
-SET broker_symbol = EXCLUDED.broker_symbol;
-
--- GBPUSD (Forex)
-INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
   ('VT Markets', 'GBPUSD', 'GBPUSD'),
-  ('Raise FX', 'GBPUSD', 'GBPUSD'),
-  ('Raise Global', 'GBPUSD', 'GBPUSD'),
-  ('Raise Globale', 'GBPUSD', 'GBPUSD'),
-  ('FXcess', 'GBPUSD', 'GBPUSD'),
-  ('Axi', 'GBPUSD', 'GBPUSD'),
-  ('Vantage', 'GBPUSD', 'GBPUSD+')
-ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
-SET broker_symbol = EXCLUDED.broker_symbol;
-
--- VT Markets ECN — croisées + indices (symboles MT5 : DJ30.s, NAS100.s, GER40.s)
-INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
+  ('VT Markets', 'USDJPY', 'USDJPY'),
+  ('VT Markets', 'USDCHF', 'USDCHF'),
+  ('VT Markets', 'USDCAD', 'USDCAD'),
+  ('VT Markets', 'AUDUSD', 'AUDUSD'),
+  ('VT Markets', 'NZDUSD', 'NZDUSD'),
   ('VT Markets', 'EURGBP', 'EURGBP-ECN'),
   ('VT Markets', 'EURJPY', 'EURJPY-ECN'),
   ('VT Markets', 'GBPJPY', 'GBPJPY-ECN'),
   ('VT Markets', 'US30', 'DJ30.s'),
   ('VT Markets', 'NAS100', 'NAS100.s'),
-  ('VT Markets', 'GER40', 'GER40.s')
-ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
-SET broker_symbol = EXCLUDED.broker_symbol;
+  ('VT Markets', 'GER40', 'GER40.s'),
+  ('VT Markets', 'UK100', 'UK100.s'),
+  ('VT Markets', 'SPX500', 'SPX500.s')
+ON CONFLICT (broker_name, standard_symbol) DO UPDATE SET broker_symbol = EXCLUDED.broker_symbol;
 
--- Vantage — USDJPY + indices (US30 -> DJ30 sur MT5 Vantage)
+-- Vantage (+ suffixes)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
+  ('Vantage', 'GOLD', 'XAUUSD+'),
+  ('Vantage', 'BTC', 'BTCUSD'),
+  ('Vantage', 'ETH', 'ETHUSD'),
+  ('Vantage', 'SOL30', 'SOL30'),
+  ('Vantage', 'EURUSD', 'EURUSD+'),
+  ('Vantage', 'GBPUSD', 'GBPUSD+'),
   ('Vantage', 'USDJPY', 'USDJPY+'),
+  ('Vantage', 'USDCHF', 'USDCHF+'),
+  ('Vantage', 'USDCAD', 'USDCAD+'),
+  ('Vantage', 'AUDUSD', 'AUDUSD+'),
+  ('Vantage', 'NZDUSD', 'NZDUSD+'),
+  ('Vantage', 'EURGBP', 'EURGBP+'),
+  ('Vantage', 'EURJPY', 'EURJPY+'),
+  ('Vantage', 'GBPJPY', 'GBPJPY+'),
   ('Vantage', 'US30', 'DJ30'),
   ('Vantage', 'NAS100', 'NAS100'),
-  ('Vantage', 'GER40', 'GER40')
-ON CONFLICT (broker_name, standard_symbol) DO UPDATE 
-SET broker_symbol = EXCLUDED.broker_symbol;
+  ('Vantage', 'GER40', 'GER40'),
+  ('Vantage', 'UK100', 'UK100'),
+  ('Vantage', 'SPX500', 'SPX500')
+ON CONFLICT (broker_name, standard_symbol) DO UPDATE SET broker_symbol = EXCLUDED.broker_symbol;
 
--- Vérifier les mappings créés
-SELECT 
-  broker_name, 
-  standard_symbol, 
-  broker_symbol,
-  created_at
-FROM symbol_mappings 
+-- Axi / Raise / FXcess — symboles standards MT5
+INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol)
+SELECT b.broker_name, s.standard_symbol, s.broker_symbol
+FROM (VALUES
+  ('Axi'), ('Raise FX'), ('Raise Global'), ('Raise Globale'), ('FXcess')
+) AS b(broker_name)
+CROSS JOIN (VALUES
+  ('GOLD', 'XAUUSD'), ('BTC', 'BTCUSD'), ('ETH', 'ETHUSD'), ('SOL30', 'SOL30'),
+  ('US30', 'US30'), ('NAS100', 'NAS100'), ('GER40', 'GER40'), ('UK100', 'UK100'), ('SPX500', 'SPX500'),
+  ('EURUSD', 'EURUSD'), ('GBPUSD', 'GBPUSD'), ('USDJPY', 'USDJPY'), ('USDCHF', 'USDCHF'),
+  ('USDCAD', 'USDCAD'), ('AUDUSD', 'AUDUSD'), ('NZDUSD', 'NZDUSD'),
+  ('EURGBP', 'EURGBP'), ('EURJPY', 'EURJPY'), ('GBPJPY', 'GBPJPY')
+) AS s(standard_symbol, broker_symbol)
+ON CONFLICT (broker_name, standard_symbol) DO UPDATE SET broker_symbol = EXCLUDED.broker_symbol;
+
+SELECT broker_name, COUNT(*) AS mappings FROM symbol_mappings
 WHERE broker_name IN ('VT Markets', 'Raise FX', 'Raise Global', 'Raise Globale', 'FXcess', 'Axi', 'Vantage')
-ORDER BY broker_name, standard_symbol;
-
--- Afficher le nombre de mappings par broker
-SELECT 
-  broker_name, 
-  COUNT(*) as nombre_mappings
-FROM symbol_mappings 
-WHERE broker_name IN ('VT Markets', 'Raise FX', 'Raise Global', 'Raise Globale', 'FXcess', 'Axi', 'Vantage')
-GROUP BY broker_name
-ORDER BY broker_name;
-
+GROUP BY broker_name ORDER BY broker_name;

@@ -1,10 +1,30 @@
 import { NextResponse } from "next/server";
-import { METAAPI_BROKER_SERVERS } from "@/lib/metaapi-broker-servers";
+import {
+  findBrokerByName,
+  METAAPI_BROKER_SERVERS,
+} from "@/lib/metaapi-broker-servers";
+import {
+  canonicalServerOrResolved,
+  filterServers,
+  resolveServerName,
+} from "@/lib/server-aliases";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const brokerName = searchParams.get("broker");
+    const search = searchParams.get("search")?.trim() ?? "";
+    const resolve = searchParams.get("resolve")?.trim() ?? "";
+
+    if (resolve) {
+      const broker = brokerName ? findBrokerByName(brokerName) : undefined;
+      const known = broker?.servers ?? [];
+      return NextResponse.json({
+        success: true,
+        input: resolve,
+        resolved: canonicalServerOrResolved(resolve, known),
+      });
+    }
 
     if (!brokerName) {
       return NextResponse.json(
@@ -13,26 +33,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // Essayer d'abord avec MetaAPI
-    if (process.env.METAAPI_TOKEN) {
-      try {
-        // MetaAPI n'a pas d'API directe pour lister les serveurs d'un broker
-        // Mais on peut essayer de récupérer les serveurs depuis les comptes existants
-        // ou utiliser l'API de provisioning profiles
-        // Pour l'instant, on utilise la liste statique comme fallback
-        // MetaAPI ne fournit pas directement la liste des serveurs par broker
-        // Il faut les connaître à l'avance ou les récupérer depuis les comptes connectés
-      } catch (metaApiError) {
-        console.warn("MetaAPI error, using static list:", metaApiError);
-      }
-    }
-
-    // Utiliser la liste statique (fallback)
-    const broker = METAAPI_BROKER_SERVERS.find(
-      (b) =>
-        b.name.toLowerCase().includes(brokerName.toLowerCase()) ||
-        brokerName.toLowerCase().includes(b.name.toLowerCase()),
-    );
+    const broker = findBrokerByName(brokerName);
 
     if (!broker) {
       return NextResponse.json({
@@ -45,24 +46,35 @@ export async function GET(request: Request) {
       });
     }
 
-    // Formater les serveurs
-    const servers = broker.servers.map((server) => ({
+    let serverNames = broker.servers;
+    if (search) {
+      serverNames = filterServers(search, serverNames);
+    }
+
+    const servers = serverNames.map((server) => ({
       name: server.trim(),
       type:
         server.includes("Demo") || server.includes("demo") ? "demo" : "live",
+      canonical: resolveServerName(server),
     }));
 
     return NextResponse.json({
       success: true,
       broker: broker.name,
+      platform: broker.platform ?? "mt5",
       servers,
+      total: servers.length,
       source: "static",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error("Error fetching servers:", error);
     return NextResponse.json(
-      { success: false, error: error.message, servers: [] },
+      { success: false, error: message, servers: [] },
       { status: 500 },
     );
   }
 }
+
+/** Export pour tests — liste complète brokers. */
+export { METAAPI_BROKER_SERVERS };

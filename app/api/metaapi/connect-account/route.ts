@@ -9,6 +9,8 @@ import {
   METAAPI_PROVISIONING_ACCOUNTS_URL,
   removeDuplicateProvisioningAccounts,
 } from "@/lib/metaapi-provisioning";
+import { findBrokerByName } from "@/lib/metaapi-broker-servers";
+import { resolveServerName } from "@/lib/server-aliases";
 
 /** Garde du temps pour deploy + JSON ; doit rester aligné avec `maxDuration` (littéral requis par Next.js). */
 const CONNECT_ROUTE_MAX_DURATION_SEC = 120;
@@ -151,10 +153,12 @@ export async function POST(request: Request) {
     const rawPassword = body.password;
     const rawServer = body.server;
     const name = typeof body.name === "string" ? body.name.trim() : "";
-    const platform = body.platform || "mt5";
+    const brokerHint =
+      typeof body.broker_name === "string" ? body.broker_name.trim() : "";
+    let platform = body.platform || "mt5";
     const magic = body.magic ?? 0;
 
-    const server = normalizeServer(String(rawServer ?? ""));
+    const server = resolveServerName(normalizeServer(String(rawServer ?? "")));
     const login = normalizeLogin(rawLogin);
     const password = String(rawPassword ?? "").trim();
 
@@ -173,6 +177,14 @@ export async function POST(request: Request) {
         { success: false, error: "MetaApi token not configured" },
         { status: 500 },
       );
+    }
+
+    const brokerEntry = brokerHint ? findBrokerByName(brokerHint) : undefined;
+    if (brokerEntry?.platform === "mt4" && platform === "mt5") {
+      platform = "mt4";
+    }
+    if (/fxcess/i.test(server) || /fxcess/i.test(brokerHint)) {
+      platform = "mt4";
     }
 
     const token = process.env.METAAPI_TOKEN;
