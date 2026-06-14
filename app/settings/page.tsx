@@ -36,6 +36,16 @@ type TradingSettings = {
   // Global
   position_percentage: number
   max_open_positions: number
+  max_lot_size: number
+  lot_multiplier: number
+  equity_risk_percent: number
+  max_daily_loss: number
+  max_weekly_loss: number
+  max_spread_points: number
+  max_slippage_points: number
+  trading_paused: boolean
+  allowed_symbols: string
+  blocked_symbols: string
 }
 
 const DEFAULT_SETTINGS: TradingSettings = {
@@ -61,6 +71,16 @@ const DEFAULT_SETTINGS: TradingSettings = {
   gbpjpy_lot_size: 0.01,
   position_percentage: 1.0,
   max_open_positions: 10,
+  max_lot_size: 1.0,
+  lot_multiplier: 1.0,
+  equity_risk_percent: 1.0,
+  max_daily_loss: 0,
+  max_weekly_loss: 0,
+  max_spread_points: 0,
+  max_slippage_points: 30,
+  trading_paused: false,
+  allowed_symbols: '',
+  blocked_symbols: '',
 }
 
 type LotInputProps = {
@@ -194,6 +214,16 @@ export default function SettingsPage() {
         gbpjpy_lot_size: parseLocaleNumberOr(data.gbpjpy_lot_size, 0.01),
         position_percentage: parseLocaleNumberOr(data.position_percentage, 1.0),
         max_open_positions: data.max_open_positions || 10,
+        max_lot_size: parseLocaleNumberOr(data.max_lot_size, 1.0),
+        lot_multiplier: parseLocaleNumberOr(data.lot_multiplier, 1.0),
+        equity_risk_percent: parseLocaleNumberOr(data.equity_risk_percent, 1.0),
+        max_daily_loss: parseLocaleNumberOr(data.max_daily_loss, 0),
+        max_weekly_loss: parseLocaleNumberOr(data.max_weekly_loss, 0),
+        max_spread_points: parseLocaleNumberOr(data.max_spread_points, 0),
+        max_slippage_points: parseLocaleNumberOr(data.max_slippage_points, 30),
+        trading_paused: Boolean(data.trading_paused),
+        allowed_symbols: data.allowed_symbols || '',
+        blocked_symbols: data.blocked_symbols || '',
       })
     }
   }
@@ -242,6 +272,16 @@ export default function SettingsPage() {
         gbpjpy_lot_size: settings.gbpjpy_lot_size,
         position_percentage: settings.position_percentage,
         max_open_positions: settings.max_open_positions,
+        max_lot_size: settings.max_lot_size,
+        lot_multiplier: settings.lot_multiplier,
+        equity_risk_percent: settings.equity_risk_percent,
+        max_daily_loss: settings.max_daily_loss,
+        max_weekly_loss: settings.max_weekly_loss,
+        max_spread_points: settings.max_spread_points,
+        max_slippage_points: settings.max_slippage_points,
+        trading_paused: settings.trading_paused,
+        allowed_symbols: settings.allowed_symbols.trim() || null,
+        blocked_symbols: settings.blocked_symbols.trim() || null,
       }
 
       if (settings.id) {
@@ -481,6 +521,114 @@ export default function SettingsPage() {
               <p className="text-sm mt-2 opacity-75" style={{ color: '#9b30a8' }}>
                 Limite de positions simultanées pour gérer le risque
               </p>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4 mt-6">
+              <div>
+                <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
+                  Lot maximum par ordre
+                </label>
+                <LocaleDecimalField
+                  value={settings.max_lot_size}
+                  min={0.01}
+                  max={100}
+                  onChange={(n) => handleChange('max_lot_size', n)}
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
+                  Multiplicateur de lot
+                </label>
+                <LocaleDecimalField
+                  value={settings.lot_multiplier}
+                  min={0.1}
+                  max={10}
+                  onChange={(n) => handleChange('lot_multiplier', n)}
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
+                  % equity par trade (mode %)
+                </label>
+                <LocaleDecimalField
+                  value={settings.equity_risk_percent}
+                  min={0.1}
+                  max={100}
+                  onChange={(n) => handleChange('equity_risk_percent', n)}
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
+                  Slippage max (points)
+                </label>
+                <LocaleDecimalField
+                  value={settings.max_slippage_points}
+                  min={0}
+                  max={500}
+                  onChange={(n) => handleChange('max_slippage_points', n)}
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
+                  Perte max / jour (0 = off)
+                </label>
+                <LocaleDecimalField
+                  value={settings.max_daily_loss}
+                  min={0}
+                  max={1000000}
+                  onChange={(n) => handleChange('max_daily_loss', n)}
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
+                  Perte max / semaine (0 = off)
+                </label>
+                <LocaleDecimalField
+                  value={settings.max_weekly_loss}
+                  min={0}
+                  max={1000000}
+                  onChange={(n) => handleChange('max_weekly_loss', n)}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
+                Instruments autorisés (CSV, vide = tous)
+              </label>
+              <input
+                type="text"
+                className="input"
+                placeholder="GOLD,EURUSD,US30"
+                value={settings.allowed_symbols}
+                onChange={(e) =>
+                  setSettings({ ...settings, allowed_symbols: e.target.value })
+                }
+              />
+            </div>
+            <div className="mt-4">
+              <label className="block font-bold mb-2" style={{ color: '#9b30a8' }}>
+                Instruments interdits (CSV)
+              </label>
+              <input
+                type="text"
+                className="input"
+                placeholder="USDTRY,USDMXN"
+                value={settings.blocked_symbols}
+                onChange={(e) =>
+                  setSettings({ ...settings, blocked_symbols: e.target.value })
+                }
+              />
+            </div>
+            <div className="mt-4 flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={settings.trading_paused}
+                onChange={(e) =>
+                  setSettings({ ...settings, trading_paused: e.target.checked })
+                }
+              />
+              <label style={{ color: '#9b30a8' }}>Pause trading (manuel)</label>
             </div>
           </div>
 

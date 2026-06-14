@@ -1,0 +1,46 @@
+# Blueprint Render — connecter GitHub OAuth avant deploy (voir RENDER-GIT-FIX.md)
+services:
+  - type: web
+    name: sadek-saas-web
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: METAAPI_TOKEN
+        sync: false
+      - key: INTERNAL_API_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+        sync: false
+
+  - type: worker
+    name: sadek-saas-telegram-worker
+    runtime: node
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run telegram-trades
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: METAAPI_TOKEN
+        sync: false

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isMetaApiTradeSuccess } from "@/lib/metaapi-trade-client";
+import { resolveBrokerSymbol } from "@/lib/broker-symbol-resolver";
 import {
-  brokerMappingKeys,
-  staticBrokerSymbol,
-} from "@/lib/broker-symbol-fallback";
+  applyLotMultiplier,
+  checkTradeRisk,
+  volumeFromEquityPercent,
+  type TradingRiskSettings,
+} from "@/lib/trade-risk";
+import { fetchMetaApiAccountEquity } from "@/lib/metaapi-trade-client";
 import {
   effectiveUserVolumeForIndexSplit,
   lotStepForStandard,
@@ -408,13 +412,12 @@ export async function POST(request: NextRequest) {
       if (signalIdToClose) {
         // Marquer les trades pour fermeture partielle
         // Note: L'exécution réelle se fera via execute-trades
-        const { data: tradesToPartial, error: partialError } = await supabase
+        const { data: tradesToPartial } = await supabase
           .from("telegram_trades")
           .update({
             status: "pending_partial",
-            error_message: `Fermeture partielle ${signal.closePercent}% demandée`,
-            // On stocke le pourcentage dans un champ temporaire ou via error_message pour l'instant
-            // Car la structure de table est fixe
+            partial_close_percent: signal.closePercent ?? 50,
+            error_message: `Fermeture partielle ${signal.closePercent ?? 50}% demandée`,
           })
           .eq("signal_id", signalIdToClose)
           .eq("status", "executed")
@@ -824,153 +827,6 @@ JSON UNIQUEMENT (ou null si type+symbol impossibles):
   }
 }
 
-/**
- * Mappe un symbole normalisé au symbole utilisé par un broker spécifique
- * Exemple: GOLD → XAUUSD pour certains brokers, GOLD pour d'autres
- */
-async function mapSymbolToBroker(
-  normalizedSymbol: string,
-  brokerName: string | null,
-  supabase: any,
-): Promise<string> {
-  if (!brokerName) {
-    return normalizedSymbol;
-  }
-
-  const normalizedBrokerName = brokerName.trim();
-  const namesOrdered: string[] = [];
-  for (const n of [
-    normalizedBrokerName,
-    ...brokerMappingKeys(normalizedBrokerName),
-  ]) {
-    if (n && !namesOrdered.includes(n)) namesOrdered.push(n);
-  }
-
-  // 1. symbol_mappings (plusieurs noms possibles : "Vantage International" → "Vantage")
-  try {
-    const { data: rows, error } = await supabase
-      .from("symbol_mappings")
-      .select("broker_symbol, broker_name")
-      .eq("standard_symbol", normalizedSymbol)
-      .in("broker_name", namesOrdered);
-
-    if (!error && Array.isArray(rows) && rows.length > 0) {
-      rows.sort(
-        (a: { broker_name: string }, b: { broker_name: string }) =>
-          namesOrdered.indexOf(a.broker_name) - namesOrdered.indexOf(b.broker_name),
-      );
-      const sym = rows[0]?.broker_symbol;
-      if (sym) {
-        console.log(
-          `✅ Mapping DB: ${normalizedSymbol} → ${sym} (${rows[0].broker_name})`,
-        );
-        return sym;
-      }
-    }
-  } catch (error) {
-    console.warn(
-      `⚠️ Erreur lecture symbol_mappings, utilisation des fallbacks:`,
-      error,
-    );
-  }
-
-  // 2. Fallback statique partagé (Vantage / VT Markets, etc.)
-  for (const name of namesOrdered) {
-    const mapped = staticBrokerSymbol(name, normalizedSymbol);
-    if (mapped) {
-      console.log(
-        `✅ Mapping static: ${normalizedSymbol} → ${mapped} (${name})`,
-      );
-      return mapped;
-    }
-  }
-
-  // 3. Table inline (brokers sans entrée STATIC dédiée)
-  const fallbackMapping: Record<string, Record<string, string>> = {
-    GOLD: {
-      "Raise FX": "XAUUSD",
-      "Raise Global": "XAUUSD",
-      "Raise Globale": "XAUUSD",
-      FXcess: "XAUUSD",
-      Axi: "XAUUSD",
-    },
-    EURUSD: {
-      "Raise FX": "EURUSD",
-      "Raise Global": "EURUSD",
-      "Raise Globale": "EURUSD",
-      FXcess: "EURUSD",
-      Axi: "EURUSD",
-    },
-    GBPUSD: {
-      "Raise FX": "GBPUSD",
-      "Raise Global": "GBPUSD",
-      "Raise Globale": "GBPUSD",
-      FXcess: "GBPUSD",
-      Axi: "GBPUSD",
-    },
-    USDJPY: {
-      "Raise FX": "USDJPY",
-      "Raise Global": "USDJPY",
-      FXcess: "USDJPY",
-      Axi: "USDJPY",
-    },
-    EURGBP: { "Raise FX": "EURGBP", "Raise Global": "EURGBP" },
-    EURJPY: { "Raise FX": "EURJPY", "Raise Global": "EURJPY" },
-    GBPJPY: { "Raise FX": "GBPJPY", "Raise Global": "GBPJPY" },
-    US30: {
-      "Raise FX": "US30",
-      "Raise Global": "US30",
-      "Raise Globale": "US30",
-      FXcess: "US30",
-      Axi: "US30",
-    },
-    NAS100: {
-      "Raise FX": "NAS100",
-      "Raise Global": "NAS100",
-      FXcess: "NAS100",
-      Axi: "NAS100",
-    },
-    GER40: {
-      "Raise FX": "GER40",
-      "Raise Global": "GER40",
-      FXcess: "GER40",
-      Axi: "GER40",
-    },
-    SOL30: {
-      "Raise FX": "SOL30",
-      "Raise Global": "SOL30",
-      "Raise Globale": "SOL30",
-      FXcess: "SOL30",
-      Axi: "SOL30",
-    },
-    BTC: {
-      "Raise FX": "BTCUSD",
-      "Raise Global": "BTCUSD",
-      "Raise Globale": "BTCUSD",
-      FXcess: "BTCUSD",
-      Axi: "BTCUSD",
-    },
-  };
-
-  const byStd = fallbackMapping[normalizedSymbol];
-  if (byStd) {
-    for (const name of namesOrdered) {
-      const sym = byStd[name];
-      if (sym) {
-        console.log(
-          `✅ Mapping fallback: ${normalizedSymbol} → ${sym} (${name})`,
-        );
-        return sym;
-      }
-    }
-  }
-
-  console.log(
-    `⚠️ Pas de mapping pour ${normalizedSymbol} sur ${normalizedBrokerName}, utilisation du symbole normalisé`,
-  );
-  return normalizedSymbol;
-}
-
 async function executeTradesForSignal(signalId: string) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -1075,7 +931,7 @@ async function executeTradesForSignal(signalId: string) {
     // Récupérer le compte MT5 et les paramètres de trading de l'utilisateur
     const { data: mt5Account } = await supabase
       .from("mt5_accounts")
-      .select("id, metaapi_account_id, broker_name")
+      .select("id, metaapi_account_id, broker_name, symbol_profile")
       .eq("user_id", subscription.user_id)
       .eq("is_active", true)
       .single();
@@ -1098,8 +954,9 @@ async function executeTradesForSignal(signalId: string) {
       .eq("user_id", subscription.user_id)
       .single();
 
-    // Calculer le volume selon les paramètres utilisateur
-    let userVolume = signal.volume || 0.01; // Défaut
+    const riskSettings = (tradingSettings ?? null) as TradingRiskSettings | null;
+
+    let userVolume = parseLocaleNumberOr(signal.volume, 0.01);
 
     if (tradingSettings) {
       if (tradingSettings.position_sizing_type === "lot") {
@@ -1108,30 +965,48 @@ async function executeTradesForSignal(signalId: string) {
           ? parseLocaleNumberOr(tradingSettings[key], 0.01)
           : 0.01;
       } else if (tradingSettings.position_sizing_type === "percentage") {
-        // Pourcentage: utiliser le pourcentage du signal comme base
-        // TODO: améliorer avec le capital réel du compte
-        userVolume =
-          ((signal.volume || 0.01) *
-            parseLocaleNumberOr(tradingSettings.position_percentage, 1.0)) /
-          100;
+        const token = process.env.METAAPI_TOKEN;
+        let equity: number | null = null;
+        if (token && mt5Account.metaapi_account_id) {
+          equity = await fetchMetaApiAccountEquity(
+            mt5Account.metaapi_account_id,
+            token,
+          );
+        }
+        const pct = parseLocaleNumberOr(
+          tradingSettings.equity_risk_percent ??
+            tradingSettings.position_percentage,
+          1,
+        );
+        userVolume = volumeFromEquityPercent(equity ?? 10000, pct);
         const { min: minLot } = lotStepForStandard(normalizedSymbol);
         if (userVolume < minLot) userVolume = minLot;
       }
     }
 
-    // Mapper le symbole au broker de l'utilisateur
-    // Convertit automatiquement selon le broker (ex: GOLD → XAUUSD pour certains brokers)
-    let brokerSymbol = await mapSymbolToBroker(
+    userVolume = applyLotMultiplier(userVolume, riskSettings);
+
+    const brokerSymbol = await resolveBrokerSymbol(
       normalizedSymbol,
       mt5Account.broker_name,
       supabase,
+      {
+        metaApiAccountId: mt5Account.metaapi_account_id,
+        metaApiToken: process.env.METAAPI_TOKEN ?? null,
+        symbolProfile:
+          (mt5Account.symbol_profile as "auto" | "ecn" | "stp") ?? "auto",
+      },
     );
 
     console.log(
-      `✅ Symbole mappé: ${signal.symbol} → ${normalizedSymbol} → ${brokerSymbol} pour ${mt5Account.broker_name}`,
+      `✅ Symbole: ${signal.symbol} → ${normalizedSymbol} → ${brokerSymbol}`,
     );
 
-    // Indices + MARKET + plusieurs TP : 1 seule position (volume = lot réglages), 1er TP sur l’ordre.
+    const { count: openCount } = await supabase
+      .from("telegram_trades")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", subscription.user_id)
+      .in("status", ["executed", "pending", "pending_partial"]);
     // Sinon : un trade par TP (forex / index en LIMIT, ou 1 seul TP).
     const tpCount = tpValues.length;
     const entryN = parseLocaleNumber(signal.entry_price);
@@ -1157,6 +1032,34 @@ async function executeTradesForSignal(signalId: string) {
         tpCount,
         i,
       );
+
+      const risk = checkTradeRisk({
+        standardSymbol: normalizedSymbol,
+        volume: volumeForTp,
+        openPositionCount: (openCount ?? 0) + i,
+        settings: riskSettings,
+      });
+      if (!risk.allowed) {
+        console.log(
+          `⛔ Trade bloqué user ${subscription.user_id}: ${risk.reason}`,
+        );
+        await supabase.from("telegram_trades").insert({
+          user_id: subscription.user_id,
+          signal_id: signalId,
+          mt5_account_id: mt5Account.id,
+          symbol: brokerSymbol,
+          signal_type: signal.signal_type,
+          order_type: orderTypeResolved,
+          volume: volumeForTp,
+          entry_price: signal.entry_price,
+          stop_loss: signal.stop_loss,
+          take_profit: tpValue,
+          status: "failed",
+          error_message: risk.reason,
+        });
+        continue;
+      }
+
       let existingQuery: any = supabase
         .from("telegram_trades")
         .select("id")

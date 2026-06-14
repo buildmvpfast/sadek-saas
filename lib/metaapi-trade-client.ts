@@ -354,3 +354,91 @@ export async function fetchMetaApiPositionsJson(
   }
   return { ok: false, error: lastErr || "Aucun endpoint positions MetaAPI joignable" };
 }
+
+export function metaApiSymbolsUrls(accountId: string): string[] {
+  const id = encodeURIComponent(accountId);
+  const roots = [
+    "https://mt-client-api-v1.london.agiliumtrade.ai",
+    "https://mt-client-api-v1.new-york.agiliumtrade.ai",
+    "https://mt-client-api-v1.singapore.agiliumtrade.ai",
+    "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai",
+  ];
+  return roots.map(
+    (r) => `${r}/users/current/accounts/${id}/symbols`,
+  );
+}
+
+export async function fetchMetaApiSymbolNames(
+  accountId: string,
+  token: string,
+): Promise<{ ok: true; symbols: Set<string> } | { ok: false; error: string }> {
+  let lastErr = "";
+  for (const url of metaApiSymbolsUrls(accountId)) {
+    try {
+      const response = await fetch(url, {
+        headers: { "auth-token": token },
+      });
+      if (!response.ok) {
+        lastErr = `HTTP ${response.status}`;
+        continue;
+      }
+      const data: unknown = await response.json();
+      if (!Array.isArray(data)) {
+        lastErr = "symbols: not array";
+        continue;
+      }
+      const symbols = new Set<string>();
+      for (const row of data) {
+        if (row && typeof row === "object" && "symbol" in row) {
+          symbols.add(String((row as { symbol: string }).symbol));
+        }
+      }
+      return { ok: true, symbols };
+    } catch (e: unknown) {
+      lastErr = e instanceof Error ? e.message : String(e);
+    }
+  }
+  return { ok: false, error: lastErr || "symbols unavailable" };
+}
+
+export async function fetchMetaApiAccountEquity(
+  accountId: string,
+  token: string,
+): Promise<number | null> {
+  const roots = [
+    "https://mt-client-api-v1.london.agiliumtrade.ai",
+    "https://mt-client-api-v1.new-york.agiliumtrade.ai",
+    "https://mt-client-api-v1.singapore.agiliumtrade.ai",
+  ];
+  for (const root of roots) {
+    try {
+      const url = `${root}/users/current/accounts/${encodeURIComponent(accountId)}/account-information`;
+      const response = await fetch(url, { headers: { "auth-token": token } });
+      if (!response.ok) continue;
+      const data = (await response.json()) as { equity?: number };
+      if (typeof data.equity === "number" && Number.isFinite(data.equity)) {
+        return data.equity;
+      }
+    } catch {
+      /* next */
+    }
+  }
+  return null;
+}
+
+/** Fermeture partielle ou totale d'une position. */
+export async function postMetaApiClosePositionVolume(
+  accountId: string,
+  positionId: string,
+  token: string,
+  volume?: number,
+): Promise<PostMetaApiTradeResult> {
+  const body: MetaApiTradeBody = {
+    actionType: "POSITION_CLOSE_ID",
+    positionId: String(positionId),
+  };
+  if (volume != null && Number.isFinite(volume) && volume > 0) {
+    body.volume = volume;
+  }
+  return postMetaApiTrade(accountId, body, token);
+}

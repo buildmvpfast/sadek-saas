@@ -68,6 +68,7 @@ export default function MT5AccountsPage() {
     account_number: "",
     password: "",
     is_investor: false,
+    symbol_profile: "auto" as "auto" | "ecn" | "stp",
   });
 
   const supabase = createClient();
@@ -268,6 +269,7 @@ export default function MT5AccountsPage() {
         is_admin_account: false, // Compte user, pas admin
         metaapi_account_id: metaApiData.accountId,
         is_active: true,
+        symbol_profile: formData.symbol_profile,
       });
 
       if (error) throw error;
@@ -279,6 +281,7 @@ export default function MT5AccountsPage() {
         account_number: "",
         password: "",
         is_investor: false,
+        symbol_profile: "auto",
       });
       setServers([]);
       fetchData();
@@ -516,6 +519,31 @@ export default function MT5AccountsPage() {
                 <label className="text-sm">
                   Mot de passe investisseur (lecture seule)
                 </label>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Type de symboles compte
+                </label>
+                <select
+                  value={formData.symbol_profile}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      symbol_profile: e.target.value as "auto" | "ecn" | "stp",
+                    })
+                  }
+                  className="input"
+                >
+                  <option value="auto">Auto (ECN puis STP via MetaAPI)</option>
+                  <option value="ecn">ECN Raw</option>
+                  <option value="stp">Standard STP</option>
+                </select>
+                {formData.broker_name === "FXcess" && (
+                  <p className="text-xs text-amber-700 mt-1">
+                    FXCess est MT4 — connexion en platform mt4 automatique.
+                  </p>
+                )}
               </div>
 
               <button
