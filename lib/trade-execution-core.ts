@@ -38,8 +38,16 @@ export type PendingTradeRow = {
   partial_close_percent?: number | string | null;
   mt5_accounts?: { metaapi_account_id?: string } | { metaapi_account_id?: string }[];
   telegram_signals?:
-    | { entry_price?: number | string | null; order_type?: string | null }
-    | { entry_price?: number | string | null; order_type?: string | null }[]
+    | {
+        entry_price?: number | string | null;
+        order_type?: string | null;
+        symbol?: string | null;
+      }
+    | {
+        entry_price?: number | string | null;
+        order_type?: string | null;
+        symbol?: string | null;
+      }[]
     | null;
 };
 

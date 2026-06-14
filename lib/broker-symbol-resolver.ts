@@ -40,7 +40,7 @@ function ecnStpCandidates(standardSymbol: string): string[] {
   if (s === "UK100") out.push("UK100", "UK100.s", "FTSE100");
   if (s === "SPX500") out.push("SPX500", "SPX500.s", "US500");
 
-  return [...new Set(out)];
+  return Array.from(new Set(out));
 }
 
 function orderByProfile(
@@ -73,14 +73,14 @@ function fuzzyMatchSymbol(
   standardSymbol: string,
 ): string | null {
   const compact = standardSymbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  for (const sym of available) {
+  for (const sym of Array.from(available)) {
     const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
     if (c === compact || c.startsWith(compact) || compact.startsWith(c)) {
       return sym;
     }
   }
   if (standardSymbol === "GOLD") {
-    for (const sym of available) {
+    for (const sym of Array.from(available)) {
       if (/XAU|GOLD/i.test(sym)) return sym;
     }
   }
@@ -90,24 +90,7 @@ function fuzzyMatchSymbol(
 export async function resolveBrokerSymbol(
   standardSymbolInput: string,
   brokerName: string | null,
-  supabase: {
-    from: (t: string) => {
-      select: (s: string) => {
-        eq: (
-          c: string,
-          v: string,
-        ) => {
-          in: (
-            c: string,
-            v: string[],
-          ) => Promise<{
-            data?: { broker_symbol: string; broker_name: string }[] | null;
-            error?: unknown;
-          }>;
-        };
-      };
-    };
-  },
+  supabase: any,
   options?: {
     metaApiAccountId?: string | null;
     metaApiToken?: string | null;
@@ -155,7 +138,7 @@ export async function resolveBrokerSymbol(
   candidates.push(...ecnStpCandidates(normalizedSymbol));
   candidates.push(normalizedSymbol);
 
-  const ordered = orderByProfile([...new Set(candidates)], profile);
+  const ordered = orderByProfile(Array.from(new Set(candidates)), profile);
 
   const token = options?.metaApiToken;
   const accountId = options?.metaApiAccountId;

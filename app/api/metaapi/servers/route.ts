@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  findBrokerByName,
-  METAAPI_BROKER_SERVERS,
-} from "@/lib/metaapi-broker-servers";
+import { findBrokerByName } from "@/lib/metaapi-broker-servers";
 import {
   canonicalServerOrResolved,
   filterServers,
@@ -75,6 +72,3 @@ export async function GET(request: Request) {
     );
   }
 }
-
-/** Export pour tests — liste complète brokers. */
-export { METAAPI_BROKER_SERVERS };
