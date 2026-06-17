@@ -412,10 +412,10 @@ export async function fetchMetaApiSymbolNames(
   return { ok: false, error: lastErr || "symbols unavailable" };
 }
 
-export async function fetchMetaApiAccountEquity(
+export async function fetchMetaApiAccountInfo(
   accountId: string,
   token: string,
-): Promise<number | null> {
+): Promise<Record<string, unknown> | null> {
   const roots = [
     "https://mt-client-api-v1.london.agiliumtrade.ai",
     "https://mt-client-api-v1.new-york.agiliumtrade.ai",
@@ -426,14 +426,22 @@ export async function fetchMetaApiAccountEquity(
       const url = `${root}/users/current/accounts/${encodeURIComponent(accountId)}/account-information`;
       const response = await fetch(url, { headers: { "auth-token": token } });
       if (!response.ok) continue;
-      const data = (await response.json()) as { equity?: number };
-      if (typeof data.equity === "number" && Number.isFinite(data.equity)) {
-        return data.equity;
-      }
+      const data = (await response.json()) as Record<string, unknown>;
+      if (data && typeof data === "object") return data;
     } catch {
       /* next */
     }
   }
+  return null;
+}
+
+export async function fetchMetaApiAccountEquity(
+  accountId: string,
+  token: string,
+): Promise<number | null> {
+  const info = await fetchMetaApiAccountInfo(accountId, token);
+  const equity = info?.equity;
+  if (typeof equity === "number" && Number.isFinite(equity)) return equity;
   return null;
 }
 

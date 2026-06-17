@@ -123,8 +123,33 @@ export default function MT5AccountsPage() {
         .eq("user_id", session.user.id)
         .order("created_at", { ascending: false });
 
-      if (accountsData) {
-        const formattedAccounts = accountsData.map((acc: any) => ({
+      let rows = accountsData;
+
+      if (!rows?.length) {
+        try {
+          const pending = sessionStorage.getItem("pendingMt5Link");
+          const body = pending || "{}";
+          await fetch("/api/metaapi/sync-orphan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+          const { data: refetched } = await supabase
+            .from("mt5_accounts")
+            .select(
+              "id, account_number, is_active, broker_name, server_name, metaapi_account_id"
+            )
+            .eq("user_id", session.user.id)
+            .order("created_at", { ascending: false });
+          rows = refetched;
+          if (refetched?.length) sessionStorage.removeItem("pendingMt5Link");
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (rows) {
+        const formattedAccounts = rows.map((acc: any) => ({
           id: acc.id,
           account_number: acc.account_number,
           is_active: acc.is_active,
@@ -287,6 +312,7 @@ export default function MT5AccountsPage() {
         error?: string;
         accountId?: string;
         server?: string;
+        recoverable?: boolean;
       };
       try {
         metaApiData = JSON.parse(rawBody) as typeof metaApiData;
@@ -302,6 +328,17 @@ export default function MT5AccountsPage() {
       }
 
       if (!metaApiData.success) {
+        if (metaApiData.recoverable && metaApiData.accountId) {
+          sessionStorage.setItem(
+            "pendingMt5Link",
+            JSON.stringify({
+              metaapi_account_id: metaApiData.accountId,
+              login,
+              server: requestedServer,
+              broker_name: formData.broker_name.trim(),
+            }),
+          );
+        }
         throw new Error(
           metaApiData.error || "Erreur lors de la connexion MetaApi"
         );
@@ -311,24 +348,31 @@ export default function MT5AccountsPage() {
         (typeof metaApiData.server === "string" && metaApiData.server.trim()) ||
         requestedServer;
 
-      // 2. Enregistrer dans Supabase avec le metaapi_account_id
-      // Password is managed by MetaAPI — never store plaintext or base64 in DB
-      const passwordEncrypted = "STORED_BY_METAAPI";
-
-      const { error } = await supabase.from("mt5_accounts").insert({
-        user_id: session.user.id,
-        broker_name: formData.broker_name.trim(),
-        server_name: serverName,
-        account_number: parseInt(login, 10),
-        password_encrypted: passwordEncrypted,
-        is_investor: formData.is_investor,
-        is_admin_account: false, // Compte user, pas admin
-        metaapi_account_id: metaApiData.accountId,
-        is_active: true,
-        symbol_profile: formData.symbol_profile,
+      const linkRes = await fetch("/api/metaapi/sync-orphan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          metaapi_account_id: metaApiData.accountId,
+          login,
+          server: serverName,
+          broker_name: formData.broker_name.trim(),
+        }),
       });
+      const linkRaw = await linkRes.text();
+      let linkData: { success?: boolean; error?: string };
+      try {
+        linkData = JSON.parse(linkRaw);
+      } catch {
+        throw new Error("Compte MetaAPI connecté mais enregistrement SaaS échoué");
+      }
+      if (!linkData.success) {
+        throw new Error(
+          linkData.error ||
+            "Compte MetaAPI connecté mais enregistrement SaaS échoué",
+        );
+      }
 
-      if (error) throw error;
+      sessionStorage.removeItem("pendingMt5Link");
 
       setShowAddForm(false);
       setFormData({

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
+import { fetchMetaApiAccountInfo } from "@/lib/metaapi-trade-client";
+import { fetchProvisioningAccount } from "@/lib/metaapi-provisioning";
 
 export async function GET(request: NextRequest) {
   // Verify authenticated user and ownership
@@ -42,35 +44,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Vérifier d'abord l'état du compte
-    const accountResponse = await fetch(
-      `https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${accountId}`,
-      {
-        headers: {
-          "auth-token": token,
-        },
-      }
-    );
+    const accountData = await fetchProvisioningAccount(accountId, token);
 
-    if (!accountResponse.ok) {
-      const errorText = await accountResponse.text();
-      console.error("MetaAPI account check error:", {
-        status: accountResponse.status,
-        accountId,
-        error: errorText,
-      });
-
+    if (!accountData) {
       return NextResponse.json(
         {
           success: false,
           error: "Compte MetaAPI non trouvé ou non accessible",
           accountId,
         },
-        { status: 200 }
+        { status: 200 },
       );
     }
-
-    const accountData = await accountResponse.json();
 
     // Vérifier que le compte est déployé et connecté
     if (
@@ -85,94 +70,53 @@ export async function GET(request: NextRequest) {
           state: accountData.state,
           connectionStatus: accountData.connectionStatus,
         },
-        { status: 200 }
+        { status: 200 },
       );
     }
 
-    // Utiliser l'API REST de MetaAPI (compatible avec Node.js, pas besoin de window)
-    const response = await fetch(
-      `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${accountId}/account-information`,
-      {
-        headers: {
-          "auth-token": token,
-        },
-      }
-    );
+    const accountInfo = await fetchMetaApiAccountInfo(accountId, token);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch {
-        errorData = { message: errorText || "Unknown error" };
-      }
-
-      console.error("MetaAPI REST API error:", {
-        status: response.status,
-        accountId,
-        error: errorData,
-      });
-
-      // Si le compte n'est pas encore déployé ou connecté
-      if (response.status === 404 || response.status === 400) {
-        return NextResponse.json(
-          {
-            success: false,
-            error:
-              "Compte MetaAPI non trouvé ou non déployé. Le compte peut prendre quelques minutes pour se connecter.",
-            accountId,
-            status: response.status,
-          },
-          { status: 200 }
-        ); // Retourner 200 pour ne pas casser l'UI
-      }
-
+    if (!accountInfo) {
       return NextResponse.json(
         {
           success: false,
           error:
-            errorData.message ||
-            errorData.error ||
-            `Erreur MetaAPI: ${response.status}`,
+            "Impossible de lire le compte (essayez dans quelques secondes). MT4/MT5 : vérifiez la région MetaAPI.",
           accountId,
-          status: response.status,
         },
-        { status: 200 }
-      ); // Retourner 200 pour ne pas casser l'UI
+        { status: 200 },
+      );
     }
 
-    const accountInfo = await response.json();
-
-    // Calculer le profit comme equity - balance
-    const profit = (accountInfo.equity || 0) - (accountInfo.balance || 0);
+    const profit =
+      (Number(accountInfo.equity) || 0) - (Number(accountInfo.balance) || 0);
 
     return NextResponse.json({
       success: true,
       accountInfo: {
-        balance: accountInfo.balance || 0,
-        equity: accountInfo.equity || 0,
-        margin: accountInfo.margin || 0,
-        freeMargin: accountInfo.freeMargin || 0,
-        marginLevel: accountInfo.marginLevel || 0,
-        currency: accountInfo.currency || "USD",
-        profit: profit,
-        server: accountInfo.server || "",
-        leverage: accountInfo.leverage || 0,
+        balance: Number(accountInfo.balance) || 0,
+        equity: Number(accountInfo.equity) || 0,
+        margin: Number(accountInfo.margin) || 0,
+        freeMargin: Number(accountInfo.freeMargin) || 0,
+        marginLevel: Number(accountInfo.marginLevel) || 0,
+        currency: String(accountInfo.currency || "USD"),
+        profit,
+        server: String(accountInfo.server || ""),
+        leverage: Number(accountInfo.leverage) || 0,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    const errCode = (error as { code?: string })?.code;
     console.error("Error fetching account info:", {
       accountId: accountId || "unknown",
-      error: error.message,
-      code: error.code,
-      stack: error.stack,
+      error: err.message,
+      code: errCode,
     });
 
-    // Gérer les erreurs de certificat SSL
     if (
-      error.code === "CERT_HAS_EXPIRED" ||
-      error.message?.includes("certificate")
+      errCode === "CERT_HAS_EXPIRED" ||
+      err.message.includes("certificate")
     ) {
       return NextResponse.json(
         {
@@ -189,7 +133,7 @@ export async function GET(request: NextRequest) {
       {
         success: false,
         error:
-          error.message ||
+          err.message ||
           "Erreur lors de la récupération des informations du compte",
         accountId: accountId || null,
       },

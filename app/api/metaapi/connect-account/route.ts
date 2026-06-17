@@ -1,4 +1,5 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from 'next/headers';
 import { rateLimit } from '@/lib/rate-limit';
 import { randomBytes } from "node:crypto";
@@ -16,6 +17,10 @@ import {
   type ConnectAttempt,
 } from "@/lib/broker-connect-config";
 import { extractSuggestedServersFromMetaApiError } from "@/lib/metaapi-known-servers";
+import {
+  buildMetaApiAccountLabel,
+  persistMt5AccountRow,
+} from "@/lib/mt5-account-persist";
 
 /** Garde du temps pour deploy + JSON ; doit rester aligné avec `maxDuration` (littéral requis par Next.js). */
 const CONNECT_ROUTE_MAX_DURATION_SEC = 120;
@@ -423,7 +428,9 @@ export async function POST(request: Request) {
       );
 
       const created = await createMetaApiAccount(token, {
-        name: name || `${attempt.platform.toUpperCase()} ${login}`,
+        name:
+          name ||
+          buildMetaApiAccountLabel(user.id, brokerHint || "broker", login),
         login,
         password,
         server: attempt.server,
@@ -522,25 +529,58 @@ export async function POST(request: Request) {
       platform: fxcessOnly ? "mt4" : connectCfg.platform,
     });
 
-    if (!wait.ok) {
-      await deleteProvisioningAccount(accountId, token);
-      const baseErr =
-        wait.errorFr ||
-        "Connexion MT5 impossible. Vérifiez serveur, numéro de compte et mot de passe.";
+    const lastState = String(wait.last?.state ?? "");
+    const lastConn = String(wait.last?.connectionStatus ?? "");
+    const isConnected =
+      lastState === "DEPLOYED" && lastConn === "CONNECTED";
+
+    if (!wait.ok && !isConnected) {
+      const recoverable = lastState === "DEPLOYED";
+      if (!recoverable) {
+        await deleteProvisioningAccount(accountId, token);
+      }
       return NextResponse.json({
         success: false,
-        error: appendBrokerConnectHint(baseErr, connectedServer, brokerHint),
+        error: appendBrokerConnectHint(
+          wait.errorFr ||
+            "Connexion broker impossible. Vérifiez serveur, login et mot de passe.",
+          connectedServer,
+          brokerHint,
+        ),
         state: wait.last?.state,
         connectionStatus: wait.last?.connectionStatus,
+        recoverable,
+        accountId: recoverable ? accountId : undefined,
       });
+    }
+
+    const adminSupabase = process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        )
+      : null;
+    if (adminSupabase) {
+      const persisted = await persistMt5AccountRow(adminSupabase, {
+        userId: user.id,
+        metaApiAccountId: accountId,
+        brokerName: brokerHint || (fxcessOnly ? "FXcess" : "Unknown"),
+        serverName: connectedServer,
+        login,
+        symbolProfile: "auto",
+      });
+      if (!persisted.ok) {
+        console.warn("persistMt5AccountRow:", persisted.error);
+      }
     }
 
     return NextResponse.json({
       success: true,
       accountId,
       server: connectedServer,
-      state: wait.last?.state,
-      connectionStatus: wait.last?.connectionStatus,
+      state: wait.last?.state ?? lastState,
+      connectionStatus: wait.last?.connectionStatus ?? lastConn,
+      persisted: !!adminSupabase,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

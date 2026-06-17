@@ -2,6 +2,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
+import { syncOrphanMetaApiAccount } from "@/lib/mt5-account-persist";
 
 export default async function DashboardPage() {
   const supabase = createServerClient();
@@ -24,13 +25,29 @@ export default async function DashboardPage() {
     redirect("/admin/dashboard");
   }
 
-  const { data: mt5Accounts } = await supabase
+  let { data: mt5Accounts } = await supabase
     .from("mt5_accounts")
     .select(
       "id, account_number, broker_name, server_name, is_active, metaapi_account_id"
     )
     .eq("user_id", session.user.id)
     .eq("is_active", true);
+
+  if (!mt5Accounts?.length && process.env.METAAPI_TOKEN) {
+    await syncOrphanMetaApiAccount(
+      supabase,
+      session.user.id,
+      process.env.METAAPI_TOKEN,
+    );
+    const refetch = await supabase
+      .from("mt5_accounts")
+      .select(
+        "id, account_number, broker_name, server_name, is_active, metaapi_account_id"
+      )
+      .eq("user_id", session.user.id)
+      .eq("is_active", true);
+    mt5Accounts = refetch.data;
+  }
 
   const { data: subscription } = await supabase
     .from("subscriptions")
