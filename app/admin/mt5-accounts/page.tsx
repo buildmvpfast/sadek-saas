@@ -180,7 +180,18 @@ export default function AdminMT5AccountsPage() {
         }),
       })
 
-      const metaApiData = await response.json()
+      const rawBody = await response.text()
+      let metaApiData: { success: boolean; error?: string; accountId?: string }
+      try {
+        metaApiData = JSON.parse(rawBody)
+      } catch {
+        if (response.status === 504) {
+          throw new Error(
+            'Connexion interrompue (timeout 2 min). Vérifiez serveur + identifiants, puis réessayez.',
+          )
+        }
+        throw new Error(`Erreur serveur (${response.status || '?'}). Réessayez.`)
+      }
 
       if (!metaApiData.success) {
         throw new Error(metaApiData.error || 'Erreur lors de la connexion MetaApi')

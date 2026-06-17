@@ -171,18 +171,21 @@ export async function buildConnectAttempts(
   }
 
   if (fxcess) {
-    const known = await searchFxcessKnownServers(token);
-    const matched =
-      matchKnownServer(rawServer, known) ??
-      matchKnownServer(cfg.server, known);
-
-    if (matched) push(matched.server, matched.keywords, "mt4");
-
     push(cfg.server, cfg.keywords, "mt4");
 
-    for (const fb of fxcessConnectFallbacks(rawServer)) {
-      const m = matchKnownServer(fb, known);
-      push(m?.server ?? fb, m?.keywords ?? cfg.keywords, "mt4");
+    const explicitServer = /fxcess[-_]/i.test(cfg.server);
+    if (!explicitServer) {
+      const known = await searchFxcessKnownServers(token);
+      const matched =
+        matchKnownServer(rawServer, known) ??
+        matchKnownServer(cfg.server, known);
+
+      if (matched) push(matched.server, matched.keywords, "mt4");
+
+      for (const fb of fxcessConnectFallbacks(rawServer)) {
+        const m = matchKnownServer(fb, known);
+        push(m?.server ?? fb, m?.keywords ?? cfg.keywords, "mt4");
+      }
     }
 
     return attempts;

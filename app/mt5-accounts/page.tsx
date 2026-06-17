@@ -281,12 +281,25 @@ export default function MT5AccountsPage() {
         }),
       });
 
-      const metaApiData = (await metaApiResponse.json()) as {
+      const rawBody = await metaApiResponse.text();
+      let metaApiData: {
         success: boolean;
         error?: string;
         accountId?: string;
         server?: string;
       };
+      try {
+        metaApiData = JSON.parse(rawBody) as typeof metaApiData;
+      } catch {
+        if (metaApiResponse.status === 504) {
+          throw new Error(
+            "Connexion interrompue (timeout 2 min). MetaAPI met trop de temps — vérifiez FXcess-Demo + login/mot de passe MT4, puis réessayez.",
+          );
+        }
+        throw new Error(
+          `Erreur serveur (${metaApiResponse.status || "?"}). Réessayez.`,
+        );
+      }
 
       if (!metaApiData.success) {
         throw new Error(

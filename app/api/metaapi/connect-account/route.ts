@@ -19,6 +19,16 @@ import { extractSuggestedServersFromMetaApiError } from "@/lib/metaapi-known-ser
 
 /** Garde du temps pour deploy + JSON ; doit rester aligné avec `maxDuration` (littéral requis par Next.js). */
 const CONNECT_ROUTE_MAX_DURATION_SEC = 120;
+/** Marge avant le kill Vercel pour toujours renvoyer du JSON (évite 504 + message Safari). */
+const CONNECT_ROUTE_SAFETY_MS = 10_000;
+
+function connectRouteDeadlineAt(startedAt = Date.now()): number {
+  return startedAt + CONNECT_ROUTE_MAX_DURATION_SEC * 1000 - CONNECT_ROUTE_SAFETY_MS;
+}
+
+function remainingConnectRouteMs(deadlineAt: number): number {
+  return Math.max(deadlineAt - Date.now(), 0);
+}
 
 /** Vercel : littéral obligatoire (pas de référence à une autre constante). */
 export const maxDuration = 120;
@@ -111,13 +121,13 @@ type CreateResult =
   | { ok: true; accountId: string; server: string; data: Record<string, unknown> }
   | { ok: false; validation: boolean; error: string; data?: Record<string, unknown> };
 
-function parseRetryAfterMs(header: string | null): number {
-  if (!header) return 60_000;
+function parseRetryAfterMs(header: string | null, capMs = 15_000): number {
+  if (!header) return Math.min(8_000, capMs);
   const asNum = Number.parseInt(header, 10);
-  if (!Number.isNaN(asNum)) return asNum * 1000;
+  if (!Number.isNaN(asNum)) return Math.min(asNum * 1000, capMs);
   const asDate = Date.parse(header);
-  if (!Number.isNaN(asDate)) return Math.max(asDate - Date.now(), 5000);
-  return 60_000;
+  if (!Number.isNaN(asDate)) return Math.min(Math.max(asDate - Date.now(), 3000), capMs);
+  return Math.min(8_000, capMs);
 }
 
 async function createMetaApiAccount(
@@ -152,7 +162,7 @@ async function createMetaApiAccount(
 
   const transactionId = randomBytes(16).toString("hex");
 
-  for (let poll = 0; poll < 4; poll++) {
+  for (let poll = 0; poll < 3; poll++) {
     const response = await fetch(METAAPI_PROVISIONING_ACCOUNTS_URL, {
       method: "POST",
       headers: {
@@ -168,7 +178,7 @@ async function createMetaApiAccount(
     };
 
     if (response.status === 202) {
-      if (poll < 3) {
+      if (poll < 2) {
         await sleep(parseRetryAfterMs(response.headers.get("Retry-After")));
         continue;
       }
@@ -219,31 +229,35 @@ async function createMetaApiAccount(
 }
 
 /**
- * Attend que MetaAPI signale DEPLOYED + CONNECTED (sinon pas d’insert Supabase).
+ * Attend DEPLOYED + CONNECTED avant insert Supabase.
  */
-async function waitForMt5Connected(
+async function waitForBrokerConnected(
   accountId: string,
   token: string,
+  options?: {
+    routeDeadlineAt?: number;
+    platform?: "mt4" | "mt5";
+  },
 ): Promise<{
   ok: boolean;
   last?: Record<string, unknown>;
   errorFr?: string;
 }> {
-  // Connexion MT5 : 60–120 s fréquent ; ne pas dépasser le budget route (sinon 504 Vercel).
-  const routeCapMs = Math.max(CONNECT_ROUTE_MAX_DURATION_SEC * 1000 - 12_000, 15_000);
-  const maxWaitMs = Math.min(
-    Math.min(
-      Math.max(
-        Number.parseInt(
-          process.env.METAAPI_CONNECT_MAX_WAIT_MS || "110000",
-          10,
-        ),
-        8000,
-      ),
-      175000,
+  const platformLabel = options?.platform === "mt4" ? "MT4" : "MT5";
+  const routeCapMs = Math.max(CONNECT_ROUTE_MAX_DURATION_SEC * 1000 - 25_000, 20_000);
+  let maxWaitMs = Math.min(
+    Math.max(
+      Number.parseInt(process.env.METAAPI_CONNECT_MAX_WAIT_MS || "75000", 10),
+      8000,
     ),
     routeCapMs,
   );
+  if (options?.routeDeadlineAt) {
+    maxWaitMs = Math.min(
+      maxWaitMs,
+      Math.max(remainingConnectRouteMs(options.routeDeadlineAt) - 1500, 8000),
+    );
+  }
   const deadline = Date.now() + maxWaitMs;
   let last: Record<string, unknown> | undefined;
   let deployedDisconnectedStreak = 0;
@@ -264,7 +278,7 @@ async function waitForMt5Connected(
           ok: false,
           last: acc,
           errorFr:
-            `Échec côté MetaAPI (état: ${state}, connexion: ${conn}). Vérifiez le serveur MT5, le login et le mot de passe.${connectionBrokerHint(conn)}`,
+            `Échec côté MetaAPI (état: ${state}, connexion: ${conn}). Vérifiez le serveur ${platformLabel}, le login et le mot de passe.${connectionBrokerHint(conn)}`,
         };
       }
 
@@ -274,12 +288,12 @@ async function waitForMt5Connected(
         (conn === "DISCONNECTED" || conn === "DISCONNECTED_FROM_BROKER")
       ) {
         deployedDisconnectedStreak += 1;
-        if (deployedDisconnectedStreak >= 22) {
+        if (deployedDisconnectedStreak >= 10) {
           return {
             ok: false,
             last: acc,
             errorFr:
-              "MT5 reste déconnecté après déploiement (serveur, numéro de compte ou mot de passe incorrect). Vérifiez le nom du serveur exactement comme dans MT5 (Fichier → Ouvrir un compte)." +
+              `${platformLabel} reste déconnecté après déploiement (serveur, numéro de compte ou mot de passe incorrect). Vérifiez le nom du serveur exactement comme dans ${platformLabel}.` +
               connectionBrokerHint(conn),
           };
         }
@@ -295,8 +309,8 @@ async function waitForMt5Connected(
     ok: false,
     last,
     errorFr: last
-      ? `Délai dépassé sans connexion MT5 (dernier état: ${String(last.state)}, connexion: ${String(last.connectionStatus)}). Vérifiez le nom du serveur (exactement comme dans MT5) et les identifiants.${connectionBrokerHint(String(last.connectionStatus ?? ""))}`
-      : "Délai dépassé — impossible de lire l’état du compte MetaAPI. Réessayez.",
+      ? `Délai dépassé sans connexion ${platformLabel} (dernier état: ${String(last.state)}, connexion: ${String(last.connectionStatus)}). Vérifiez serveur FXcess-Demo, login et mot de passe MT4, puis réessayez.${connectionBrokerHint(String(last.connectionStatus ?? ""))}`
+      : `Délai dépassé — MetaAPI n'a pas connecté le compte ${platformLabel} à temps. Réessayez dans 1 minute.`,
   };
 }
 
@@ -370,6 +384,9 @@ export async function POST(request: Request) {
     const accountType =
       accountTypeRaw === "cloud-g1" ? "cloud-g1" : "cloud-g2";
 
+    const routeStartedAt = Date.now();
+    const routeDeadlineAt = connectRouteDeadlineAt(routeStartedAt);
+
     const initialAttempts = await buildConnectAttempts(
       normalizeServer(String(rawServer ?? "")),
       brokerHint,
@@ -388,7 +405,11 @@ export async function POST(request: Request) {
     let lastCreateData: Record<string, unknown> | undefined;
     const triedList: string[] = [];
 
-    while (queue.length > 0 && !accountId) {
+    while (
+      queue.length > 0 &&
+      !accountId &&
+      remainingConnectRouteMs(routeDeadlineAt) > 12_000
+    ) {
       const attempt = queue.shift()!;
       const attemptKey = attempt.server.toLowerCase();
       if (triedServers.has(attemptKey)) continue;
@@ -496,7 +517,10 @@ export async function POST(request: Request) {
       });
     }
 
-    const wait = await waitForMt5Connected(accountId, token);
+    const wait = await waitForBrokerConnected(accountId, token, {
+      routeDeadlineAt,
+      platform: fxcessOnly ? "mt4" : connectCfg.platform,
+    });
 
     if (!wait.ok) {
       await deleteProvisioningAccount(accountId, token);
