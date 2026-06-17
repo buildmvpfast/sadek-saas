@@ -3,6 +3,7 @@
  * Le nom du serveur doit correspondre exactement à MT5 / MetaAPI.
  */
 import { resolveServerName } from "@/lib/server-aliases";
+import { VANTAGE_MT5_SERVERS } from "@/lib/vantage-servers";
 
 export type BrokerServersEntry = {
   name: string;
@@ -23,14 +24,6 @@ function uniqServers(servers: string[]): string[] {
   return out;
 }
 
-function buildNumberedLive(prefix: string, numbers: number[]): string[] {
-  const list: string[] = [];
-  for (const n of numbers) {
-    list.push(`${prefix}-Live ${n}`, `${prefix}-Live${n}`);
-  }
-  return list;
-}
-
 function buildVtMarketsServers(): string[] {
   const list: string[] = [];
   const prefixes = ["VTMarkets", "VT Markets"] as const;
@@ -47,35 +40,6 @@ function buildVtMarketsServers(): string[] {
   }
 
   return uniqServers(list);
-}
-
-function buildVantageMarketsServers(): string[] {
-  const prefix = "VantageMarkets";
-  return uniqServers([
-    `${prefix}-Demo`,
-    "VantageInternational-Demo",
-    "VantageInternational-Demo 2",
-    `${prefix}-Live`,
-    ...buildNumberedLive(prefix, [3, 4, 5, 6, 7, 8, 10, 11, 13, 14, 15, 19, 21]),
-  ]);
-}
-
-function buildVantageInternationalServers(): string[] {
-  const prefix = "VantageInternational";
-  return uniqServers([
-    `${prefix}-Demo`,
-    `${prefix}-Demo 2`,
-    `${prefix}-Live`,
-    ...buildNumberedLive(prefix, [
-      3, 4, 5, 6, 7, 8, 10, 11, 13, 14, 15, 19, 21,
-    ]),
-    "VantageInternational-Live 1",
-    "VantageInternational-Live 2",
-    "VantageInternational-Live 9",
-    "VantageInternational-Live 12",
-    "VantageInternational-Live 16",
-    "VantageInternational-Live 18",
-  ]);
 }
 
 function buildAxiServers(): string[] {
@@ -191,18 +155,7 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
   },
   {
     name: "Vantage",
-    servers: uniqServers([
-      "VantageFX-Live",
-      "VantageFX-Demo",
-      "VantageFXInternational-Live",
-      ...buildVantageInternationalServers(),
-      ...buildVantageMarketsServers(),
-      "VantageGlobalPrimeLLP-Live",
-      "VantageGlobalPrimeLLP-Live 2",
-      "VantageGlobalPrimeAU-Live",
-      "VantagePrimeLimited-Live",
-      "VantagePrimeLimited-Demo",
-    ]),
+    servers: uniqServers([...VANTAGE_MT5_SERVERS]),
     platform: "mt5",
   },
 ];

@@ -1,10 +1,51 @@
 import { NextResponse } from "next/server";
 import { findBrokerByName } from "@/lib/metaapi-broker-servers";
 import {
+  listKnownServerNames,
+  searchVantageKnownServers,
+} from "@/lib/metaapi-known-servers";
+import {
   canonicalServerOrResolved,
   filterServers,
   resolveServerName,
 } from "@/lib/server-aliases";
+
+function sortServersDemoFirst(names: string[]): string[] {
+  return [...names].sort((a, b) => {
+    const aDemo = /demo/i.test(a) ? 0 : 1;
+    const bDemo = /demo/i.test(b) ? 0 : 1;
+    if (aDemo !== bDemo) return aDemo - bDemo;
+    return a.localeCompare(b);
+  });
+}
+
+async function mergeVantageServers(staticServers: string[]): Promise<{
+  servers: string[];
+  source: string;
+}> {
+  const token = process.env.METAAPI_TOKEN;
+  if (!token) {
+    return { servers: sortServersDemoFirst(staticServers), source: "static" };
+  }
+
+  try {
+    const known = await searchVantageKnownServers(token, "mt5");
+    const fromApi = listKnownServerNames(known);
+    const merged = sortServersDemoFirst([
+      ...fromApi,
+      ...staticServers,
+    ]);
+    const uniq = Array.from(
+      new Set(merged.map((s) => s.trim()).filter(Boolean)),
+    );
+    return {
+      servers: uniq,
+      source: fromApi.length > 0 ? "metaapi+static" : "static",
+    };
+  } catch {
+    return { servers: sortServersDemoFirst(staticServers), source: "static" };
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -44,6 +85,16 @@ export async function GET(request: Request) {
     }
 
     let serverNames = broker.servers;
+    let source = "static";
+
+    if (/vantage/i.test(broker.name)) {
+      const merged = await mergeVantageServers(broker.servers);
+      serverNames = merged.servers;
+      source = merged.source;
+    } else {
+      serverNames = sortServersDemoFirst(serverNames);
+    }
+
     if (search) {
       serverNames = filterServers(search, serverNames);
     }
@@ -61,7 +112,7 @@ export async function GET(request: Request) {
       platform: broker.platform ?? "mt5",
       servers,
       total: servers.length,
-      source: "static",
+      source,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

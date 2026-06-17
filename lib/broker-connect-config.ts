@@ -3,6 +3,12 @@
  */
 import { resolveServerName } from "@/lib/server-aliases";
 import { findBrokerByName } from "@/lib/metaapi-broker-servers";
+import {
+  matchKnownServer,
+  searchKnownMtServers,
+  searchVantageKnownServers,
+  vantageConnectFallbacks,
+} from "@/lib/metaapi-known-servers";
 
 export type BrokerConnectConfig = {
   server: string;
@@ -101,4 +107,68 @@ export function resolveBrokerConnectConfig(
   }
 
   return { server, platform, keywords };
+}
+
+export type ConnectAttempt = {
+  server: string;
+  platform: "mt4" | "mt5";
+  keywords: string[];
+};
+
+export async function buildConnectAttempts(
+  rawServer: string,
+  brokerName: string | null | undefined,
+  token: string,
+): Promise<ConnectAttempt[]> {
+  const cfg = resolveBrokerConnectConfig(rawServer, brokerName);
+  const attempts: ConnectAttempt[] = [];
+  const seen = new Set<string>();
+
+  const push = (server: string, keywords: string[], platform = cfg.platform) => {
+    const s = server.trim();
+    if (!s) return;
+    const key = s.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    attempts.push({
+      server: s,
+      platform,
+      keywords: keywords.length > 0 ? keywords : cfg.keywords,
+    });
+  };
+
+  const blob = `${rawServer} ${brokerName ?? ""} ${cfg.server}`.toLowerCase();
+
+  if (/vantage/i.test(blob)) {
+    const known = await searchVantageKnownServers(token, cfg.platform);
+    const matched =
+      matchKnownServer(rawServer, known) ??
+      matchKnownServer(cfg.server, known);
+
+    if (matched) {
+      push(matched.server, matched.keywords);
+    }
+
+    push(cfg.server, cfg.keywords);
+
+    for (const fb of vantageConnectFallbacks(rawServer)) {
+      const m = matchKnownServer(fb, known);
+      push(m?.server ?? fb, m?.keywords ?? cfg.keywords);
+    }
+
+    return attempts;
+  }
+
+  if (/fxcess/i.test(blob)) {
+    const known = await searchKnownMtServers(4, "fxcess", token);
+    const matched =
+      matchKnownServer(rawServer, known) ??
+      matchKnownServer(cfg.server, known);
+    if (matched) push(matched.server, matched.keywords, "mt4");
+    push(cfg.server, cfg.keywords, "mt4");
+    return attempts;
+  }
+
+  push(cfg.server, cfg.keywords);
+  return attempts;
 }

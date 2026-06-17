@@ -9,7 +9,7 @@ import {
   METAAPI_PROVISIONING_ACCOUNTS_URL,
   removeDuplicateProvisioningAccounts,
 } from "@/lib/metaapi-provisioning";
-import { resolveBrokerConnectConfig } from "@/lib/broker-connect-config";
+import { buildConnectAttempts, resolveBrokerConnectConfig } from "@/lib/broker-connect-config";
 
 /** Garde du temps pour deploy + JSON ; doit rester aligné avec `maxDuration` (littéral requis par Next.js). */
 const CONNECT_ROUTE_MAX_DURATION_SEC = 120;
@@ -75,6 +75,101 @@ function connectionBrokerHint(connectionStatus: string | undefined): string {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function isServerValidationError(
+  status: number,
+  data: Record<string, unknown>,
+): boolean {
+  const msg = String(data.message ?? data.error ?? "").toLowerCase();
+  const details = data.details as Record<string, unknown> | undefined;
+  const code = String(details?.code ?? "").toUpperCase();
+  return (
+    status === 400 ||
+    msg.includes("validation failed") ||
+    msg.includes("srv_not_found") ||
+    msg.includes("server file") ||
+    msg.includes("not found") ||
+    code.includes("SRV_NOT_FOUND")
+  );
+}
+
+type CreateResult =
+  | { ok: true; accountId: string; server: string; data: Record<string, unknown> }
+  | { ok: false; validation: boolean; error: string; data?: Record<string, unknown> };
+
+async function createMetaApiAccount(
+  token: string,
+  params: {
+    name: string;
+    login: string;
+    password: string;
+    server: string;
+    platform: string;
+    magic: number;
+    keywords: string[];
+    accountType: string;
+    region: string;
+  },
+): Promise<CreateResult> {
+  const createBody: Record<string, unknown> = {
+    name: params.name,
+    type: params.accountType,
+    login: params.login,
+    password: params.password,
+    server: params.server,
+    platform: params.platform,
+    magic: params.magic || 0,
+    application: "MetaApi",
+    region: params.region,
+    reliability: "high",
+  };
+  if (params.keywords.length > 0) {
+    createBody.keywords = params.keywords;
+  }
+
+  const response = await fetch(METAAPI_PROVISIONING_ACCOUNTS_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "auth-token": token,
+      "transaction-id": randomBytes(16).toString("hex"),
+    },
+    body: JSON.stringify(createBody),
+  });
+
+  const data = (await response.json()) as Record<string, unknown> & {
+    id?: string;
+  };
+
+  if (!response.ok) {
+    const msg =
+      (data.message as string) ||
+      (data.error as string) ||
+      "Échec de la création du compte MetaAPI";
+    return {
+      ok: false,
+      validation: isServerValidationError(response.status, data),
+      error: msg,
+      data,
+    };
+  }
+
+  if (!data.id) {
+    return {
+      ok: false,
+      validation: false,
+      error: "MetaApi n'a pas retourné d'ID de compte.",
+      data,
+    };
+  }
+
+  return {
+    ok: true,
+    accountId: data.id as string,
+    server: params.server,
+    data,
+  };
 }
 
 /**
@@ -183,13 +278,12 @@ export async function POST(request: Request) {
       normalizeServer(String(rawServer ?? "")),
       brokerHint,
     );
-    const server = connectCfg.server;
-    const platform = connectCfg.platform;
     const magic = body.magic ?? 0;
     const login = normalizeLogin(rawLogin);
     const password = String(rawPassword ?? "").trim();
+    const displayServer = connectCfg.server;
 
-    if (!server || !login || !password) {
+    if (!displayServer || !login || !password) {
       return NextResponse.json(
         {
           success: false,
@@ -208,8 +302,6 @@ export async function POST(request: Request) {
 
     const token = process.env.METAAPI_TOKEN;
 
-    await removeDuplicateProvisioningAccounts(token, login, server);
-
     const provisioningRegion =
       typeof process.env.METAAPI_PROVISIONING_REGION === "string" &&
       process.env.METAAPI_PROVISIONING_REGION.trim().length > 0
@@ -221,72 +313,68 @@ export async function POST(request: Request) {
     const accountType =
       accountTypeRaw === "cloud-g1" ? "cloud-g1" : "cloud-g2";
 
-    const createBody: Record<string, unknown> = {
-      name: name || `${platform.toUpperCase()} ${login}`,
-      type: accountType,
-      login,
-      password,
-      server,
-      platform,
-      magic: magic || 0,
-      application: "MetaApi",
-      region: provisioningRegion,
-      reliability: "high",
-    };
-    if (connectCfg.keywords.length > 0) {
-      createBody.keywords = connectCfg.keywords;
-    } else if (looksLikeVtMarketsServer(server)) {
-      createBody.keywords = ["VT Markets", "VTMarkets", "Vantage"];
-    }
-
-    const response = await fetch(METAAPI_PROVISIONING_ACCOUNTS_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "auth-token": token,
-        "transaction-id": randomBytes(16).toString("hex"),
-      },
-      body: JSON.stringify(createBody),
-    });
-
-    const data = (await response.json()) as Record<string, unknown> & {
-      id?: string;
-    };
-
-    console.log(
-      "MetaApi create account response:",
-      response.status,
-      JSON.stringify(data),
+    const attempts = await buildConnectAttempts(
+      normalizeServer(String(rawServer ?? "")),
+      brokerHint,
+      token,
     );
 
-    if (!response.ok) {
-      const msg =
-        (data.message as string) ||
-        (data.error as string) ||
-        "Échec de la création du compte MetaAPI";
+    let accountId: string | undefined;
+    let connectedServer = displayServer;
+    let lastCreateError = "Échec de la création du compte MetaAPI";
+    let lastCreateData: Record<string, unknown> | undefined;
+
+    for (const attempt of attempts) {
+      await removeDuplicateProvisioningAccounts(
+        token,
+        login,
+        attempt.server,
+      );
+
+      const created = await createMetaApiAccount(token, {
+        name: name || `${attempt.platform.toUpperCase()} ${login}`,
+        login,
+        password,
+        server: attempt.server,
+        platform: attempt.platform,
+        magic,
+        keywords: attempt.keywords,
+        accountType,
+        region: provisioningRegion,
+      });
+
+      console.log(
+        "MetaApi create attempt:",
+        attempt.server,
+        created.ok ? "OK" : created.error,
+      );
+
+      if (created.ok) {
+        accountId = created.accountId;
+        connectedServer = created.server;
+        break;
+      }
+
+      lastCreateError = created.error;
+      lastCreateData = created.data;
+      if (!created.validation) break;
+    }
+
+    if (!accountId) {
       return NextResponse.json(
         {
           success: false,
-          error: appendBrokerConnectHint(msg, server, brokerHint),
-          details: data,
+          error: appendBrokerConnectHint(
+            lastCreateError,
+            connectedServer,
+            brokerHint,
+          ),
+          details: lastCreateData,
+          triedServers: attempts.map((a) => a.server),
         },
         { status: 200 },
       );
     }
-
-    if (!data.id) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "MetaApi n'a pas retourné d'ID de compte. " +
-            JSON.stringify(data),
-        },
-        { status: 500 },
-      );
-    }
-
-    const accountId = data.id as string;
 
     const deployResponse = await fetch(
       `${METAAPI_PROVISIONING_ACCOUNTS_URL}/${accountId}/deploy`,
@@ -315,7 +403,7 @@ export async function POST(request: Request) {
       await deleteProvisioningAccount(accountId, token);
       return NextResponse.json({
         success: false,
-        error: appendBrokerConnectHint(full, server, brokerHint),
+        error: appendBrokerConnectHint(full, connectedServer, brokerHint),
         details: deployError,
       });
     }
@@ -329,7 +417,7 @@ export async function POST(request: Request) {
         "Connexion MT5 impossible. Vérifiez serveur, numéro de compte et mot de passe.";
       return NextResponse.json({
         success: false,
-        error: appendBrokerConnectHint(baseErr, server, brokerHint),
+        error: appendBrokerConnectHint(baseErr, connectedServer, brokerHint),
         state: wait.last?.state,
         connectionStatus: wait.last?.connectionStatus,
       });
@@ -338,6 +426,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       accountId,
+      server: connectedServer,
       state: wait.last?.state,
       connectionStatus: wait.last?.connectionStatus,
     });

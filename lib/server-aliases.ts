@@ -16,7 +16,11 @@ const SERVER_ALIASES: Record<string, string> = {
   fxcessdemo: "FXCESS-Demo01",
   "fxcess-demo": "FXCESS-Demo01",
   fxcessdemo01: "FXCESS-Demo01",
-  vantagemarketsdemo: "VantageMarkets-Demo",
+  vantagemarketsdemo: "VantageInternational-Demo",
+  vantageinternationaldemo: "VantageInternational-Demo",
+  vantageinternationaldemo2: "VantageInternational-Demo 2",
+  vantagefxdemo: "VantageFX-Demo",
+  vantageprimelimiteddemo: "VantagePrimeLimited-Demo",
   raiseglobalsalive: "RaiseGlobalSA-LIVE",
   raiseglobalserver: "RaiseGroup-Server",
 };
@@ -40,6 +44,14 @@ export function resolveServerName(input: string): string {
 
   const key = aliasKey(trimmed);
   if (SERVER_ALIASES[key]) return SERVER_ALIASES[key];
+
+  // VantageInternational-Demo2 → avec espace
+  const demoNoSpace = trimmed.match(
+    /^(VantageInternational)-Demo(\d+)$/i,
+  );
+  if (demoNoSpace) {
+    return `${demoNoSpace[1]}-Demo ${demoNoSpace[2]}`;
+  }
 
   // VantageInternational-Live21 sans espace → avec espace
   const liveNoSpace = trimmed.match(

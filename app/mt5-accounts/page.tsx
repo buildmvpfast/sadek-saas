@@ -177,9 +177,19 @@ export default function MT5AccountsPage() {
       const data = await response.json();
 
       if (data.success && data.servers) {
-        setServers(
-          data.servers.map((s: { name: string }) => String(s.name).trim())
+        const names = data.servers.map((s: { name: string }) =>
+          String(s.name).trim(),
         );
+        setServers(names);
+
+        if (brokerName === "Vantage" && !formData.server_name) {
+          setFormData((prev) => ({
+            ...prev,
+            server_name: names.includes("VantageInternational-Demo")
+              ? "VantageInternational-Demo"
+              : names.find((n: string) => /demo/i.test(n)) ?? "",
+          }));
+        }
       } else {
         // Fallback: utiliser les serveurs du broker sélectionné
         const broker = brokers.find((b) => b.name === brokerName);
@@ -195,10 +205,17 @@ export default function MT5AccountsPage() {
   };
 
   const handleBrokerChange = (brokerName: string) => {
+    const defaultServer =
+      brokerName === "Vantage"
+        ? "VantageInternational-Demo"
+        : brokerName === "FXcess"
+          ? "FXCESS-Demo01"
+          : "";
+
     setFormData({
       ...formData,
       broker_name: brokerName,
-      server_name: "",
+      server_name: defaultServer,
     });
     setManualServerInput(false);
     if (brokerName) {
@@ -227,9 +244,9 @@ export default function MT5AccountsPage() {
         );
       }
 
-      const serverName = formData.server_name.trim().replace(/\s+/g, " ");
       const login = String(formData.account_number).trim().replace(/\s/g, "");
-      if (!serverName || !login) {
+      const requestedServer = formData.server_name.trim().replace(/\s+/g, " ");
+      if (!requestedServer || !login) {
         throw new Error("Serveur et numéro de compte sont requis.");
       }
 
@@ -246,20 +263,29 @@ export default function MT5AccountsPage() {
           name: `User - ${formData.broker_name.trim()} - ${login}`,
           login,
           password: formData.password.trim(),
-          server: serverName,
+          server: requestedServer,
           broker_name: formData.broker_name.trim(),
           platform: connectPlatform,
           magic: 0,
         }),
       });
 
-      const metaApiData = await metaApiResponse.json();
+      const metaApiData = (await metaApiResponse.json()) as {
+        success: boolean;
+        error?: string;
+        accountId?: string;
+        server?: string;
+      };
 
       if (!metaApiData.success) {
         throw new Error(
           metaApiData.error || "Erreur lors de la connexion MetaApi"
         );
       }
+
+      const serverName =
+        (typeof metaApiData.server === "string" && metaApiData.server.trim()) ||
+        requestedServer;
 
       // 2. Enregistrer dans Supabase avec le metaapi_account_id
       // Password is managed by MetaAPI — never store plaintext or base64 in DB
@@ -449,17 +475,17 @@ export default function MT5AccountsPage() {
                       )}
                       {formData.broker_name === "Vantage" && (
                         <p className="text-xs text-amber-800/90 mt-1.5">
-                          Demo : souvent{" "}
+                          Demo recommandé :{" "}
                           <span className="font-mono">
                             VantageInternational-Demo
-                          </span>{" "}
-                          ou{" "}
+                          </span>
+                          . Alternatives :{" "}
                           <span className="font-mono">
                             VantageInternational-Demo 2
                           </span>
-                          . Si{" "}
-                          <span className="font-mono">VantageMarkets-Demo</span>{" "}
-                          échoue, essayez l’International.
+                          ,{" "}
+                          <span className="font-mono">VantageFX-Demo</span>.
+                          Copie exacte depuis MT5 si besoin.
                         </p>
                       )}
                     </>
@@ -506,11 +532,11 @@ export default function MT5AccountsPage() {
                       )}
                       {formData.broker_name === "Vantage" && (
                         <p className="text-xs text-amber-800/90 mt-1.5">
-                          Demo fréquent :{" "}
+                          Par défaut :{" "}
                           <span className="font-mono">
                             VantageInternational-Demo
                           </span>
-                          . Vérifiez le nom exact dans MT5.
+                          . Liste complète des serveurs Vantage (demo + live).
                         </p>
                       )}
                     </>
