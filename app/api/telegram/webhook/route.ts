@@ -125,6 +125,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Canal trouvé: ${channel.name} (${channel.username})`);
 
+    if (!process.env.INTERNAL_API_SECRET) {
+      console.error(
+        "❌ INTERNAL_API_SECRET manquant — parse-signal ne répondra pas",
+      );
+    }
+
     // Envoyer le message à l'API de parsing
     try {
       const baseUrl =
@@ -133,7 +139,7 @@ export async function POST(request: NextRequest) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.INTERNAL_API_SECRET}`,
+          Authorization: `Bearer ${process.env.INTERNAL_API_SECRET}`,
         },
         body: JSON.stringify({
           channelId: channel.id,
@@ -145,10 +151,17 @@ export async function POST(request: NextRequest) {
       });
 
       const responseText = await response.text();
-      console.log(
-        `✅ Signal envoyé au parser pour ${channel.name}:`,
-        responseText.substring(0, 200)
-      );
+      if (!response.ok) {
+        console.error(
+          `❌ parse-signal HTTP ${response.status}:`,
+          responseText.substring(0, 500),
+        );
+      } else {
+        console.log(
+          `✅ Signal envoyé au parser pour ${channel.name}:`,
+          responseText.substring(0, 200),
+        );
+      }
     } catch (error) {
       console.error("❌ Erreur lors de l'envoi au parser:", error);
     }

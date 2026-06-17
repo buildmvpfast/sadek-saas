@@ -4,6 +4,7 @@
 import { createClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
 import { executeOnePendingTrade } from "../lib/trade-execution-core";
+import { isTransientMetaApiError } from "../lib/metaapi-errors";
 
 dotenv.config({ path: ".env.local" });
 
@@ -51,6 +52,8 @@ async function executePendingTrades() {
     );
     if (result.ok) {
       executed++;
+    } else if (isTransientMetaApiError(result.error)) {
+      console.warn(`⏳ ${trade.id}: réseau MetaAPI, retry — ${result.error}`);
     } else {
       failed++;
       await supabase

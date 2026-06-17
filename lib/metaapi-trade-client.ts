@@ -1,8 +1,7 @@
 /**
  * Client MetaAPI REST (trade + lecture positions)
- * - Plusieurs URLs régionales (comme execute-trades)
- * - HTTP 200 sur /trade peut contenir TRADE_RETCODE_REJECT → ne jamais traiter orderId seul comme succès
  */
+import { formatFetchError } from "@/lib/metaapi-errors";
 
 export type MetaApiTradeBody = Record<string, unknown>;
 
@@ -153,7 +152,7 @@ async function fetchMetaApiTradePost(
     }
   }
   throw lastErr instanceof Error
-    ? lastErr
+    ? new Error(formatFetchError(lastErr))
     : new Error(lastErr != null ? String(lastErr) : "fetch failed");
 }
 
@@ -231,7 +230,7 @@ export async function postMetaApiTrade(
         error: lastText,
       };
     } catch (e: unknown) {
-      lastText = e instanceof Error ? e.message : String(e);
+      lastText = formatFetchError(e);
     }
   }
 

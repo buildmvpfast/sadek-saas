@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { executeOnePendingTrade } from "@/lib/trade-execution-core";
 import { requireInternalSecret } from "@/lib/internal-auth";
+import { isTransientMetaApiError } from "@/lib/metaapi-errors";
 
 /**
  * Exécute les trades Telegram en attente via MetaAPI
@@ -86,6 +87,12 @@ export async function POST(request: NextRequest) {
         executed++;
         console.log(`✅ Trade ${trade.id} exécuté`);
       } else {
+        if (isTransientMetaApiError(result.error)) {
+          console.warn(
+            `⏳ Trade ${trade.id}: erreur réseau MetaAPI, reste pending — ${result.error}`,
+          );
+          continue;
+        }
         failed++;
         await supabase
           .from("telegram_trades")
