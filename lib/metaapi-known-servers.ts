@@ -2,6 +2,11 @@
  * Recherche serveurs MT connus MetaAPI (source de vérité pour la connexion).
  * GET /known-mt-servers/:version/search?query=...
  */
+import {
+  fxcessServerVariant,
+  fxcessStaticServerCandidates,
+} from "@/lib/fxcess-servers";
+
 const KNOWN_MT_SERVERS_BASE =
   "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/known-mt-servers";
 
@@ -43,7 +48,7 @@ export async function searchKnownMtServers(
   }
 }
 
-function flattenKnown(
+export function flattenKnown(
   known: Record<string, string[]>,
 ): Array<{ broker: string; server: string }> {
   const out: Array<{ broker: string; server: string }> = [];
@@ -56,17 +61,6 @@ function flattenKnown(
     }
   }
   return out;
-}
-
-/** Variante demo FXcess : Demo vs Demo1 (ne pas mélanger). */
-export function fxcessServerVariant(
-  server: string,
-): "demo" | "demo1" | "live" | "other" {
-  const k = compactKey(server);
-  if (/live|real/.test(k)) return "live";
-  if (/demo0*1$/.test(k) || /demo0*01$/.test(k)) return "demo1";
-  if (/demo/.test(k)) return "demo";
-  return "other";
 }
 
 function isFxcessServerBlob(blob: string): boolean {
@@ -223,13 +217,9 @@ export async function searchFxcessKnownServers(
 ): Promise<Record<string, string[]>> {
   const queries = [
     "fxcess",
-    "FXCESS",
-    "fxcess ltd",
-    "mfx",
     "mfx capital",
-    "fxcess demo",
-    "fxcess demo1",
-    "fxcess demo01",
+    "FXCESS-Demo",
+    "FXCESS-Demo01",
   ];
 
   const merged: Record<string, string[]> = {};
@@ -284,13 +274,9 @@ export function listKnownServerNames(
   });
 }
 
-/** Candidats de repli — uniquement la même variante demo (pas de bascule Demo ↔ Demo1). */
+/** Candidats statiques FXcess. */
 export function fxcessConnectFallbacks(rawServer: string): string[] {
-  const variant = fxcessServerVariant(rawServer);
-  if (variant === "demo") return ["FXcess-Demo"];
-  if (variant === "demo1") return ["FXcess-Demo1"];
-  if (variant === "live") return ["FXcess-Live"];
-  return [rawServer.trim()];
+  return fxcessStaticServerCandidates(rawServer);
 }
 
 export function vantageConnectFallbacks(rawServer: string): string[] {

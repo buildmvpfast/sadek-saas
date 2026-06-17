@@ -17,6 +17,7 @@ import {
   type ConnectAttempt,
 } from "@/lib/broker-connect-config";
 import { extractSuggestedServersFromMetaApiError } from "@/lib/metaapi-known-servers";
+import { fxcessSameVariant } from "@/lib/fxcess-connect";
 import {
   buildMetaApiAccountLabel,
   persistMt5AccountRow,
@@ -538,7 +539,28 @@ export async function POST(request: Request) {
       lastCreateError = created.error;
       lastCreateData = created.data;
 
-      if (created.validation && created.data && !fxcessOnly) {
+      if (created.validation && created.data) {
+        if (fxcessOnly) {
+          for (const sug of extractSuggestedServersFromMetaApiError(
+            created.data,
+          )) {
+            if (!fxcessSameVariant(displayServer, sug.server)) continue;
+            const sugKey = sug.server.toLowerCase();
+            if (triedServers.has(sugKey)) continue;
+            queue.push({
+              server: sug.server,
+              platform: "mt4",
+              keywords: sug.keywords,
+            });
+            queue.push({
+              server: sug.server,
+              platform: "mt4",
+              keywords: [],
+            });
+          }
+          continue;
+        }
+
         for (const sug of extractSuggestedServersFromMetaApiError(
           created.data,
         )) {
@@ -568,6 +590,10 @@ export async function POST(request: Request) {
           ),
           details: lastCreateData,
           triedServers: triedList,
+          fxcessHint:
+            fxcessOnly && triedList.length > 0
+              ? `Serveurs essayés : ${triedList.join(", ")}. Utilisez le nom exact de la liste déroulante (souvent FXCESS-Demo01 pour Demo).`
+              : undefined,
         },
         { status: 200 },
       );

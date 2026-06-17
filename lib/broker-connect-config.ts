@@ -5,11 +5,10 @@ import { resolveServerName } from "@/lib/server-aliases";
 import { findBrokerByName } from "@/lib/metaapi-broker-servers";
 import {
   matchKnownServer,
-  pickFxcessKnownServer,
-  searchFxcessKnownServers,
   searchVantageKnownServers,
   vantageConnectFallbacks,
 } from "@/lib/metaapi-known-servers";
+import { buildFxcessConnectAttempts } from "@/lib/fxcess-connect";
 
 export type BrokerConnectConfig = {
   server: string;
@@ -173,13 +172,7 @@ export async function buildConnectAttempts(
   }
 
   if (fxcess) {
-    const known = await searchFxcessKnownServers(token);
-    const picked =
-      pickFxcessKnownServer(cfg.server, known) ??
-      pickFxcessKnownServer(rawServer, known);
-
-    push(picked?.server ?? cfg.server, picked?.keywords ?? [], "mt4");
-    return attempts;
+    return buildFxcessConnectAttempts(rawServer, cfg.server, token);
   }
 
   push(cfg.server, cfg.keywords);
