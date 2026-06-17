@@ -83,11 +83,20 @@ export async function buildFxcessConnectAttempts(
   const known = await searchFxcessKnownServers(token);
   const variantMatches = listFxcessKnownForVariant(known, canonicalServer);
 
+  const variant = fxcessServerVariant(canonicalServer);
+  const priority =
+    variant === "demo"
+      ? ["FXCESS-Demo01"]
+      : variant === "demo1"
+        ? ["FXCESS-Demo02"]
+        : [];
+
   const serverNames = uniqServers([
+    ...priority,
+    ...variantMatches.map((m) => m.server),
     canonicalServer,
     rawServer.trim(),
     ...fxcessStaticServerCandidates(canonicalServer),
-    ...variantMatches.map((m) => m.server),
   ]);
 
   const attempts: ConnectAttempt[] = [];

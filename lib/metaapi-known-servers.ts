@@ -235,6 +235,21 @@ export async function searchFxcessKnownServers(
   return merged;
 }
 
+/** Extrait les noms de serveurs cités dans un message Validation failed MetaAPI. */
+export function extractServersFromMetaApiMessage(message: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /[A-Z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)+/g;
+  for (const m of message.match(re) ?? []) {
+    if (!/demo|live|fxcess|mfx/i.test(m)) continue;
+    const key = m.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(m);
+  }
+  return out;
+}
+
 /** Liste plate triée : demo d'abord, puis live. */
 export function extractSuggestedServersFromMetaApiError(
   data: Record<string, unknown>,

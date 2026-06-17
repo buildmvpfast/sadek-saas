@@ -51,7 +51,12 @@ export function rateLimit(
 
   if (!result.ok) {
     return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
+      {
+        success: false,
+        error:
+          "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
+        rateLimited: true,
+      },
       {
         status: 429,
         headers: {

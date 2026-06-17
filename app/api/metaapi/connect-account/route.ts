@@ -16,7 +16,7 @@ import {
   resolveBrokerConnectConfig,
   type ConnectAttempt,
 } from "@/lib/broker-connect-config";
-import { extractSuggestedServersFromMetaApiError } from "@/lib/metaapi-known-servers";
+import { extractSuggestedServersFromMetaApiError, extractServersFromMetaApiMessage } from "@/lib/metaapi-known-servers";
 import { fxcessSameVariant } from "@/lib/fxcess-connect";
 import {
   buildMetaApiAccountLabel,
@@ -485,19 +485,10 @@ export async function POST(request: Request) {
       remainingConnectRouteMs(routeDeadlineAt) > 12_000
     ) {
       const attempt = queue.shift()!;
-      const attemptKey = attempt.server.toLowerCase();
-      if (triedServers.has(attemptKey)) continue;
-      triedServers.add(attemptKey);
-      triedList.push(attempt.server);
 
-      await removeDuplicateProvisioningAccounts(
-        token,
-        login,
-        attempt.server,
-      );
-
-      const fxKeywords =
-        attempt.platform === "mt4" && fxcessOnly
+      const useKeywords = !fxcessOnly || attempt.keywords.length > 0;
+      const fxKeywords = fxcessOnly
+        ? useKeywords
           ? Array.from(
               new Set([
                 ...attempt.keywords,
@@ -505,9 +496,27 @@ export async function POST(request: Request) {
                 "FXCess",
                 "MFX",
                 "MFX Capital",
+                "MFX Capital Markets Ltd",
               ]),
             )
-          : attempt.keywords;
+          : []
+        : attempt.keywords;
+
+      const attemptKey = fxcessOnly
+        ? `${attempt.server.toLowerCase()}|${useKeywords ? "kw" : "plain"}`
+        : attempt.server.toLowerCase();
+
+      if (triedServers.has(attemptKey)) continue;
+      triedServers.add(attemptKey);
+      triedList.push(
+        useKeywords ? attempt.server : `${attempt.server} (sans keywords)`,
+      );
+
+      await removeDuplicateProvisioningAccounts(
+        token,
+        login,
+        attempt.server,
+      );
 
       const created = await createMetaApiAccount(token, {
         name:
@@ -541,22 +550,44 @@ export async function POST(request: Request) {
 
       if (created.validation && created.data) {
         if (fxcessOnly) {
+          const msgServers = extractServersFromMetaApiMessage(
+            String(created.data.message ?? created.error ?? ""),
+          );
+          for (const server of msgServers) {
+            if (!fxcessSameVariant(displayServer, server)) continue;
+            const plainKey = `${server.toLowerCase()}|plain`;
+            const kwKey = `${server.toLowerCase()}|kw`;
+            if (!triedServers.has(kwKey)) {
+              queue.push({
+                server,
+                platform: "mt4",
+                keywords: ["FXcess", "MFX Capital Markets Ltd"],
+              });
+            }
+            if (!triedServers.has(plainKey)) {
+              queue.push({ server, platform: "mt4", keywords: [] });
+            }
+          }
           for (const sug of extractSuggestedServersFromMetaApiError(
             created.data,
           )) {
             if (!fxcessSameVariant(displayServer, sug.server)) continue;
-            const sugKey = sug.server.toLowerCase();
-            if (triedServers.has(sugKey)) continue;
-            queue.push({
-              server: sug.server,
-              platform: "mt4",
-              keywords: sug.keywords,
-            });
-            queue.push({
-              server: sug.server,
-              platform: "mt4",
-              keywords: [],
-            });
+            const plainKey = `${sug.server.toLowerCase()}|plain`;
+            const kwKey = `${sug.server.toLowerCase()}|kw`;
+            if (!triedServers.has(kwKey)) {
+              queue.push({
+                server: sug.server,
+                platform: "mt4",
+                keywords: sug.keywords,
+              });
+            }
+            if (!triedServers.has(plainKey)) {
+              queue.push({
+                server: sug.server,
+                platform: "mt4",
+                keywords: [],
+              });
+            }
           }
           continue;
         }
