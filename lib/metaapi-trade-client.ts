@@ -165,11 +165,14 @@ export async function postMetaApiTrade(
   token: string,
 ): Promise<PostMetaApiTradeResult> {
   const payload = sanitizeTradeBody(body);
+  const actionType = String(payload.actionType ?? "");
+  const isCloseById = actionType === "POSITION_CLOSE_ID";
   if (
-    payload.volume == null ||
-    typeof payload.volume !== "number" ||
-    !Number.isFinite(payload.volume) ||
-    payload.volume <= 0
+    !isCloseById &&
+    (payload.volume == null ||
+      typeof payload.volume !== "number" ||
+      !Number.isFinite(payload.volume) ||
+      payload.volume <= 0)
   ) {
     return {
       ok: false,
