@@ -33,8 +33,10 @@ export function isFxcessConnectContext(
 const SERVER_CANONICAL: Record<string, string> = {
   "fxcess-demo": "FXcess-Demo",
   fxcessdemo: "FXcess-Demo",
-  "fxcess-demo01": "FXcess-Demo",
-  fxcessdemo01: "FXcess-Demo",
+  "fxcess-demo01": "FXcess-Demo1",
+  fxcessdemo01: "FXcess-Demo1",
+  "fxcess-demo1": "FXcess-Demo1",
+  fxcessdemo1: "FXcess-Demo1",
   "fxcess-live": "FXcess-Live",
   fxcesslive: "FXcess-Live",
   "fxcess-live01": "FXcess-Live",
@@ -84,7 +86,7 @@ export function resolveBrokerConnectConfig(
       platform: "mt4",
       keywords: [],
       hint:
-        "FXCess = MT4 uniquement. Serveur demo : FXcess-Demo (copie exacte depuis MT4).",
+        "FXCess = MT4 uniquement. Demo : FXcess-Demo ou FXcess-Demo1 (copie exacte depuis MT4).",
     };
   }
 

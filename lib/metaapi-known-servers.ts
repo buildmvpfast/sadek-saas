@@ -159,6 +159,7 @@ export async function searchFxcessKnownServers(
     "mfx",
     "mfx capital",
     "fxcess demo",
+    "fxcess demo1",
   ];
 
   const merged: Record<string, string[]> = {};
@@ -217,7 +218,7 @@ export function listKnownServerNames(
 export function fxcessConnectFallbacks(rawServer: string): string[] {
   const isDemo = /demo/i.test(rawServer);
   if (isDemo) {
-    return ["FXcess-Demo"];
+    return ["FXcess-Demo", "FXcess-Demo1"];
   }
   return ["FXcess-Live", rawServer.trim()];
 }

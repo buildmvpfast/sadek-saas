@@ -8,7 +8,8 @@ import {
 } from "@/lib/mt5-account-persist";
 
 /**
- * Récupère un compte MetaAPI CONNECTED non enregistré dans Supabase (souvent après 504).
+ * Récupère un compte MetaAPI non enregistré dans Supabase (souvent après 504).
+ * FXcess MT4 : accepte DEPLOYED + DISCONNECTED (connexion broker en cours).
  */
 export async function POST(request: NextRequest) {
   const supabaseAuth = createRouteHandlerClient({ cookies });

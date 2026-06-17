@@ -138,6 +138,21 @@ function isConnectedProvisioningAccount(acc: Record<string, unknown>): boolean {
   );
 }
 
+/** FXcess MT4 : peut être lié à Supabase dès DEPLOYED (connexion broker en cours). */
+export function isMetaApiAccountLinkable(
+  acc: Record<string, unknown>,
+  brokerName?: string | null,
+): boolean {
+  if (String(acc.state ?? "") !== "DEPLOYED") return false;
+  if (isConnectedProvisioningAccount(acc)) return true;
+  const server = String(acc.server ?? "");
+  const platform = String(acc.platform ?? "").toLowerCase();
+  return (
+    isFxcessConnectContext(brokerName, server) ||
+    (platform === "mt4" && isFxcessConnectContext(null, server))
+  );
+}
+
 export type SyncOrphanOptions = {
   login?: string;
   server?: string;
@@ -166,7 +181,7 @@ export async function listUnlinkedMetaApiAccounts(
       typeof id === "string" &&
       id.length > 0 &&
       !globallyLinked.has(id) &&
-      isConnectedProvisioningAccount(acc)
+      isMetaApiAccountLinkable(acc)
     );
   });
 }
@@ -214,8 +229,7 @@ export async function syncOrphanMetaApiAccount(
   const candidates = accounts.filter((acc) => {
     const id = acc.id;
     if (typeof id !== "string" || !id || globallyLinked.has(id)) return false;
-    if (String(acc.state ?? "") !== "DEPLOYED") return false;
-    if (String(acc.connectionStatus ?? "") !== "CONNECTED") return false;
+    if (!isMetaApiAccountLinkable(acc, options?.brokerName)) return false;
 
     const accLogin = normalizeLogin(acc.login as string | number | undefined);
     const accServer = canonicalConnectServer(
@@ -243,7 +257,9 @@ export async function syncOrphanMetaApiAccount(
     let legacyFxcess = accounts.filter((acc) => {
       const id = acc.id;
       if (typeof id !== "string" || !id || globallyLinked.has(id)) return false;
-      if (!isConnectedProvisioningAccount(acc)) return false;
+      if (!isMetaApiAccountLinkable(acc, options?.brokerName ?? "FXcess")) {
+        return false;
+      }
       const label = parseAccountLabel(String(acc.name ?? ""));
       if (label.userId) return false;
       const accLogin = normalizeLogin(acc.login as string | number | undefined);
@@ -318,7 +334,17 @@ export async function linkMetaApiAccountById(
   if (String(acc.state ?? "") !== "DEPLOYED") {
     return { ok: false, error: `Compte non déployé (${String(acc.state)})` };
   }
-  if (String(acc.connectionStatus ?? "") !== "CONNECTED") {
+
+  const brokerName =
+    hints?.brokerName?.trim() ||
+    inferBrokerName(
+      String(acc.server ?? ""),
+      String(acc.name ?? ""),
+      String(acc.platform ?? ""),
+    );
+  const fxcess = isFxcessConnectContext(brokerName, String(acc.server ?? ""));
+
+  if (String(acc.connectionStatus ?? "") !== "CONNECTED" && !fxcess) {
     return {
       ok: false,
       error: `Compte pas encore connecté (${String(acc.connectionStatus)})`,
@@ -329,14 +355,11 @@ export async function linkMetaApiAccountById(
     hints?.server || String(acc.server ?? ""),
     hints?.brokerName,
   );
-  const broker =
-    hints?.brokerName?.trim() ||
-    inferBrokerName(server, String(acc.name ?? ""), String(acc.platform ?? ""));
 
   const saved = await persistMt5AccountRow(supabase, {
     userId,
     metaApiAccountId,
-    brokerName: broker,
+    brokerName,
     serverName: server,
     login: hints?.login ?? (acc.login as string | number),
   });

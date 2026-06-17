@@ -272,7 +272,7 @@ export default function MT5AccountsPage() {
         const server = formData.server_name.trim();
         if (!login || !server) {
           throw new Error(
-            "Renseignez broker FXcess, serveur FXcess-Demo et n° de compte, puis cliquez à nouveau.",
+            "Renseignez broker FXcess, serveur FXcess-Demo ou FXcess-Demo1 et n° de compte, puis cliquez à nouveau.",
           );
         }
         body = {
@@ -364,6 +364,9 @@ export default function MT5AccountsPage() {
         accountId?: string;
         server?: string;
         recoverable?: boolean;
+        pendingConnection?: boolean;
+        message?: string;
+        persisted?: boolean;
       };
       try {
         metaApiData = JSON.parse(rawBody) as typeof metaApiData;
@@ -401,6 +404,23 @@ export default function MT5AccountsPage() {
               broker_name: formData.broker_name.trim(),
             }),
           );
+          const recoverRes = await fetch("/api/metaapi/sync-orphan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              metaapi_account_id: metaApiData.accountId,
+              login,
+              server: requestedServer,
+              broker_name: formData.broker_name.trim(),
+            }),
+          });
+          const recoverData = await recoverRes.json().catch(() => ({}));
+          if (recoverData?.success) {
+            sessionStorage.removeItem("pendingMt5Link");
+            setShowAddForm(false);
+            await fetchData();
+            return;
+          }
         }
         throw new Error(
           metaApiData.error || "Erreur lors de la connexion MetaApi"
@@ -411,32 +431,27 @@ export default function MT5AccountsPage() {
         (typeof metaApiData.server === "string" && metaApiData.server.trim()) ||
         requestedServer;
 
-      const linkRes = await fetch("/api/metaapi/sync-orphan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          metaapi_account_id: metaApiData.accountId,
-          login,
-          server: serverName,
-          broker_name: formData.broker_name.trim(),
-        }),
-      });
-      const linkRaw = await linkRes.text();
-      let linkData: { success?: boolean; error?: string };
-      try {
-        linkData = JSON.parse(linkRaw);
-      } catch {
-        throw new Error("Compte MetaAPI connecté mais enregistrement SaaS échoué");
-      }
-      if (!linkData.success) {
-        throw new Error(
-          linkData.error ||
-            "Compte MetaAPI connecté mais enregistrement SaaS échoué",
-        );
+      if (!metaApiData.persisted) {
+        const linkRes = await fetch("/api/metaapi/sync-orphan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            metaapi_account_id: metaApiData.accountId,
+            login,
+            server: serverName,
+            broker_name: formData.broker_name.trim(),
+          }),
+        });
+        const linkData = await linkRes.json().catch(() => ({}));
+        if (!linkData?.success) {
+          throw new Error(
+            linkData?.error ||
+              "Compte MetaAPI créé mais enregistrement SaaS échoué — utilisez « Récupérer mon compte ».",
+          );
+        }
       }
 
       sessionStorage.removeItem("pendingMt5Link");
-
       setShowAddForm(false);
       setFormData({
         broker_name: "",
@@ -447,7 +462,14 @@ export default function MT5AccountsPage() {
         symbol_profile: "auto",
       });
       setServers([]);
-      fetchData();
+      if (metaApiData.pendingConnection) {
+        setError(
+          metaApiData.message ||
+            "Compte FXcess enregistré — connexion MT4 en cours. Actualisez dans 1-2 min.",
+        );
+      }
+      await fetchData();
+      return;
     } catch (err: any) {
       setError(err.message || "Une erreur est survenue");
     } finally {
@@ -586,7 +608,7 @@ export default function MT5AccountsPage() {
                           formData.broker_name === "VT Markets"
                             ? "Ex: VTMarkets-Live ou VTMarkets-Live 3"
                             : formData.broker_name === "FXcess"
-                              ? "Ex: FXcess-Demo"
+                              ? "Ex: FXcess-Demo ou FXcess-Demo1"
                               : formData.broker_name === "Vantage"
                                 ? "Ex: VantageInternational-Demo"
                                 : "Ex: RaiseGlobal-Live"
@@ -600,7 +622,8 @@ export default function MT5AccountsPage() {
                       {formData.broker_name === "FXcess" && (
                         <p className="text-xs text-amber-800/90 mt-1.5">
                           FXCess = MT4 uniquement. Demo :{" "}
-                          <span className="font-mono">FXcess-Demo</span>. Copie
+                          <span className="font-mono">FXcess-Demo</span> ou{" "}
+                          <span className="font-mono">FXcess-Demo1</span>. Copie
                           exacte depuis MT4 → Fichier → Ouvrir un compte.
                         </p>
                       )}
@@ -656,7 +679,8 @@ export default function MT5AccountsPage() {
                       {formData.broker_name === "FXcess" && (
                         <p className="text-xs text-amber-800/90 mt-1.5">
                           Serveur demo :{" "}
-                          <span className="font-mono">FXcess-Demo</span> (MT4).
+                          <span className="font-mono">FXcess-Demo</span> ou{" "}
+                          <span className="font-mono">FXcess-Demo1</span> (MT4).
                         </p>
                       )}
                       {formData.broker_name === "Vantage" && (
@@ -905,7 +929,7 @@ export default function MT5AccountsPage() {
             </button>
             <p className="text-xs text-gray-500 mt-3 max-w-md mx-auto">
               Si MetaAPI affiche déjà votre compte CONNECTED mais rien ici :
-              remplissez FXcess / FXcess-Demo / n° compte puis cliquez ce bouton.
+              remplissez FXcess / FXcess-Demo (ou Demo1) / n° compte puis cliquez ce bouton.
             </p>
           </div>
         )}

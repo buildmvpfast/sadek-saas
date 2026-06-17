@@ -74,14 +74,14 @@ function appendBrokerConnectHint(
   }
   if (cfg.platform === "mt4" && !out.toLowerCase().includes("mt4")) {
     out +=
-      " FXCess = MT4 — serveur demo : FXcess-Demo (copier depuis MT4).";
+      " FXCess = MT4 — demo : FXcess-Demo ou FXcess-Demo1 (copier depuis MT4).";
   }
   if (
     /validation failed/i.test(message) &&
     /fxcess/i.test(`${server} ${brokerHint}`)
   ) {
     out +=
-      " MetaAPI ne reconnaît pas ce serveur — utilisez FXcess-Demo exactement.";
+      " MetaAPI ne reconnaît pas ce serveur — utilisez FXcess-Demo ou FXcess-Demo1 exactement.";
   }
   if (
     /vantage/i.test(server) &&
@@ -234,7 +234,7 @@ async function createMetaApiAccount(
 }
 
 /**
- * Attend DEPLOYED + CONNECTED avant insert Supabase.
+ * Attend DEPLOYED + CONNECTED (strict MT5). FXcess MT4 peut utiliser failOnDisconnect: false.
  */
 async function waitForBrokerConnected(
   accountId: string,
@@ -242,6 +242,9 @@ async function waitForBrokerConnected(
   options?: {
     routeDeadlineAt?: number;
     platform?: "mt4" | "mt5";
+    maxWaitMs?: number;
+    /** Si false (FXcess MT4), timeout sans erreur — le compte DEPLOYED reste enregistrable. */
+    failOnDisconnect?: boolean;
   },
 ): Promise<{
   ok: boolean;
@@ -249,10 +252,12 @@ async function waitForBrokerConnected(
   errorFr?: string;
 }> {
   const platformLabel = options?.platform === "mt4" ? "MT4" : "MT5";
+  const failOnDisconnect = options?.failOnDisconnect !== false;
   const routeCapMs = Math.max(CONNECT_ROUTE_MAX_DURATION_SEC * 1000 - 25_000, 20_000);
   let maxWaitMs = Math.min(
     Math.max(
-      Number.parseInt(process.env.METAAPI_CONNECT_MAX_WAIT_MS || "75000", 10),
+      options?.maxWaitMs ??
+        Number.parseInt(process.env.METAAPI_CONNECT_MAX_WAIT_MS || "75000", 10),
       8000,
     ),
     routeCapMs,
@@ -287,8 +292,8 @@ async function waitForBrokerConnected(
         };
       }
 
-      // Déployé mais pas encore CONNECTED : laisser plus de cycles (serveur manuel / latence broker)
       if (
+        failOnDisconnect &&
         state === "DEPLOYED" &&
         (conn === "DISCONNECTED" || conn === "DISCONNECTED_FROM_BROKER")
       ) {
@@ -310,13 +315,55 @@ async function waitForBrokerConnected(
     await sleep(2000);
   }
 
+  if (
+    !failOnDisconnect &&
+    last &&
+    String(last.state ?? "") === "DEPLOYED"
+  ) {
+    const conn = String(last.connectionStatus ?? "");
+    return {
+      ok: conn === "CONNECTED",
+      last,
+    };
+  }
+
   return {
     ok: false,
     last,
     errorFr: last
-      ? `Délai dépassé sans connexion ${platformLabel} (dernier état: ${String(last.state)}, connexion: ${String(last.connectionStatus)}). Vérifiez serveur FXcess-Demo, login et mot de passe MT4, puis réessayez.${connectionBrokerHint(String(last.connectionStatus ?? ""))}`
+      ? `Délai dépassé sans connexion ${platformLabel} (dernier état: ${String(last.state)}, connexion: ${String(last.connectionStatus)}). Vérifiez serveur FXcess-Demo ou FXcess-Demo1, login et mot de passe MT4, puis réessayez.${connectionBrokerHint(String(last.connectionStatus ?? ""))}`
       : `Délai dépassé — MetaAPI n'a pas connecté le compte ${platformLabel} à temps. Réessayez dans 1 minute.`,
   };
+}
+
+async function persistUserMt5Account(
+  userId: string,
+  input: {
+    metaApiAccountId: string;
+    brokerName: string;
+    serverName: string;
+    login: string;
+    symbolProfile?: "auto" | "ecn" | "stp";
+  },
+): Promise<boolean> {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return false;
+  const adminSupabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+  const persisted = await persistMt5AccountRow(adminSupabase, {
+    userId,
+    metaApiAccountId: input.metaApiAccountId,
+    brokerName: input.brokerName,
+    serverName: input.serverName,
+    login: input.login,
+    symbolProfile: input.symbolProfile ?? "auto",
+  });
+  if (!persisted.ok) {
+    console.warn("persistMt5AccountRow:", persisted.error);
+    return false;
+  }
+  return true;
 }
 
 export async function POST(request: Request) {
@@ -347,6 +394,11 @@ export async function POST(request: Request) {
     const login = normalizeLogin(rawLogin);
     const password = String(rawPassword ?? "").trim();
     const displayServer = connectCfg.server;
+
+    const accountTypeRaw =
+      process.env.METAAPI_ACCOUNT_TYPE?.trim().toLowerCase() ?? "";
+    const mt4TypeRaw =
+      process.env.METAAPI_ACCOUNT_TYPE_MT4?.trim().toLowerCase() ?? "cloud-g1";
 
     if (!displayServer || !login || !password) {
       return NextResponse.json(
@@ -384,10 +436,27 @@ export async function POST(request: Request) {
         ? process.env.METAAPI_PROVISIONING_REGION.trim()
         : "london";
 
-    const accountTypeRaw =
-      process.env.METAAPI_ACCOUNT_TYPE?.trim().toLowerCase() ?? "";
+    const fxcessOnly = isFxcessConnectContext(brokerHint, displayServer);
+
+    if (fxcessOnly && body.is_investor === true) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "FXCess MT4 : le mot de passe investisseur ne permet pas le trading automatique. Utilisez le mot de passe principal MT4.",
+        },
+        { status: 400 },
+      );
+    }
+
     const accountType =
-      accountTypeRaw === "cloud-g1" ? "cloud-g1" : "cloud-g2";
+      fxcessOnly
+        ? mt4TypeRaw === "cloud-g2"
+          ? "cloud-g2"
+          : "cloud-g1"
+        : accountTypeRaw === "cloud-g1"
+          ? "cloud-g1"
+          : "cloud-g2";
 
     const routeStartedAt = Date.now();
     const routeDeadlineAt = connectRouteDeadlineAt(routeStartedAt);
@@ -398,7 +467,6 @@ export async function POST(request: Request) {
       token,
     );
 
-    const fxcessOnly = isFxcessConnectContext(brokerHint, displayServer);
     const queue: ConnectAttempt[] = initialAttempts.map((a) =>
       fxcessOnly ? { ...a, platform: "mt4" as const } : a,
     );
@@ -427,6 +495,19 @@ export async function POST(request: Request) {
         attempt.server,
       );
 
+      const fxKeywords =
+        attempt.platform === "mt4" && fxcessOnly
+          ? Array.from(
+              new Set([
+                ...attempt.keywords,
+                "FXcess",
+                "FXCess",
+                "MFX",
+                "MFX Capital",
+              ]),
+            )
+          : attempt.keywords;
+
       const created = await createMetaApiAccount(token, {
         name:
           name ||
@@ -436,7 +517,7 @@ export async function POST(request: Request) {
         server: attempt.server,
         platform: attempt.platform,
         magic,
-        keywords: attempt.keywords,
+        keywords: fxKeywords,
         accountType,
         region: provisioningRegion,
       });
@@ -527,15 +608,41 @@ export async function POST(request: Request) {
     const wait = await waitForBrokerConnected(accountId, token, {
       routeDeadlineAt,
       platform: fxcessOnly ? "mt4" : connectCfg.platform,
+      maxWaitMs: fxcessOnly ? 45_000 : undefined,
+      failOnDisconnect: !fxcessOnly,
     });
 
     const lastState = String(wait.last?.state ?? "");
     const lastConn = String(wait.last?.connectionStatus ?? "");
     const isConnected =
       lastState === "DEPLOYED" && lastConn === "CONNECTED";
+    const isDeployed = lastState === "DEPLOYED";
+
+    // FXcess MT4 : enregistrer dès DEPLOYED (connexion broker peut prendre plusieurs minutes)
+    if (fxcessOnly && isDeployed) {
+      const saved = await persistUserMt5Account(user.id, {
+        metaApiAccountId: accountId,
+        brokerName: brokerHint || "FXcess",
+        serverName: connectedServer,
+        login,
+      });
+
+      return NextResponse.json({
+        success: true,
+        accountId,
+        server: connectedServer,
+        state: lastState,
+        connectionStatus: lastConn,
+        pendingConnection: !isConnected,
+        persisted: saved,
+        message: isConnected
+          ? "Compte FXcess MT4 connecté."
+          : "Compte enregistré. Connexion MT4 en cours sur MetaAPI — actualisez dans 1-2 min.",
+      });
+    }
 
     if (!wait.ok && !isConnected) {
-      const recoverable = lastState === "DEPLOYED";
+      const recoverable = isDeployed;
       if (!recoverable) {
         await deleteProvisioningAccount(accountId, token);
       }
@@ -554,25 +661,12 @@ export async function POST(request: Request) {
       });
     }
 
-    const adminSupabase = process.env.SUPABASE_SERVICE_ROLE_KEY
-      ? createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        )
-      : null;
-    if (adminSupabase) {
-      const persisted = await persistMt5AccountRow(adminSupabase, {
-        userId: user.id,
-        metaApiAccountId: accountId,
-        brokerName: brokerHint || (fxcessOnly ? "FXcess" : "Unknown"),
-        serverName: connectedServer,
-        login,
-        symbolProfile: "auto",
-      });
-      if (!persisted.ok) {
-        console.warn("persistMt5AccountRow:", persisted.error);
-      }
-    }
+    const saved = await persistUserMt5Account(user.id, {
+      metaApiAccountId: accountId,
+      brokerName: brokerHint || "Unknown",
+      serverName: connectedServer,
+      login,
+    });
 
     return NextResponse.json({
       success: true,
@@ -580,7 +674,8 @@ export async function POST(request: Request) {
       server: connectedServer,
       state: wait.last?.state ?? lastState,
       connectionStatus: wait.last?.connectionStatus ?? lastConn,
-      persisted: !!adminSupabase,
+      pendingConnection: false,
+      persisted: saved,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
