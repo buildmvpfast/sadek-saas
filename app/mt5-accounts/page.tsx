@@ -621,10 +621,10 @@ export default function MT5AccountsPage() {
                       </p>
                       {formData.broker_name === "FXcess" && (
                         <p className="text-xs text-amber-800/90 mt-1.5">
-                          FXCess = MT4 uniquement. Demo :{" "}
-                          <span className="font-mono">FXcess-Demo</span> ou{" "}
-                          <span className="font-mono">FXcess-Demo1</span>. Copie
-                          exacte depuis MT4 → Fichier → Ouvrir un compte.
+                          FXCess = MT4 uniquement. Choisissez le serveur dans la
+                          liste (noms MetaAPI). Utilisez celui de{" "}
+                          <strong>votre</strong> compte MT4 — ne changez pas
+                          entre Demo et Demo1.
                         </p>
                       )}
                       {formData.broker_name === "Vantage" && (

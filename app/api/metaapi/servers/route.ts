@@ -92,11 +92,25 @@ export async function GET(request: Request) {
       serverNames = merged.servers;
       source = merged.source;
     } else if (/fxcess/i.test(broker.name)) {
-      const merged = await mergeBrokerServers(broker.servers, (t) =>
-        searchFxcessKnownServers(t),
-      );
-      serverNames = merged.servers;
-      source = merged.source;
+      const token = process.env.METAAPI_TOKEN;
+      if (token) {
+        const known = await searchFxcessKnownServers(token);
+        const fromApi = listKnownServerNames(known).filter((s) =>
+          /fxcess|mfx/i.test(s),
+        );
+        if (fromApi.length > 0) {
+          serverNames = sortServersDemoFirst(fromApi);
+          source = "metaapi";
+        } else {
+          const merged = await mergeBrokerServers(broker.servers, (t) =>
+            searchFxcessKnownServers(t),
+          );
+          serverNames = merged.servers;
+          source = merged.source;
+        }
+      } else {
+        serverNames = sortServersDemoFirst(broker.servers);
+      }
     } else {
       serverNames = sortServersDemoFirst(serverNames);
     }

@@ -58,6 +58,70 @@ function flattenKnown(
   return out;
 }
 
+/** Variante demo FXcess : Demo vs Demo1 (ne pas mélanger). */
+export function fxcessServerVariant(
+  server: string,
+): "demo" | "demo1" | "live" | "other" {
+  const k = compactKey(server);
+  if (/live|real/.test(k)) return "live";
+  if (/demo0*1$/.test(k) || /demo0*01$/.test(k)) return "demo1";
+  if (/demo/.test(k)) return "demo";
+  return "other";
+}
+
+function isFxcessServerBlob(blob: string): boolean {
+  return /fxcess|fxness|mfx/i.test(blob);
+}
+
+/** Résout le nom exact MetaAPI pour FXcess sans basculer Demo ↔ Demo1. */
+export function pickFxcessKnownServer(
+  input: string,
+  known: Record<string, string[]>,
+): KnownServerMatch | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const flat = flattenKnown(known).filter(({ broker, server }) =>
+    isFxcessServerBlob(`${broker} ${server}`),
+  );
+  if (flat.length === 0) return null;
+
+  const variant = fxcessServerVariant(trimmed);
+  const inputKey = compactKey(trimmed);
+
+  for (const { broker, server } of flat) {
+    if (compactKey(server) === inputKey) {
+      return { server, keywords: [broker], brokerNames: [broker] };
+    }
+  }
+
+  const pool =
+    variant === "other"
+      ? flat
+      : flat.filter(({ server }) => fxcessServerVariant(server) === variant);
+
+  if (pool.length === 0) return null;
+
+  const scored = pool
+    .map(({ broker, server }) => {
+      const sk = compactKey(server);
+      let score = 0;
+      if (sk === inputKey) score += 100;
+      if (sk.includes(inputKey) || inputKey.includes(sk)) score += 35;
+      if (isFxcessServerBlob(server)) score += 15;
+      return { broker, server, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const best = scored[0] ?? pool[0];
+  return {
+    server: best.server,
+    keywords: [best.broker],
+    brokerNames: [best.broker],
+  };
+}
+
 /** Trouve le meilleur serveur MetaAPI connu pour une saisie utilisateur. */
 export function matchKnownServer(
   input: string,
@@ -65,6 +129,10 @@ export function matchKnownServer(
 ): KnownServerMatch | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
+
+  if (isFxcessServerBlob(trimmed)) {
+    return pickFxcessKnownServer(trimmed, known);
+  }
 
   const flat = flattenKnown(known);
   if (flat.length === 0) return null;
@@ -155,11 +223,13 @@ export async function searchFxcessKnownServers(
 ): Promise<Record<string, string[]>> {
   const queries = [
     "fxcess",
+    "FXCESS",
     "fxcess ltd",
     "mfx",
     "mfx capital",
     "fxcess demo",
     "fxcess demo1",
+    "fxcess demo01",
   ];
 
   const merged: Record<string, string[]> = {};
@@ -214,13 +284,13 @@ export function listKnownServerNames(
   });
 }
 
-/** Candidats de repli si le serveur saisi n'est pas reconnu MetaAPI. */
+/** Candidats de repli — uniquement la même variante demo (pas de bascule Demo ↔ Demo1). */
 export function fxcessConnectFallbacks(rawServer: string): string[] {
-  const isDemo = /demo/i.test(rawServer);
-  if (isDemo) {
-    return ["FXcess-Demo", "FXcess-Demo1"];
-  }
-  return ["FXcess-Live", rawServer.trim()];
+  const variant = fxcessServerVariant(rawServer);
+  if (variant === "demo") return ["FXcess-Demo"];
+  if (variant === "demo1") return ["FXcess-Demo1"];
+  if (variant === "live") return ["FXcess-Live"];
+  return [rawServer.trim()];
 }
 
 export function vantageConnectFallbacks(rawServer: string): string[] {

@@ -81,7 +81,7 @@ function appendBrokerConnectHint(
     /fxcess/i.test(`${server} ${brokerHint}`)
   ) {
     out +=
-      " MetaAPI ne reconnaît pas ce serveur — utilisez FXcess-Demo ou FXcess-Demo1 exactement.";
+      ` MetaAPI ne reconnaît pas « ${server} ». Utilisez le serveur exact de votre MT4 (liste déroulante) — ne basculez pas entre Demo et Demo1.`;
   }
   if (
     /vantage/i.test(server) &&
@@ -538,7 +538,7 @@ export async function POST(request: Request) {
       lastCreateError = created.error;
       lastCreateData = created.data;
 
-      if (created.validation && created.data) {
+      if (created.validation && created.data && !fxcessOnly) {
         for (const sug of extractSuggestedServersFromMetaApiError(
           created.data,
         )) {
@@ -546,7 +546,7 @@ export async function POST(request: Request) {
           if (!triedServers.has(sugKey)) {
             queue.push({
               server: sug.server,
-              platform: fxcessOnly ? "mt4" : attempt.platform,
+              platform: attempt.platform,
               keywords: sug.keywords,
             });
           }
