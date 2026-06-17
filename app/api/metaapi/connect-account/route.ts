@@ -11,6 +11,7 @@ import {
 } from "@/lib/metaapi-provisioning";
 import {
   buildConnectAttempts,
+  isFxcessConnectContext,
   resolveBrokerConnectConfig,
   type ConnectAttempt,
 } from "@/lib/broker-connect-config";
@@ -58,14 +59,14 @@ function appendBrokerConnectHint(
   }
   if (cfg.platform === "mt4" && !out.toLowerCase().includes("mt4")) {
     out +=
-      " FXCess = MT4 — serveur demo : FXCESS-Demo01 (copier depuis MT4, pas « FXcess-Demo »).";
+      " FXCess = MT4 — serveur demo : FXcess-Demo (copier depuis MT4).";
   }
   if (
     /validation failed/i.test(message) &&
     /fxcess/i.test(`${server} ${brokerHint}`)
   ) {
     out +=
-      " MetaAPI ne reconnaît pas ce serveur — utilisez FXCESS-Demo01 exactement.";
+      " MetaAPI ne reconnaît pas ce serveur — utilisez FXcess-Demo exactement.";
   }
   if (
     /vantage/i.test(server) &&
@@ -375,7 +376,10 @@ export async function POST(request: Request) {
       token,
     );
 
-    const queue: ConnectAttempt[] = [...initialAttempts];
+    const fxcessOnly = isFxcessConnectContext(brokerHint, displayServer);
+    const queue: ConnectAttempt[] = initialAttempts.map((a) =>
+      fxcessOnly ? { ...a, platform: "mt4" as const } : a,
+    );
     const triedServers = new Set<string>();
 
     let accountId: string | undefined;
@@ -433,7 +437,7 @@ export async function POST(request: Request) {
           if (!triedServers.has(sugKey)) {
             queue.push({
               server: sug.server,
-              platform: attempt.platform,
+              platform: fxcessOnly ? "mt4" : attempt.platform,
               keywords: sug.keywords,
             });
           }

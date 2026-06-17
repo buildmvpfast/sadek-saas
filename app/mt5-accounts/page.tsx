@@ -185,8 +185,8 @@ export default function MT5AccountsPage() {
         if (brokerName === "FXcess" && !formData.server_name) {
           setFormData((prev) => ({
             ...prev,
-            server_name: names.includes("FXCESS-Demo01")
-              ? "FXCESS-Demo01"
+            server_name: names.includes("FXcess-Demo")
+              ? "FXcess-Demo"
               : names.find((n: string) => /demo/i.test(n)) ?? "",
           }));
         }
@@ -217,7 +217,7 @@ export default function MT5AccountsPage() {
       brokerName === "Vantage"
         ? "VantageInternational-Demo"
         : brokerName === "FXcess"
-          ? "FXCESS-Demo01"
+          ? "FXcess-Demo"
           : "";
 
     setFormData({
@@ -261,7 +261,10 @@ export default function MT5AccountsPage() {
       const selectedBroker = brokers.find(
         (b) => b.name === formData.broker_name.trim(),
       );
-      const connectPlatform = selectedBroker?.platform ?? "mt5";
+      const connectPlatform =
+        formData.broker_name === "FXcess"
+          ? "mt4"
+          : (selectedBroker?.platform ?? "mt5");
 
       // 1. Connecter le compte à MetaApi (vérifie MT5 CONNECTED avant succès)
       const metaApiResponse = await fetch("/api/metaapi/connect-account", {
@@ -463,7 +466,7 @@ export default function MT5AccountsPage() {
                           formData.broker_name === "VT Markets"
                             ? "Ex: VTMarkets-Live ou VTMarkets-Live 3"
                             : formData.broker_name === "FXcess"
-                              ? "Ex: FXCESS-Demo01"
+                              ? "Ex: FXcess-Demo"
                               : formData.broker_name === "Vantage"
                                 ? "Ex: VantageInternational-Demo"
                                 : "Ex: RaiseGlobal-Live"
@@ -471,14 +474,14 @@ export default function MT5AccountsPage() {
                         required
                       />
                       <p className="text-xs text-gray-500 mt-1">
-                        Entrez le nom exact du serveur (visible dans MT5)
+                        Entrez le nom exact du serveur (visible dans{" "}
+                        {formData.broker_name === "FXcess" ? "MT4" : "MT5"})
                       </p>
                       {formData.broker_name === "FXcess" && (
                         <p className="text-xs text-amber-800/90 mt-1.5">
                           FXCess = MT4 uniquement. Demo :{" "}
-                          <span className="font-mono">FXCESS-Demo01</span> (pas
-                          « FXCess-Demo »). Copie exacte depuis MT4 → Fichier →
-                          Ouvrir un compte.
+                          <span className="font-mono">FXcess-Demo</span>. Copie
+                          exacte depuis MT4 → Fichier → Ouvrir un compte.
                         </p>
                       )}
                       {formData.broker_name === "Vantage" && (
@@ -532,10 +535,8 @@ export default function MT5AccountsPage() {
                       )}
                       {formData.broker_name === "FXcess" && (
                         <p className="text-xs text-amber-800/90 mt-1.5">
-                          Choisissez{" "}
-                          <span className="font-mono">FXCESS-Demo01</span> si
-                          disponible — « FXcess-Demo » est corrigé auto côté
-                          serveur.
+                          Serveur demo :{" "}
+                          <span className="font-mono">FXcess-Demo</span> (MT4).
                         </p>
                       )}
                       {formData.broker_name === "Vantage" && (

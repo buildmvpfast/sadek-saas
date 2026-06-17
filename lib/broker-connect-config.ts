@@ -18,13 +18,27 @@ export type BrokerConnectConfig = {
   hint?: string;
 };
 
+/** FXCess = MT4 uniquement (pas MT5). Détecte broker + serveur (FXCESS-*). */
+export function isFxcessConnectContext(
+  brokerName?: string | null,
+  server?: string | null,
+): boolean {
+  const blob = `${brokerName ?? ""} ${server ?? ""}`.toLowerCase();
+  if (/fxcess|fxness|mfx\s*capital/i.test(blob)) return true;
+  const s = (server ?? "").trim();
+  return /^fxcess[-_]/i.test(s);
+}
+
 /** Alias serveurs connus incorrects → nom MT exact. */
 const SERVER_CANONICAL: Record<string, string> = {
-  "fxcess-demo": "FXCESS-Demo01",
-  fxcessdemo: "FXCESS-Demo01",
-  "fxcess-demo01": "FXCESS-Demo01",
-  "fxcess-live": "FXCESS-Live01",
-  "fxcess-live01": "FXCESS-Live01",
+  "fxcess-demo": "FXcess-Demo",
+  fxcessdemo: "FXcess-Demo",
+  "fxcess-demo01": "FXcess-Demo",
+  fxcessdemo01: "FXcess-Demo",
+  "fxcess-live": "FXcess-Live",
+  fxcesslive: "FXcess-Live",
+  "fxcess-live01": "FXcess-Live",
+  fxcesslive01: "FXcess-Live",
   "vantagemarkets-demo": "VantageInternational-Demo",
   vantagemarketsdemo: "VantageInternational-Demo",
 };
@@ -47,11 +61,6 @@ export function canonicalConnectServer(
     s = SERVER_CANONICAL[key];
   }
 
-  // FXCess : jamais "FXcess-Demo" sans 01
-  if (/^fxcess-demo$/i.test(s.replace(/\s+/g, ""))) {
-    s = "FXCESS-Demo01";
-  }
-
   return s;
 }
 
@@ -61,20 +70,21 @@ export function resolveBrokerConnectConfig(
 ): BrokerConnectConfig {
   const server = canonicalConnectServer(rawServer, brokerName);
   const broker = brokerName ? findBrokerByName(brokerName) : undefined;
+  const fxcess = isFxcessConnectContext(brokerName, server);
   const blob = `${server} ${brokerName ?? ""}`.toLowerCase();
 
   let platform: "mt4" | "mt5" = broker?.platform ?? "mt5";
-  if (/fxcess/i.test(blob)) platform = "mt4";
+  if (fxcess) platform = "mt4";
 
   const keywords: string[] = [];
 
-  if (/fxcess/i.test(blob)) {
+  if (fxcess) {
     return {
       server,
       platform: "mt4",
       keywords: [],
       hint:
-        "FXCess = MT4 uniquement. Serveur demo : FXCESS-Demo01 (pas FXCess-Demo). Copie exacte depuis MT4.",
+        "FXCess = MT4 uniquement. Serveur demo : FXcess-Demo (copie exacte depuis MT4).",
     };
   }
 
@@ -138,6 +148,7 @@ export async function buildConnectAttempts(
   };
 
   const blob = `${rawServer} ${brokerName ?? ""} ${cfg.server}`.toLowerCase();
+  const fxcess = isFxcessConnectContext(brokerName, `${rawServer} ${cfg.server}`);
 
   if (/vantage/i.test(blob)) {
     const known = await searchVantageKnownServers(token, cfg.platform);
@@ -159,7 +170,7 @@ export async function buildConnectAttempts(
     return attempts;
   }
 
-  if (/fxcess/i.test(blob)) {
+  if (fxcess) {
     const known = await searchFxcessKnownServers(token);
     const matched =
       matchKnownServer(rawServer, known) ??

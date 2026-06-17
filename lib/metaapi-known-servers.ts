@@ -217,9 +217,9 @@ export function listKnownServerNames(
 export function fxcessConnectFallbacks(rawServer: string): string[] {
   const isDemo = /demo/i.test(rawServer);
   if (isDemo) {
-    return ["FXCESS-Demo01", "FXCESS-Demo02"];
+    return ["FXcess-Demo"];
   }
-  return ["FXCESS-Live01", "FXCESS-Live02", rawServer.trim()];
+  return ["FXcess-Live", rawServer.trim()];
 }
 
 export function vantageConnectFallbacks(rawServer: string): string[] {

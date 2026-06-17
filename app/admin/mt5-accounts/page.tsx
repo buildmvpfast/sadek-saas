@@ -9,6 +9,7 @@ type Broker = {
   id: string
   name: string
   servers?: string[]
+  platform?: 'mt4' | 'mt5'
 }
 
 type AdminMT5Account = {
@@ -125,7 +126,13 @@ export default function AdminMT5AccountsPage() {
   }
 
   const handleBrokerChange = (brokerName: string) => {
-    setFormData({ ...formData, broker_name: brokerName, server_name: '' })
+    const defaultServer =
+      brokerName === 'FXcess' ? 'FXcess-Demo' : ''
+    setFormData({
+      ...formData,
+      broker_name: brokerName,
+      server_name: defaultServer,
+    })
     fetchServers(brokerName)
   }
 
@@ -151,6 +158,14 @@ export default function AdminMT5AccountsPage() {
         throw new Error('Serveur et numéro de compte sont requis.')
       }
 
+      const selectedBroker = brokers.find(
+        (b) => b.name === formData.broker_name.trim(),
+      )
+      const connectPlatform =
+        formData.broker_name.trim() === 'FXcess'
+          ? 'mt4'
+          : (selectedBroker?.platform ?? 'mt5')
+
       const response = await fetch('/api/metaapi/connect-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -159,7 +174,8 @@ export default function AdminMT5AccountsPage() {
           login,
           password: formData.password.trim(),
           server: serverName,
-          platform: 'mt5',
+          broker_name: formData.broker_name.trim(),
+          platform: connectPlatform,
           magic: 0,
         }),
       })

@@ -168,7 +168,10 @@ export function getStaticBrokersWithServers() {
 export function findBrokerByName(
   brokerName: string,
 ): BrokerServersEntry | undefined {
-  const q = brokerName.toLowerCase();
+  const q = brokerName.toLowerCase().trim();
+  if (/fxcess|fxness|mfx/i.test(q)) {
+    return METAAPI_BROKER_SERVERS.find((b) => b.name === "FXcess");
+  }
   return METAAPI_BROKER_SERVERS.find(
     (b) =>
       b.name.toLowerCase().includes(q) || q.includes(b.name.toLowerCase()),
