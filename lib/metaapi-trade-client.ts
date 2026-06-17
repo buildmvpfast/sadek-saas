@@ -388,9 +388,18 @@ export async function fetchMetaApiSymbolNames(
       }
       const symbols = new Set<string>();
       for (const row of data) {
-        if (row && typeof row === "object" && "symbol" in row) {
-          symbols.add(String((row as { symbol: string }).symbol));
+        if (typeof row === "string" && row.trim()) {
+          symbols.add(row.trim());
+          continue;
         }
+        if (row && typeof row === "object" && "symbol" in row) {
+          const sym = String((row as { symbol: string }).symbol).trim();
+          if (sym) symbols.add(sym);
+        }
+      }
+      if (symbols.size === 0) {
+        lastErr = "symbols: empty";
+        continue;
       }
       return { ok: true, symbols };
     } catch (e: unknown) {

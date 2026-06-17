@@ -10,6 +10,7 @@ import {
 import { parseLocaleNumber } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
 import { snapVolumeForMetaApiSymbol } from "@/lib/trade-volume";
+import { resolveBrokerSymbol } from "@/lib/broker-symbol-resolver";
 import { normalizeSymbol } from "@/lib/symbol-normalizer";
 import {
   applyLotMultiplier,
@@ -36,7 +37,17 @@ export type PendingTradeRow = {
   status: string;
   position_id?: number | string | null;
   partial_close_percent?: number | string | null;
-  mt5_accounts?: { metaapi_account_id?: string } | { metaapi_account_id?: string }[];
+  mt5_accounts?:
+    | {
+        metaapi_account_id?: string;
+        broker_name?: string | null;
+        symbol_profile?: string | null;
+      }
+    | {
+        metaapi_account_id?: string;
+        broker_name?: string | null;
+        symbol_profile?: string | null;
+      }[];
   telegram_signals?:
     | {
         entry_price?: number | string | null;
@@ -146,15 +157,30 @@ export async function executeOnePendingTrade(
     token,
   );
 
+  const signalRow = embed(trade.telegram_signals);
+  const standardSymbol = normalizeSymbol(signalRow?.symbol ?? trade.symbol);
+  const brokerName = mt5Account?.broker_name ?? null;
+  let brokerSymbol = String(trade.symbol);
+  if (brokerName) {
+    brokerSymbol = await resolveBrokerSymbol(
+      standardSymbol,
+      brokerName,
+      supabase,
+      {
+        metaApiAccountId,
+        metaApiToken: token,
+        symbolProfile:
+          (mt5Account?.symbol_profile as "auto" | "ecn" | "stp" | null) ??
+          "auto",
+      },
+    );
+  }
+
   const rawVol = Number(trade.volume) > 0 ? Number(trade.volume) : 0.01;
   let volume = applyLotMultiplier(rawVol, settings);
-  volume = snapVolumeForMetaApiSymbol(String(trade.symbol), volume);
+  volume = snapVolumeForMetaApiSymbol(brokerSymbol, volume);
 
   if (!isPartialClosure) {
-    const signalRow = embed(trade.telegram_signals);
-    const standardSymbol = normalizeSymbol(
-      signalRow?.symbol ?? trade.symbol,
-    );
     const risk = checkTradeRisk({
       standardSymbol,
       volume,
@@ -186,7 +212,7 @@ export async function executeOnePendingTrade(
 
     const percent = parsePartialPercent(trade);
     const closeVol = snapVolumeForMetaApiSymbol(
-      String(trade.symbol),
+      brokerSymbol,
       (volume * percent) / 100,
     );
 
@@ -216,7 +242,6 @@ export async function executeOnePendingTrade(
     return { ok: true };
   }
 
-  const signalRow = embed(trade.telegram_signals);
   const entryFromTrade = parseLocaleNumber(trade.entry_price);
   const entryFromSignal = parseLocaleNumber(signalRow?.entry_price);
   const entryParsed =
@@ -259,7 +284,7 @@ export async function executeOnePendingTrade(
   }
 
   const order: Record<string, unknown> = {
-    symbol: trade.symbol,
+    symbol: brokerSymbol,
     actionType,
     volume,
   };

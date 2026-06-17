@@ -19,7 +19,7 @@ CREATE POLICY "Everyone can view symbol mappings" ON symbol_mappings
 -- Helper macro via INSERT batches
 -- VT Markets (ECN suffixes indices / certaines paires)
 INSERT INTO symbol_mappings (broker_name, standard_symbol, broker_symbol) VALUES
-  ('VT Markets', 'GOLD', 'XAUUSD'),
+  ('VT Markets', 'GOLD', 'XAUUSD-VIP'),
   ('VT Markets', 'BTC', 'BTCUSD'),
   ('VT Markets', 'ETH', 'ETHUSD'),
   ('VT Markets', 'SOL30', 'SOL30'),

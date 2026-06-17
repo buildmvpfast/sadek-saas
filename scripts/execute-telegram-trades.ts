@@ -26,7 +26,7 @@ async function executePendingTrades() {
       id, user_id, signal_id, mt5_account_id, symbol, signal_type, order_type,
       volume, entry_price, stop_loss, take_profit, error_message, status,
       position_id, partial_close_percent,
-      mt5_accounts!inner(metaapi_account_id),
+      mt5_accounts!inner(metaapi_account_id, broker_name, symbol_profile),
       telegram_signals (entry_price, order_type, symbol)
     `,
     )

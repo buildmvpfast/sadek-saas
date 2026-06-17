@@ -23,9 +23,11 @@ function ecnStpCandidates(standardSymbol: string): string[] {
       b,
       `${b}+`,
       `${b}-ECN`,
+      `${b}-VIP`,
       `${b}.ecn`,
       `${b}.raw`,
       `${b}.pro`,
+      `${b}.crp`,
       `${b}.s`,
       `${b}.i`,
       `${b}.m`,
@@ -80,9 +82,20 @@ function fuzzyMatchSymbol(
     }
   }
   if (standardSymbol === "GOLD") {
-    for (const sym of Array.from(available)) {
-      if (/XAU|GOLD/i.test(sym)) return sym;
-    }
+    const gold = Array.from(available).filter(
+      (sym) =>
+        /XAU|GOLD/i.test(sym) && !/^(BTC|ETH)/i.test(sym.replace(/[^A-Z0-9]/gi, "")),
+    );
+    const score = (sym: string): number => {
+      const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+      if (c === "XAUUSD") return 0;
+      if (/^XAUUSD/i.test(sym)) return 1;
+      if (/XAUUSD/i.test(sym)) return 2;
+      if (/^GOLD/i.test(sym)) return 3;
+      return 4;
+    };
+    gold.sort((a, b) => score(a) - score(b));
+    if (gold[0]) return gold[0];
   }
   return null;
 }
