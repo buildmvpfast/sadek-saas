@@ -4,6 +4,7 @@ import { useEffect, useState, lazy, Suspense, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import OpenPositionsTable from "@/components/OpenPositionsTable";
 import { clientCache } from "@/lib/cache";
 
 // Lazy load des composants lourds
@@ -25,36 +26,13 @@ type MT5Account = {
   metaapi_account_id?: string;
 };
 
-type Position = {
-  id: string;
-  symbol: string;
-  type: string;
-  volume: number;
-  openPrice: number;
-  currentPrice: number;
-  profit: number;
-  stopLoss?: number;
-  takeProfit?: number;
-};
-
-type AccountInfo = {
-  balance: number;
-  equity: number;
-  margin: number;
-  freeMargin: number;
-  marginLevel: number;
-  currency: string;
-  profit: number;
-  server: string;
-  leverage: number;
-};
-
 export default function MT5AccountsPage() {
   const [mt5Accounts, setMt5Accounts] = useState<MT5Account[]>([]);
   const [brokers, setBrokers] = useState<Broker[]>([]);
   const [servers, setServers] = useState<string[]>([]);
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [loadingPositions, setLoadingPositions] = useState(false);
+  const [activeMetaApiAccountId, setActiveMetaApiAccountId] = useState<
+    string | null
+  >(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingServers, setLoadingServers] = useState(false);
@@ -80,24 +58,6 @@ export default function MT5AccountsPage() {
     fetchData();
     fetchBrokers();
   }, []);
-
-  const fetchPositions = async (metaapiAccountId: string) => {
-    setLoadingPositions(true);
-    try {
-      const response = await fetch(
-        `/api/metaapi/positions?accountId=${metaapiAccountId}`
-      );
-      const data = await response.json();
-
-      if (data.success && data.positions) {
-        setPositions(data.positions);
-      }
-    } catch (err) {
-      console.error("Error fetching positions:", err);
-    } finally {
-      setLoadingPositions(false);
-    }
-  };
 
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) {
@@ -160,13 +120,10 @@ export default function MT5AccountsPage() {
         }));
         setMt5Accounts(formattedAccounts);
 
-        // Charger les positions du premier compte actif
         const activeAccount = formattedAccounts.find(
-          (acc: any) => acc.is_active && acc.metaapi_account_id
+          (acc: MT5Account) => acc.is_active && acc.metaapi_account_id,
         );
-        if (activeAccount?.metaapi_account_id) {
-          fetchPositions(activeAccount.metaapi_account_id);
-        }
+        setActiveMetaApiAccountId(activeAccount?.metaapi_account_id ?? null);
       }
     } finally {
       if (isRefresh) {
@@ -841,71 +798,11 @@ export default function MT5AccountsPage() {
               </p>
             </div>
 
-            {/* Positions ouvertes */}
             <div className="card mt-6">
-              <h2 className="text-2xl font-bold mb-4">Positions ouvertes</h2>
-              {loadingPositions ? (
-                <p className="text-gray-600">Chargement des positions...</p>
-              ) : positions.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="px-4 py-2 text-left">Symbole</th>
-                        <th className="px-4 py-2 text-left">Type</th>
-                        <th className="px-4 py-2 text-right">Volume</th>
-                        <th className="px-4 py-2 text-right">Entrée</th>
-                        <th className="px-4 py-2 text-right">Prix actuel</th>
-                        <th className="px-4 py-2 text-right">SL</th>
-                        <th className="px-4 py-2 text-right">TP</th>
-                        <th className="px-4 py-2 text-right">P&L</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {positions.map((pos) => (
-                        <tr key={pos.id} className="border-b">
-                          <td className="px-4 py-3 font-bold">{pos.symbol}</td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`px-2 py-1 rounded text-white text-xs ${
-                                pos.type === "ORDER_TYPE_BUY"
-                                  ? "bg-green-500"
-                                  : "bg-red-500"
-                              }`}
-                            >
-                              {pos.type === "ORDER_TYPE_BUY" ? "BUY" : "SELL"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right">{pos.volume}</td>
-                          <td className="px-4 py-3 text-right">
-                            {pos.openPrice?.toFixed(2)}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            {pos.currentPrice?.toFixed(2)}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            {pos.stopLoss?.toFixed(2) || "-"}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            {pos.takeProfit?.toFixed(2) || "-"}
-                          </td>
-                          <td
-                            className={`px-4 py-3 text-right font-bold ${
-                              pos.profit >= 0
-                                ? "text-green-600"
-                                : "text-red-600"
-                            }`}
-                          >
-                            ${pos.profit?.toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-gray-600">Aucune position ouverte</p>
-              )}
+              <h2 className="text-2xl font-bold mb-4">
+                Positions ouvertes (compte MT4/MT5)
+              </h2>
+              <OpenPositionsTable metaapiAccountId={activeMetaApiAccountId} />
             </div>
           </div>
         ) : (

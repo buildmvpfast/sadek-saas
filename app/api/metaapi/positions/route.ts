@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { fetchMetaApiPositionsJson } from "@/lib/metaapi-trade-client";
+import { normalizeMetaApiPositions } from "@/lib/metaapi-positions";
 
 export async function GET(request: NextRequest) {
   // Verify authenticated user and ownership of the account
@@ -65,8 +66,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      positions: result.positions || [],
+      positions: normalizeMetaApiPositions(result.positions as unknown[]),
       source: result.url,
+      live: true,
     });
   } catch (error: any) {
     console.error('Error fetching positions:', error)

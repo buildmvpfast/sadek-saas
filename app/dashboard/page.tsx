@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import { syncOrphanMetaApiAccount } from "@/lib/mt5-account-persist";
+import DashboardPositionsSection from "@/components/DashboardPositionsSection";
+import OpenPositionsStat from "@/components/OpenPositionsStat";
 
 export default async function DashboardPage() {
   const supabase = createServerClient();
@@ -55,48 +57,8 @@ export default async function DashboardPage() {
     .eq("user_id", session.user.id)
     .single();
 
-  // Récupérer les trades des deux sources (copy trading classique et signaux Telegram)
-  const [copyTradesResult, telegramTradesResult] = await Promise.all([
-    supabase
-      .from("copy_trades")
-      .select("*")
-      .eq("follower_user_id", session.user.id)
-      .order("created_at", { ascending: false })
-      .limit(20),
-    supabase
-      .from("telegram_trades")
-      .select("*")
-      .eq("user_id", session.user.id)
-      .order("created_at", { ascending: false })
-      .limit(20)
-  ]);
-
-  const copyTradesRaw = copyTradesResult.data || [];
-  const telegramTradesRaw = telegramTradesResult.data || [];
-
-  // Normaliser et fusionner les trades
-  const copyTrades = [
-    ...copyTradesRaw.map((t: any) => ({
-      ...t,
-      source: 'copy',
-      entry_price: t.open_price,
-      exit_price: t.close_price,
-      entry_time: t.opened_at || t.created_at,
-      exit_time: t.closed_at,
-      display_status: t.status === 'opened' ? 'OUVERT' : t.status === 'closed' ? 'FERMÉ' : t.status === 'failed' ? 'ÉCHEC' : t.status.toUpperCase()
-    })),
-    ...telegramTradesRaw.map((t: any) => ({
-      ...t,
-      source: 'telegram',
-      entry_price: t.entry_price,
-      exit_price: t.close_price || null,
-      entry_time: t.executed_at || t.created_at,
-      exit_time: t.closed_at || null,
-      // Harmonisation des champs pour l'affichage
-      order_type: `${t.signal_type} ${t.order_type || 'MARKET'}`,
-      display_status: t.status === 'executed' ? 'EXÉCUTÉ (MT5)' : t.status === 'closed' ? 'FERMÉ' : t.status === 'failed' ? 'ÉCHEC' : 'EN ATTENTE'
-    }))
-  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const primaryMetaApiAccountId =
+    mt5Accounts?.find((a) => a.metaapi_account_id)?.metaapi_account_id ?? null;
 
   return (
     <div className="min-h-screen pattern-bg">
@@ -151,13 +113,13 @@ export default async function DashboardPage() {
               className="text-sm font-bold uppercase tracking-wide"
               style={{ color: "#9b30a8" }}
             >
-              Trades Copiés
+              Positions ouvertes
             </h3>
             <p
               className="text-3xl font-black mt-3"
               style={{ color: "#9b30a8" }}
             >
-              {copyTrades?.length || 0}
+              <OpenPositionsStat metaapiAccountId={primaryMetaApiAccountId} />
             </p>
           </div>
         </div>
@@ -222,78 +184,11 @@ export default async function DashboardPage() {
               className="text-2xl font-black mb-6"
               style={{ color: "#9b30a8" }}
             >
-              Derniers Trades
+              Positions ouvertes (compte MT4/MT5)
             </h2>
-
-            {copyTrades && copyTrades.length > 0 ? (
-              <div className="space-y-3">
-                {copyTrades.slice(0, 5).map((trade: any) => (
-                    <div
-                      key={trade.id}
-                      className="border-2 border-primary-200 rounded-2xl p-4 bg-gradient-to-r from-primary-50 to-white hover:shadow-lg transition-all"
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <p
-                            className="font-bold text-lg"
-                            style={{ color: "#9b30a8" }}
-                          >
-                            {trade.symbol}
-                          </p>
-                          <p
-                            className="text-sm opacity-75 font-semibold"
-                            style={{ color: "#9b30a8" }}
-                          >
-                            {trade.order_type} • {trade.volume} lots
-                          </p>
-                        </div>
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-black shadow-sm ${
-                            trade.display_status === "OUVERT"
-                              ? "bg-blue-500 text-white"
-                              : trade.display_status === "FERMÉ"
-                              ? "bg-green-500 text-white"
-                              : trade.display_status === "ÉCHEC"
-                              ? "bg-red-500 text-white"
-                              : "bg-gray-400 text-white"
-                          }`}
-                        >
-                          {trade.display_status}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4 mt-2 pt-2 border-t border-primary-100">
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-50" style={{ color: "#9b30a8" }}>Entrée</p>
-                          <p className="font-bold text-sm" style={{ color: "#9b30a8" }}>
-                            {trade.entry_price ? trade.entry_price.toFixed(5) : '-'}
-                          </p>
-                          <p className="text-[10px] opacity-60" style={{ color: "#9b30a8" }}>
-                            {trade.entry_time ? new Date(trade.entry_time).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '-'}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-50" style={{ color: "#9b30a8" }}>Sortie</p>
-                          <p className="font-bold text-sm" style={{ color: "#9b30a8" }}>
-                            {trade.exit_price ? trade.exit_price.toFixed(5) : '-'}
-                          </p>
-                          <p className="text-[10px] opacity-60" style={{ color: "#9b30a8" }}>
-                            {trade.exit_time ? new Date(trade.exit_time).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '-'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8" style={{ color: "#9b30a8" }}>
-                <p className="font-semibold">Aucun trade pour le moment</p>
-                <p className="text-sm opacity-75 mt-2">
-                  Les trades apparaîtront ici dès qu'un trade est pris par le
-                  trader
-                </p>
-              </div>
-            )}
+            <DashboardPositionsSection
+              metaapiAccountId={primaryMetaApiAccountId}
+            />
           </div>
         </div>
       </div>
