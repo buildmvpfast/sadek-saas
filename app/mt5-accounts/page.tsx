@@ -59,6 +59,7 @@ export default function MT5AccountsPage() {
   const [loading, setLoading] = useState(false);
   const [loadingServers, setLoadingServers] = useState(false);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
+  const [loadingRecover, setLoadingRecover] = useState(false);
   const [error, setError] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [manualServerInput, setManualServerInput] = useState(false);
@@ -258,6 +259,50 @@ export default function MT5AccountsPage() {
     }
   };
 
+  const recoverOrphanAccount = async () => {
+    setError("");
+    setLoadingRecover(true);
+    try {
+      const pending = sessionStorage.getItem("pendingMt5Link");
+      let body: Record<string, string> = {};
+      if (pending) {
+        body = JSON.parse(pending) as Record<string, string>;
+      } else {
+        const login = String(formData.account_number).trim().replace(/\s/g, "");
+        const server = formData.server_name.trim();
+        if (!login || !server) {
+          throw new Error(
+            "Renseignez broker FXcess, serveur FXcess-Demo et n° de compte, puis cliquez à nouveau.",
+          );
+        }
+        body = {
+          login,
+          server,
+          broker_name: formData.broker_name.trim() || "FXcess",
+        };
+      }
+
+      const res = await fetch("/api/metaapi/sync-orphan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!data?.success) {
+        throw new Error(
+          data?.error ||
+            "Compte MetaAPI introuvable — vérifiez qu'il est CONNECTED sur MetaAPI.",
+        );
+      }
+      sessionStorage.removeItem("pendingMt5Link");
+      await fetchData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingRecover(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -291,7 +336,13 @@ export default function MT5AccountsPage() {
           ? "mt4"
           : (selectedBroker?.platform ?? "mt5");
 
-      // 1. Connecter le compte à MetaApi (vérifie MT5 CONNECTED avant succès)
+      const pendingLink = {
+        login,
+        server: requestedServer,
+        broker_name: formData.broker_name.trim(),
+      };
+      sessionStorage.setItem("pendingMt5Link", JSON.stringify(pendingLink));
+
       const metaApiResponse = await fetch("/api/metaapi/connect-account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -318,8 +369,20 @@ export default function MT5AccountsPage() {
         metaApiData = JSON.parse(rawBody) as typeof metaApiData;
       } catch {
         if (metaApiResponse.status === 504) {
+          const recoverRes = await fetch("/api/metaapi/sync-orphan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(pendingLink),
+          });
+          const recoverData = await recoverRes.json().catch(() => ({}));
+          if (recoverData?.success) {
+            sessionStorage.removeItem("pendingMt5Link");
+            setShowAddForm(false);
+            await fetchData();
+            return;
+          }
           throw new Error(
-            "Connexion interrompue (timeout 2 min). MetaAPI met trop de temps — vérifiez FXcess-Demo + login/mot de passe MT4, puis réessayez.",
+            "Timeout serveur mais compte peut-être sur MetaAPI — cliquez « Récupérer mon compte MetaAPI » ci-dessous.",
           );
         }
         throw new Error(
@@ -829,6 +892,20 @@ export default function MT5AccountsPage() {
             <p className="text-gray-600 mb-4">
               Connectez votre compte MT5 pour recevoir automatiquement les
               signaux de trading
+            </p>
+            <button
+              type="button"
+              onClick={recoverOrphanAccount}
+              disabled={loadingRecover}
+              className="btn btn-secondary"
+            >
+              {loadingRecover
+                ? "Récupération..."
+                : "Récupérer mon compte MetaAPI (FXcess)"}
+            </button>
+            <p className="text-xs text-gray-500 mt-3 max-w-md mx-auto">
+              Si MetaAPI affiche déjà votre compte CONNECTED mais rien ici :
+              remplissez FXcess / FXcess-Demo / n° compte puis cliquez ce bouton.
             </p>
           </div>
         )}

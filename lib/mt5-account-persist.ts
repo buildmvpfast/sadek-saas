@@ -124,11 +124,52 @@ export async function persistMt5AccountRow(
   return { ok: true, id: inserted.id };
 }
 
+function serversMatch(a: string, b: string): boolean {
+  return (
+    a.trim().toLowerCase().replace(/\s+/g, "") ===
+    b.trim().toLowerCase().replace(/\s+/g, "")
+  );
+}
+
+function isConnectedProvisioningAccount(acc: Record<string, unknown>): boolean {
+  return (
+    String(acc.state ?? "") === "DEPLOYED" &&
+    String(acc.connectionStatus ?? "") === "CONNECTED"
+  );
+}
+
 export type SyncOrphanOptions = {
   login?: string;
   server?: string;
   brokerName?: string;
 };
+
+export async function listUnlinkedMetaApiAccounts(
+  supabase: SupabaseClient,
+  token: string,
+): Promise<Record<string, unknown>[]> {
+  const { data: allLinked } = await supabase
+    .from("mt5_accounts")
+    .select("metaapi_account_id")
+    .not("metaapi_account_id", "is", null);
+
+  const globallyLinked = new Set(
+    (allLinked ?? [])
+      .map((r) => r.metaapi_account_id)
+      .filter((id): id is string => typeof id === "string"),
+  );
+
+  const accounts = await listProvisioningAccounts(token);
+  return accounts.filter((acc) => {
+    const id = acc.id;
+    return (
+      typeof id === "string" &&
+      id.length > 0 &&
+      !globallyLinked.has(id) &&
+      isConnectedProvisioningAccount(acc)
+    );
+  });
+}
 
 export async function syncOrphanMetaApiAccount(
   supabase: SupabaseClient,
@@ -186,9 +227,7 @@ export async function syncOrphanMetaApiAccount(
     if (label.userId && label.userId !== userId) return false;
 
     if (targetLogin && accLogin !== targetLogin) return false;
-    if (targetServer && accServer.toLowerCase() !== targetServer.toLowerCase()) {
-      return false;
-    }
+    if (targetServer && !serversMatch(accServer, targetServer)) return false;
 
     if (!targetLogin && !targetServer) {
       if (label.userId === userId) return true;
@@ -201,20 +240,37 @@ export async function syncOrphanMetaApiAccount(
   });
 
   if (candidates.length === 0) {
-    const legacyFxcess = accounts.filter((acc) => {
+    let legacyFxcess = accounts.filter((acc) => {
       const id = acc.id;
       if (typeof id !== "string" || !id || globallyLinked.has(id)) return false;
-      if (String(acc.state ?? "") !== "DEPLOYED") return false;
-      if (String(acc.connectionStatus ?? "") !== "CONNECTED") return false;
+      if (!isConnectedProvisioningAccount(acc)) return false;
       const label = parseAccountLabel(String(acc.name ?? ""));
       if (label.userId) return false;
+      const accLogin = normalizeLogin(acc.login as string | number | undefined);
+      if (targetLogin && accLogin !== targetLogin) return false;
+      if (targetServer) {
+        const accServer = canonicalConnectServer(
+          String(acc.server ?? ""),
+          options?.brokerName,
+        );
+        if (!serversMatch(accServer, targetServer)) return false;
+      }
       return (
-        !!label.login &&
-        isFxcessConnectContext(null, String(acc.server ?? ""))
+        isFxcessConnectContext(null, String(acc.server ?? "")) ||
+        String(acc.platform ?? "").toLowerCase() === "mt4"
       );
     });
-    if (legacyFxcess.length === 1) {
-      candidates.push(legacyFxcess[0]);
+
+    if (targetLogin && legacyFxcess.length > 1) {
+      legacyFxcess = legacyFxcess.filter(
+        (acc) =>
+          normalizeLogin(acc.login as string | number | undefined) ===
+          targetLogin,
+      );
+    }
+
+    if (legacyFxcess.length >= 1) {
+      candidates.push(...legacyFxcess);
     } else {
       return { synced: false, error: "Aucun compte MetaAPI orphelin trouvé" };
     }
