@@ -13,6 +13,10 @@ const SERVER_ALIASES: Record<string, string> = {
   vtmarketsdemo: "VTMarkets-Demo",
   fxcesslive01: "FXCESS-Live01",
   fxcesslive1: "FXCESS-Live01",
+  fxcessdemo: "FXCESS-Demo01",
+  "fxcess-demo": "FXCESS-Demo01",
+  fxcessdemo01: "FXCESS-Demo01",
+  vantagemarketsdemo: "VantageMarkets-Demo",
   raiseglobalsalive: "RaiseGlobalSA-LIVE",
   raiseglobalserver: "RaiseGroup-Server",
 };

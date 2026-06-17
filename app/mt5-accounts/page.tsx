@@ -13,6 +13,7 @@ type Broker = {
   id: string;
   name: string;
   servers?: string[];
+  platform?: "mt4" | "mt5";
 };
 
 type MT5Account = {
@@ -232,6 +233,11 @@ export default function MT5AccountsPage() {
         throw new Error("Serveur et numéro de compte sont requis.");
       }
 
+      const selectedBroker = brokers.find(
+        (b) => b.name === formData.broker_name.trim(),
+      );
+      const connectPlatform = selectedBroker?.platform ?? "mt5";
+
       // 1. Connecter le compte à MetaApi (vérifie MT5 CONNECTED avant succès)
       const metaApiResponse = await fetch("/api/metaapi/connect-account", {
         method: "POST",
@@ -242,7 +248,7 @@ export default function MT5AccountsPage() {
           password: formData.password.trim(),
           server: serverName,
           broker_name: formData.broker_name.trim(),
-          platform: "mt5",
+          platform: connectPlatform,
           magic: 0,
         }),
       });
@@ -388,7 +394,8 @@ export default function MT5AccountsPage() {
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <label className="block text-sm font-medium">
-                      Serveur MT5 *
+                      Serveur{" "}
+                      {formData.broker_name === "FXcess" ? "MT4" : "MT5"} *
                     </label>
                     {!loadingServers && servers.length > 0 && (
                       <button
@@ -421,21 +428,38 @@ export default function MT5AccountsPage() {
                         placeholder={
                           formData.broker_name === "VT Markets"
                             ? "Ex: VTMarkets-Live ou VTMarkets-Live 3"
-                            : "Ex: RaiseGlobal-Live"
+                            : formData.broker_name === "FXcess"
+                              ? "Ex: FXCESS-Demo01"
+                              : formData.broker_name === "Vantage"
+                                ? "Ex: VantageInternational-Demo"
+                                : "Ex: RaiseGlobal-Live"
                         }
                         required
                       />
                       <p className="text-xs text-gray-500 mt-1">
                         Entrez le nom exact du serveur (visible dans MT5)
                       </p>
-                      {formData.broker_name === "VT Markets" && (
+                      {formData.broker_name === "FXcess" && (
                         <p className="text-xs text-amber-800/90 mt-1.5">
-                          VT : le plus courant est{" "}
-                          <span className="font-mono">VTMarkets-Live</span> /{" "}
-                          <span className="font-mono">VTMarkets-Demo</span>{" "}
-                          (sans espace après VT). Si MT5 affiche un nœud
-                          numéroté, gardez l’espace comme dans MT5, ex.{" "}
-                          <span className="font-mono">VTMarkets-Live 5</span>.
+                          FXCess = MT4 uniquement. Demo :{" "}
+                          <span className="font-mono">FXCESS-Demo01</span> (pas
+                          « FXCess-Demo »). Copie exacte depuis MT4 → Fichier →
+                          Ouvrir un compte.
+                        </p>
+                      )}
+                      {formData.broker_name === "Vantage" && (
+                        <p className="text-xs text-amber-800/90 mt-1.5">
+                          Demo : souvent{" "}
+                          <span className="font-mono">
+                            VantageInternational-Demo
+                          </span>{" "}
+                          ou{" "}
+                          <span className="font-mono">
+                            VantageInternational-Demo 2
+                          </span>
+                          . Si{" "}
+                          <span className="font-mono">VantageMarkets-Demo</span>{" "}
+                          échoue, essayez l’International.
                         </p>
                       )}
                     </>
@@ -464,10 +488,29 @@ export default function MT5AccountsPage() {
                       </p>
                       {formData.broker_name === "VT Markets" && (
                         <p className="text-xs text-amber-800/90 mt-1.5">
-                          Si la liste ne contient pas votre nœud, saisie manuelle
-                          : copiez depuis MT5 — souvent{" "}
-                          <span className="font-mono">VTMarkets-Live</span> ou{" "}
-                          <span className="font-mono">VTMarkets-Live N</span>.
+                          VT : le plus courant est{" "}
+                          <span className="font-mono">VTMarkets-Live</span> /{" "}
+                          <span className="font-mono">VTMarkets-Demo</span>{" "}
+                          (sans espace après VT). Si MT5 affiche un nœud
+                          numéroté, gardez l’espace comme dans MT5, ex.{" "}
+                          <span className="font-mono">VTMarkets-Live 5</span>.
+                        </p>
+                      )}
+                      {formData.broker_name === "FXcess" && (
+                        <p className="text-xs text-amber-800/90 mt-1.5">
+                          Choisissez{" "}
+                          <span className="font-mono">FXCESS-Demo01</span> si
+                          disponible — « FXcess-Demo » est corrigé auto côté
+                          serveur.
+                        </p>
+                      )}
+                      {formData.broker_name === "Vantage" && (
+                        <p className="text-xs text-amber-800/90 mt-1.5">
+                          Demo fréquent :{" "}
+                          <span className="font-mono">
+                            VantageInternational-Demo
+                          </span>
+                          . Vérifiez le nom exact dans MT5.
                         </p>
                       )}
                     </>
@@ -541,7 +584,8 @@ export default function MT5AccountsPage() {
                 </select>
                 {formData.broker_name === "FXcess" && (
                   <p className="text-xs text-amber-700 mt-1">
-                    FXCess est MT4 — connexion en platform mt4 automatique.
+                    FXCess est MT4 — connexion platform mt4 automatique. Mot de
+                    passe principal MT4 requis (pas investisseur seul).
                   </p>
                 )}
               </div>

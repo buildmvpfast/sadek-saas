@@ -53,6 +53,8 @@ function buildVantageMarketsServers(): string[] {
   const prefix = "VantageMarkets";
   return uniqServers([
     `${prefix}-Demo`,
+    "VantageInternational-Demo",
+    "VantageInternational-Demo 2",
     `${prefix}-Live`,
     ...buildNumberedLive(prefix, [3, 4, 5, 6, 7, 8, 10, 11, 13, 14, 15, 19, 21]),
   ]);
@@ -62,6 +64,7 @@ function buildVantageInternationalServers(): string[] {
   const prefix = "VantageInternational";
   return uniqServers([
     `${prefix}-Demo`,
+    `${prefix}-Demo 2`,
     `${prefix}-Live`,
     ...buildNumberedLive(prefix, [
       3, 4, 5, 6, 7, 8, 10, 11, 13, 14, 15, 19, 21,
@@ -165,9 +168,12 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
   {
     name: "FXcess",
     servers: uniqServers([
+      "FXCESS-Demo01",
+      "FXCESS-Demo02",
       "FXCESS-Live01",
-      "FXcess-Live",
+      "FXCESS-Live02",
       "FXcess-Demo",
+      "FXcess-Live",
       "FXcess-Live01",
       "FXcess-Live02",
       "FXcess-Live03",
@@ -175,11 +181,6 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
       "FXcess-Real01",
       "FXcess-Real02",
       "FXcess-Real03",
-      "FXcess-MT5-Live",
-      "FXcess-MT5-Demo",
-      "FXcess-MT5-Real",
-      "FXcess-MT5-Real01",
-      "FXcess-MT5-Real02",
     ]),
     platform: "mt4",
   },

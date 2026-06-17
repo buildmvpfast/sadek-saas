@@ -9,8 +9,7 @@ import {
   METAAPI_PROVISIONING_ACCOUNTS_URL,
   removeDuplicateProvisioningAccounts,
 } from "@/lib/metaapi-provisioning";
-import { findBrokerByName } from "@/lib/metaapi-broker-servers";
-import { resolveServerName } from "@/lib/server-aliases";
+import { resolveBrokerConnectConfig } from "@/lib/broker-connect-config";
 
 /** Garde du temps pour deploy + JSON ; doit rester aligné avec `maxDuration` (littéral requis par Next.js). */
 const CONNECT_ROUTE_MAX_DURATION_SEC = 120;
@@ -40,6 +39,31 @@ function appendVtMarketsServerHint(message: string, server: string): string {
     message +
     " Pour VT Markets : serveur souvent « VTMarkets-Live » / « VTMarkets-Demo » (copier depuis MT5). Utilisez le mot de passe principal MT5, pas seulement le mot de passe investisseur, si la connexion échoue."
   );
+}
+
+function appendBrokerConnectHint(
+  message: string,
+  server: string,
+  brokerHint: string,
+): string {
+  let out = appendVtMarketsServerHint(message, server);
+  const cfg = resolveBrokerConnectConfig(server, brokerHint);
+  if (cfg.hint && !out.includes(cfg.hint.slice(0, 40))) {
+    out += ` ${cfg.hint}`;
+  }
+  if (cfg.platform === "mt4" && !out.toLowerCase().includes("mt4")) {
+    out +=
+      " FXCess = MT4 uniquement — serveur demo typique : FXCESS-Demo01 (copier depuis MT4).";
+  }
+  if (
+    /vantage/i.test(server) &&
+    /vantagemarkets-demo/i.test(server.replace(/\s+/g, "")) &&
+    !out.includes("VantageInternational-Demo")
+  ) {
+    out +=
+      " Si échec : essayez VantageInternational-Demo (nom exact dans MT5 → Fichier → Ouvrir un compte).";
+  }
+  return out;
 }
 
 function connectionBrokerHint(connectionStatus: string | undefined): string {
@@ -155,10 +179,13 @@ export async function POST(request: Request) {
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const brokerHint =
       typeof body.broker_name === "string" ? body.broker_name.trim() : "";
-    let platform = body.platform || "mt5";
+    const connectCfg = resolveBrokerConnectConfig(
+      normalizeServer(String(rawServer ?? "")),
+      brokerHint,
+    );
+    const server = connectCfg.server;
+    const platform = connectCfg.platform;
     const magic = body.magic ?? 0;
-
-    const server = resolveServerName(normalizeServer(String(rawServer ?? "")));
     const login = normalizeLogin(rawLogin);
     const password = String(rawPassword ?? "").trim();
 
@@ -179,14 +206,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const brokerEntry = brokerHint ? findBrokerByName(brokerHint) : undefined;
-    if (brokerEntry?.platform === "mt4" && platform === "mt5") {
-      platform = "mt4";
-    }
-    if (/fxcess/i.test(server) || /fxcess/i.test(brokerHint)) {
-      platform = "mt4";
-    }
-
     const token = process.env.METAAPI_TOKEN;
 
     await removeDuplicateProvisioningAccounts(token, login, server);
@@ -203,7 +222,7 @@ export async function POST(request: Request) {
       accountTypeRaw === "cloud-g1" ? "cloud-g1" : "cloud-g2";
 
     const createBody: Record<string, unknown> = {
-      name: name || `MT5 ${login}`,
+      name: name || `${platform.toUpperCase()} ${login}`,
       type: accountType,
       login,
       password,
@@ -214,7 +233,9 @@ export async function POST(request: Request) {
       region: provisioningRegion,
       reliability: "high",
     };
-    if (looksLikeVtMarketsServer(server)) {
+    if (connectCfg.keywords.length > 0) {
+      createBody.keywords = connectCfg.keywords;
+    } else if (looksLikeVtMarketsServer(server)) {
       createBody.keywords = ["VT Markets", "VTMarkets", "Vantage"];
     }
 
@@ -246,7 +267,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: appendVtMarketsServerHint(msg, server),
+          error: appendBrokerConnectHint(msg, server, brokerHint),
           details: data,
         },
         { status: 200 },
@@ -294,7 +315,7 @@ export async function POST(request: Request) {
       await deleteProvisioningAccount(accountId, token);
       return NextResponse.json({
         success: false,
-        error: appendVtMarketsServerHint(full, server),
+        error: appendBrokerConnectHint(full, server, brokerHint),
         details: deployError,
       });
     }
@@ -308,7 +329,7 @@ export async function POST(request: Request) {
         "Connexion MT5 impossible. Vérifiez serveur, numéro de compte et mot de passe.";
       return NextResponse.json({
         success: false,
-        error: appendVtMarketsServerHint(baseErr, server),
+        error: appendBrokerConnectHint(baseErr, server, brokerHint),
         state: wait.last?.state,
         connectionStatus: wait.last?.connectionStatus,
       });
