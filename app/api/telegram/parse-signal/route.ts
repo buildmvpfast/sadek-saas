@@ -22,6 +22,20 @@ import { parseLocaleNumber, parseLocaleNumberOr } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
 import { requireInternalSecret } from "@/lib/internal-auth";
 
+/** Déduplique les TP (évite 9 positions si le parser renvoie des doublons). */
+function dedupeTakeProfits(values: number[]): number[] {
+  const seen = new Set<string>();
+  const out: number[] = [];
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    const key = v.toFixed(5);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+  }
+  return out;
+}
+
 export async function POST(request: NextRequest) {
   const authError = requireInternalSecret(request);
   if (authError) return authError;
@@ -430,10 +444,29 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Déduplication message Telegram (webhook retry / double POST)
+    const { data: existingSignal } = await supabase
+      .from("telegram_signals")
+      .select("id")
+      .eq("channel_id", channel.id)
+      .eq("message_id", messageId)
+      .maybeSingle();
+
+    if (existingSignal?.id) {
+      console.log(`⏭️ Signal déjà traité (message_id ${messageId})`);
+      return NextResponse.json({
+        success: true,
+        message: "Signal déjà traité",
+        signal_id: existingSignal.id,
+      });
+    }
+
     // Déterminer order_type: MARKET si pas de entry_price, LIMIT si entry_price existe
     const orderType =
       (signal as { orderType?: string }).orderType ||
       (signal.entryPrice ? "LIMIT" : "MARKET");
+
+    const takeProfitsForSave = dedupeTakeProfits(signal.takeProfits || []);
 
     // Sauvegarder le signal
     const { data: savedSignal, error } = await supabase
@@ -447,8 +480,7 @@ export async function POST(request: NextRequest) {
         stop_loss: signal.stopLoss,
         take_profit: signal.takeProfit,
         // Store all TP values so we can create one trade per TP later
-        all_tp:
-          (signal.takeProfits || []).length > 0 ? signal.takeProfits : null,
+        all_tp: takeProfitsForSave.length > 0 ? takeProfitsForSave : null,
         volume: signal.volume || 0.01,
         message_text: messageText,
         order_type: signal.orderType || orderType, // MARKET, LIMIT, ou STOP
@@ -457,6 +489,12 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
+      if (error.code === "23505") {
+        return NextResponse.json({
+          success: true,
+          message: "Signal déjà traité",
+        });
+      }
       console.error("Error saving signal:", error);
       return NextResponse.json({ error: "Erreur sauvegarde" }, { status: 500 });
     }
@@ -617,7 +655,7 @@ async function parseSignal(messageText: string) {
         .filter((v: number) => Number.isFinite(v));
 
       if (tpFromMsg.length > 0) {
-        takeProfits = tpFromMsg;
+        takeProfits = dedupeTakeProfits(tpFromMsg);
         const sorted = [...takeProfits].sort((a, b) => a - b);
         takeProfit =
           sorted.length > 0
@@ -780,14 +818,16 @@ JSON UNIQUEMENT (ou null si type+symbol impossibles):
         ? [parsed.takeProfit]
         : [];
 
-    const takeProfits = (takeProfitsRaw || [])
-      .map((v: any) =>
-        v !== null && v !== undefined ? parseLocaleNumber(v) : null,
-      )
-      .filter(
-        (v: number | null): v is number =>
-          typeof v === "number" && !Number.isNaN(v),
-      );
+    const takeProfits = dedupeTakeProfits(
+      (takeProfitsRaw || [])
+        .map((v: any) =>
+          v !== null && v !== undefined ? parseLocaleNumber(v) : null,
+        )
+        .filter(
+          (v: number | null): v is number =>
+            typeof v === "number" && !Number.isNaN(v),
+        ),
+    );
 
     const sorted = [...takeProfits].sort((a: number, b: number) => a - b);
     const takeProfit =
@@ -882,29 +922,35 @@ async function executeTradesForSignal(signalId: string) {
   // - If `all_tp` exists, use it as the TP list
   // - Otherwise fallback to the legacy single `take_profit`
   const rawAllTp = (signal as any).all_tp;
-  const takeProfits: number[] = (() => {
-    if (Array.isArray(rawAllTp)) {
-      return rawAllTp
-        .map((v) =>
-          v !== null && v !== undefined ? parseFloat(v as any) : NaN,
-        )
-        .filter((v) => !Number.isNaN(v));
-    }
-    if (typeof rawAllTp === "string") {
-      try {
-        const parsed = JSON.parse(rawAllTp);
-        if (Array.isArray(parsed)) {
-          return parsed
-            .map((v) => (v !== null && v !== undefined ? parseFloat(v) : NaN))
+  const takeProfits = dedupeTakeProfits(
+      (() => {
+        if (Array.isArray(rawAllTp)) {
+          return rawAllTp
+            .map((v) =>
+              v !== null && v !== undefined ? parseFloat(v as any) : NaN,
+            )
             .filter((v) => !Number.isNaN(v));
         }
-      } catch {
-        // ignore
-      }
-    }
-    const tp = signal.take_profit ? parseFloat(signal.take_profit as any) : NaN;
-    return !Number.isNaN(tp) ? [tp] : [];
-  })();
+        if (typeof rawAllTp === "string") {
+          try {
+            const parsed = JSON.parse(rawAllTp);
+            if (Array.isArray(parsed)) {
+              return parsed
+                .map((v) =>
+                  v !== null && v !== undefined ? parseFloat(v) : NaN,
+                )
+                .filter((v) => !Number.isNaN(v));
+            }
+          } catch {
+            // ignore
+          }
+        }
+        const tp = signal.take_profit
+          ? parseFloat(signal.take_profit as any)
+          : NaN;
+        return !Number.isNaN(tp) ? [tp] : [];
+      })(),
+  );
 
   // For market orders without TP, we still create exactly one trade (take_profit = null)
   const tpValues: Array<number | null> =
@@ -1002,11 +1048,31 @@ async function executeTradesForSignal(signalId: string) {
       `✅ Symbole: ${signal.symbol} → ${normalizedSymbol} → ${brokerSymbol}`,
     );
 
+    const { count: existingForSignal } = await supabase
+      .from("telegram_trades")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", subscription.user_id)
+      .eq("signal_id", signalId)
+      .eq("mt5_account_id", mt5Account.id)
+      .in("status", [
+        "pending",
+        "pending_partial",
+        "executed",
+        "executing",
+      ]);
+
+    if ((existingForSignal ?? 0) >= tpValues.length) {
+      console.log(
+        `⏭️ ${existingForSignal} trade(s) déjà créés pour signal ${signalId} (user ${subscription.user_id})`,
+      );
+      continue;
+    }
+
     const { count: openCount } = await supabase
       .from("telegram_trades")
       .select("id", { count: "exact", head: true })
       .eq("user_id", subscription.user_id)
-      .in("status", ["executed", "pending", "pending_partial"]);
+      .in("status", ["executed", "pending", "pending_partial", "executing"]);
     // Sinon : un trade par TP (forex / index en LIMIT, ou 1 seul TP).
     const tpCount = tpValues.length;
     const entryN = parseLocaleNumber(signal.entry_price);
@@ -1066,7 +1132,12 @@ async function executeTradesForSignal(signalId: string) {
         .eq("user_id", subscription.user_id)
         .eq("signal_id", signalId)
         .eq("mt5_account_id", mt5Account.id)
-        .in("status", ["pending", "pending_partial", "executed"]);
+        .in("status", [
+          "pending",
+          "pending_partial",
+          "executed",
+          "executing",
+        ]);
 
       existingQuery =
         tpValue === null

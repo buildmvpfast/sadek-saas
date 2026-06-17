@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
     console.log(`📊 ${pendingTrades.length} trade(s) en attente`);
     let executed = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (const trade of pendingTrades) {
       const result = await executeOnePendingTrade(
@@ -84,6 +85,10 @@ export async function POST(request: NextRequest) {
       );
 
       if (result.ok) {
+        if (result.skipped) {
+          skipped++;
+          continue;
+        }
         executed++;
         console.log(`✅ Trade ${trade.id} exécuté`);
       } else {
@@ -94,13 +99,6 @@ export async function POST(request: NextRequest) {
           continue;
         }
         failed++;
-        await supabase
-          .from("telegram_trades")
-          .update({
-            status: "failed",
-            error_message: result.error,
-          })
-          .eq("id", trade.id);
         console.error(`❌ Trade ${trade.id}:`, result.error);
       }
     }
@@ -109,6 +107,7 @@ export async function POST(request: NextRequest) {
       success: true,
       executed,
       failed,
+      skipped,
       total: pendingTrades.length,
     });
   } catch (error: unknown) {

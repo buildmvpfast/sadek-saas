@@ -20,6 +20,7 @@ import {
   slippageDeviation,
   type TradingRiskSettings,
 } from "@/lib/trade-risk";
+import { isTransientMetaApiError } from "@/lib/metaapi-errors";
 
 export type PendingTradeRow = {
   id: string;
@@ -91,7 +92,7 @@ async function countOpenTrades(
     .from("telegram_trades")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
-    .in("status", ["executed", "pending", "pending_partial"]);
+    .in("status", ["executed", "pending", "pending_partial", "executing"]);
   return count ?? 0;
 }
 
@@ -133,8 +134,45 @@ async function loadRiskContext(
 }
 
 export type ExecuteOneResult =
-  | { ok: true; positionId?: number | null }
+  | { ok: true; positionId?: number | null; skipped?: boolean }
   | { ok: false; error: string; paused?: boolean };
+
+/** Réserve un trade pending avant envoi MetaAPI (évite double exécution API + worker). */
+export async function claimPendingTrade(
+  supabase: SupabaseClient,
+  tradeId: string,
+  currentStatus: string,
+): Promise<boolean> {
+  const allowed =
+    currentStatus === "pending_partial"
+      ? (["pending_partial"] as const)
+      : (["pending"] as const);
+
+  const { data, error } = await supabase
+    .from("telegram_trades")
+    .update({
+      status: "executing",
+      executed_at: new Date().toISOString(),
+    })
+    .eq("id", tradeId)
+    .in("status", [...allowed])
+    .select("id")
+    .maybeSingle();
+
+  return !error && !!data?.id;
+}
+
+async function releaseExecutingTrade(
+  supabase: SupabaseClient,
+  tradeId: string,
+  backTo: "pending" | "pending_partial",
+): Promise<void> {
+  await supabase
+    .from("telegram_trades")
+    .update({ status: backTo, executed_at: null })
+    .eq("id", tradeId)
+    .eq("status", "executing");
+}
 
 export async function executeOnePendingTrade(
   supabase: SupabaseClient,
@@ -149,6 +187,53 @@ export async function executeOnePendingTrade(
   }
 
   const isPartialClosure = trade.status === "pending_partial";
+  const claimFrom = isPartialClosure ? "pending_partial" : "pending";
+
+  const claimed = await claimPendingTrade(supabase, trade.id, claimFrom);
+  if (!claimed) {
+    return { ok: true, skipped: true };
+  }
+
+  const releaseStatus = isPartialClosure ? "pending_partial" : "pending";
+
+  try {
+    const result = await executeClaimedTrade(
+      supabase,
+      trade,
+      token,
+      metaApiAccountId,
+      isPartialClosure,
+    );
+    if (!result.ok) {
+      if (isTransientMetaApiError(result.error)) {
+        await releaseExecutingTrade(supabase, trade.id, releaseStatus);
+      } else {
+        await supabase
+          .from("telegram_trades")
+          .update({
+            status: "failed",
+            error_message: result.error,
+          })
+          .eq("id", trade.id)
+          .eq("status", "executing");
+      }
+    }
+    return result;
+  } catch (err: unknown) {
+    await releaseExecutingTrade(supabase, trade.id, releaseStatus);
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
+  }
+}
+
+async function executeClaimedTrade(
+  supabase: SupabaseClient,
+  trade: PendingTradeRow,
+  token: string,
+  metaApiAccountId: string,
+  isPartialClosure: boolean,
+): Promise<ExecuteOneResult> {
+  const mt5Account = embed(trade.mt5_accounts);
 
   const { settings, equity, openCount } = await loadRiskContext(
     supabase,

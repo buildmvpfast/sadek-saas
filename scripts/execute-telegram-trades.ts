@@ -13,11 +13,26 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
+async function releaseStaleExecutingTrades(): Promise<void> {
+  const cutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from("telegram_trades")
+    .update({ status: "pending", executed_at: null })
+    .eq("status", "executing")
+    .lt("executed_at", cutoff)
+    .select("id");
+  if (data?.length) {
+    console.warn(`♻️ ${data.length} trade(s) executing bloqués → pending`);
+  }
+}
+
 async function executePendingTrades() {
   if (!process.env.METAAPI_TOKEN) {
     console.error("❌ METAAPI_TOKEN non configuré");
     return;
   }
+
+  await releaseStaleExecutingTrades();
 
   const { data: pendingTrades, error } = await supabase
     .from("telegram_trades")
@@ -44,6 +59,7 @@ async function executePendingTrades() {
 
   let executed = 0;
   let failed = 0;
+  let skipped = 0;
   for (const trade of pendingTrades) {
     const result = await executeOnePendingTrade(
       supabase,
@@ -51,18 +67,18 @@ async function executePendingTrades() {
       process.env.METAAPI_TOKEN!,
     );
     if (result.ok) {
-      executed++;
+      if (result.skipped) {
+        skipped++;
+      } else {
+        executed++;
+      }
     } else if (isTransientMetaApiError(result.error)) {
       console.warn(`⏳ ${trade.id}: réseau MetaAPI, retry — ${result.error}`);
     } else {
       failed++;
-      await supabase
-        .from("telegram_trades")
-        .update({ status: "failed", error_message: result.error })
-        .eq("id", trade.id);
     }
   }
-  console.log(`📈 ${executed} ok, ${failed} failed`);
+  console.log(`📈 ${executed} ok, ${failed} failed, ${skipped} skipped`);
 }
 
 async function start() {
