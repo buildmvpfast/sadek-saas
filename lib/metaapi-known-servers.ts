@@ -92,6 +92,7 @@ export function matchKnownServer(
       let score = 0;
       if (sk.includes(inputKey) || inputKey.includes(sk)) score += 50;
       if (/vantage/i.test(server)) score += 20;
+      if (/fxcess/i.test(server)) score += 25;
       if (isDemo && /demo/i.test(server)) score += 30;
       if (isLive && /live|real/i.test(server)) score += 30;
       if (/international/i.test(trimmed) && /international/i.test(server))
@@ -148,6 +149,56 @@ export async function searchVantageKnownServers(
   return merged;
 }
 
+/** Agrège requêtes MetaAPI pour FXCess (MT4). */
+export async function searchFxcessKnownServers(
+  token: string,
+): Promise<Record<string, string[]>> {
+  const queries = [
+    "fxcess",
+    "fxcess ltd",
+    "mfx",
+    "mfx capital",
+    "fxcess demo",
+  ];
+
+  const merged: Record<string, string[]> = {};
+  for (const q of queries) {
+    const chunk = await searchKnownMtServers(4, q, token);
+    for (const [broker, servers] of Object.entries(chunk)) {
+      if (!merged[broker]) merged[broker] = [];
+      for (const s of servers) {
+        if (!merged[broker].includes(s)) merged[broker].push(s);
+      }
+    }
+  }
+  return merged;
+}
+
+/** Liste plate triée : demo d'abord, puis live. */
+export function extractSuggestedServersFromMetaApiError(
+  data: Record<string, unknown>,
+): KnownServerMatch[] {
+  const details = data.details as Record<string, unknown> | undefined;
+  const byBrokers = details?.serversByBrokers as
+    | Record<string, string[]>
+    | undefined;
+  if (!byBrokers || typeof byBrokers !== "object") return [];
+
+  const out: KnownServerMatch[] = [];
+  for (const [broker, servers] of Object.entries(byBrokers)) {
+    if (!Array.isArray(servers)) continue;
+    for (const server of servers) {
+      if (typeof server !== "string" || !server.trim()) continue;
+      out.push({
+        server: server.trim(),
+        keywords: [broker],
+        brokerNames: [broker],
+      });
+    }
+  }
+  return out;
+}
+
 /** Liste plate triée : demo d'abord, puis live. */
 export function listKnownServerNames(
   known: Record<string, string[]>,
@@ -163,6 +214,14 @@ export function listKnownServerNames(
 }
 
 /** Candidats de repli si le serveur saisi n'est pas reconnu MetaAPI. */
+export function fxcessConnectFallbacks(rawServer: string): string[] {
+  const isDemo = /demo/i.test(rawServer);
+  if (isDemo) {
+    return ["FXCESS-Demo01", "FXCESS-Demo02"];
+  }
+  return ["FXCESS-Live01", "FXCESS-Live02", rawServer.trim()];
+}
+
 export function vantageConnectFallbacks(rawServer: string): string[] {
   const isDemo = /demo/i.test(rawServer);
   if (isDemo) {

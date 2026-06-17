@@ -4,8 +4,9 @@
 import { resolveServerName } from "@/lib/server-aliases";
 import { findBrokerByName } from "@/lib/metaapi-broker-servers";
 import {
+  fxcessConnectFallbacks,
   matchKnownServer,
-  searchKnownMtServers,
+  searchFxcessKnownServers,
   searchVantageKnownServers,
   vantageConnectFallbacks,
 } from "@/lib/metaapi-known-servers";
@@ -68,11 +69,10 @@ export function resolveBrokerConnectConfig(
   const keywords: string[] = [];
 
   if (/fxcess/i.test(blob)) {
-    keywords.push("FXCess", "FXCESS", "MFX", "FXcess Ltd");
     return {
       server,
       platform: "mt4",
-      keywords,
+      keywords: [],
       hint:
         "FXCess = MT4 uniquement. Serveur demo : FXCESS-Demo01 (pas FXCess-Demo). Copie exacte depuis MT4.",
     };
@@ -160,12 +160,20 @@ export async function buildConnectAttempts(
   }
 
   if (/fxcess/i.test(blob)) {
-    const known = await searchKnownMtServers(4, "fxcess", token);
+    const known = await searchFxcessKnownServers(token);
     const matched =
       matchKnownServer(rawServer, known) ??
       matchKnownServer(cfg.server, known);
+
     if (matched) push(matched.server, matched.keywords, "mt4");
+
     push(cfg.server, cfg.keywords, "mt4");
+
+    for (const fb of fxcessConnectFallbacks(rawServer)) {
+      const m = matchKnownServer(fb, known);
+      push(m?.server ?? fb, m?.keywords ?? cfg.keywords, "mt4");
+    }
+
     return attempts;
   }
 

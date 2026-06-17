@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { findBrokerByName } from "@/lib/metaapi-broker-servers";
 import {
   listKnownServerNames,
+  searchFxcessKnownServers,
   searchVantageKnownServers,
 } from "@/lib/metaapi-known-servers";
 import {
@@ -19,22 +20,19 @@ function sortServersDemoFirst(names: string[]): string[] {
   });
 }
 
-async function mergeVantageServers(staticServers: string[]): Promise<{
-  servers: string[];
-  source: string;
-}> {
+async function mergeBrokerServers(
+  staticServers: string[],
+  fetchKnown: (token: string) => Promise<Record<string, string[]>>,
+): Promise<{ servers: string[]; source: string }> {
   const token = process.env.METAAPI_TOKEN;
   if (!token) {
     return { servers: sortServersDemoFirst(staticServers), source: "static" };
   }
 
   try {
-    const known = await searchVantageKnownServers(token, "mt5");
+    const known = await fetchKnown(token);
     const fromApi = listKnownServerNames(known);
-    const merged = sortServersDemoFirst([
-      ...fromApi,
-      ...staticServers,
-    ]);
+    const merged = sortServersDemoFirst([...fromApi, ...staticServers]);
     const uniq = Array.from(
       new Set(merged.map((s) => s.trim()).filter(Boolean)),
     );
@@ -88,7 +86,15 @@ export async function GET(request: Request) {
     let source = "static";
 
     if (/vantage/i.test(broker.name)) {
-      const merged = await mergeVantageServers(broker.servers);
+      const merged = await mergeBrokerServers(broker.servers, (t) =>
+        searchVantageKnownServers(t, "mt5"),
+      );
+      serverNames = merged.servers;
+      source = merged.source;
+    } else if (/fxcess/i.test(broker.name)) {
+      const merged = await mergeBrokerServers(broker.servers, (t) =>
+        searchFxcessKnownServers(t),
+      );
       serverNames = merged.servers;
       source = merged.source;
     } else {

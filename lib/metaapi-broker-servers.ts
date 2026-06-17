@@ -4,6 +4,7 @@
  */
 import { resolveServerName } from "@/lib/server-aliases";
 import { VANTAGE_MT5_SERVERS } from "@/lib/vantage-servers";
+import { FXCESS_MT4_SERVERS } from "@/lib/fxcess-servers";
 
 export type BrokerServersEntry = {
   name: string;
@@ -131,21 +132,7 @@ export const METAAPI_BROKER_SERVERS: BrokerServersEntry[] = [
   },
   {
     name: "FXcess",
-    servers: uniqServers([
-      "FXCESS-Demo01",
-      "FXCESS-Demo02",
-      "FXCESS-Live01",
-      "FXCESS-Live02",
-      "FXcess-Demo",
-      "FXcess-Live",
-      "FXcess-Live01",
-      "FXcess-Live02",
-      "FXcess-Live03",
-      "FXcess-Real",
-      "FXcess-Real01",
-      "FXcess-Real02",
-      "FXcess-Real03",
-    ]),
+    servers: uniqServers([...FXCESS_MT4_SERVERS]),
     platform: "mt4",
   },
   {

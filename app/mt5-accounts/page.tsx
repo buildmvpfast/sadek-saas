@@ -182,6 +182,14 @@ export default function MT5AccountsPage() {
         );
         setServers(names);
 
+        if (brokerName === "FXcess" && !formData.server_name) {
+          setFormData((prev) => ({
+            ...prev,
+            server_name: names.includes("FXCESS-Demo01")
+              ? "FXCESS-Demo01"
+              : names.find((n: string) => /demo/i.test(n)) ?? "",
+          }));
+        }
         if (brokerName === "Vantage" && !formData.server_name) {
           setFormData((prev) => ({
             ...prev,
@@ -622,8 +630,10 @@ export default function MT5AccountsPage() {
                 className="btn btn-primary w-full"
               >
                 {loadingSubmit
-                  ? "Connexion MetaAPI + MT5 (jusqu’à ~90 s, serveur manuel inclus)…"
-                  : "Ajouter le compte"}
+                  ? "Connexion MetaAPI (jusqu’à ~90 s)…"
+                  : formData.broker_name === "FXcess"
+                    ? "Ajouter le compte MT4"
+                    : "Ajouter le compte"}
               </button>
             </form>
           </div>

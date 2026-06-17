@@ -9,7 +9,12 @@ import {
   METAAPI_PROVISIONING_ACCOUNTS_URL,
   removeDuplicateProvisioningAccounts,
 } from "@/lib/metaapi-provisioning";
-import { buildConnectAttempts, resolveBrokerConnectConfig } from "@/lib/broker-connect-config";
+import {
+  buildConnectAttempts,
+  resolveBrokerConnectConfig,
+  type ConnectAttempt,
+} from "@/lib/broker-connect-config";
+import { extractSuggestedServersFromMetaApiError } from "@/lib/metaapi-known-servers";
 
 /** Garde du temps pour deploy + JSON ; doit rester aligné avec `maxDuration` (littéral requis par Next.js). */
 const CONNECT_ROUTE_MAX_DURATION_SEC = 120;
@@ -53,7 +58,14 @@ function appendBrokerConnectHint(
   }
   if (cfg.platform === "mt4" && !out.toLowerCase().includes("mt4")) {
     out +=
-      " FXCess = MT4 uniquement — serveur demo typique : FXCESS-Demo01 (copier depuis MT4).";
+      " FXCess = MT4 — serveur demo : FXCESS-Demo01 (copier depuis MT4, pas « FXcess-Demo »).";
+  }
+  if (
+    /validation failed/i.test(message) &&
+    /fxcess/i.test(`${server} ${brokerHint}`)
+  ) {
+    out +=
+      " MetaAPI ne reconnaît pas ce serveur — utilisez FXCESS-Demo01 exactement.";
   }
   if (
     /vantage/i.test(server) &&
@@ -98,6 +110,15 @@ type CreateResult =
   | { ok: true; accountId: string; server: string; data: Record<string, unknown> }
   | { ok: false; validation: boolean; error: string; data?: Record<string, unknown> };
 
+function parseRetryAfterMs(header: string | null): number {
+  if (!header) return 60_000;
+  const asNum = Number.parseInt(header, 10);
+  if (!Number.isNaN(asNum)) return asNum * 1000;
+  const asDate = Date.parse(header);
+  if (!Number.isNaN(asDate)) return Math.max(asDate - Date.now(), 5000);
+  return 60_000;
+}
+
 async function createMetaApiAccount(
   token: string,
   params: {
@@ -128,47 +149,71 @@ async function createMetaApiAccount(
     createBody.keywords = params.keywords;
   }
 
-  const response = await fetch(METAAPI_PROVISIONING_ACCOUNTS_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "auth-token": token,
-      "transaction-id": randomBytes(16).toString("hex"),
-    },
-    body: JSON.stringify(createBody),
-  });
+  const transactionId = randomBytes(16).toString("hex");
 
-  const data = (await response.json()) as Record<string, unknown> & {
-    id?: string;
-  };
+  for (let poll = 0; poll < 4; poll++) {
+    const response = await fetch(METAAPI_PROVISIONING_ACCOUNTS_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "auth-token": token,
+        "transaction-id": transactionId,
+      },
+      body: JSON.stringify(createBody),
+    });
 
-  if (!response.ok) {
-    const msg =
-      (data.message as string) ||
-      (data.error as string) ||
-      "Échec de la création du compte MetaAPI";
-    return {
-      ok: false,
-      validation: isServerValidationError(response.status, data),
-      error: msg,
-      data,
+    const data = (await response.json()) as Record<string, unknown> & {
+      id?: string;
     };
-  }
 
-  if (!data.id) {
+    if (response.status === 202) {
+      if (poll < 3) {
+        await sleep(parseRetryAfterMs(response.headers.get("Retry-After")));
+        continue;
+      }
+      return {
+        ok: false,
+        validation: false,
+        error:
+          "MetaAPI détecte encore les paramètres broker — réessayez dans 1 minute.",
+        data,
+      };
+    }
+
+    if (!response.ok) {
+      const msg =
+        (data.message as string) ||
+        (data.error as string) ||
+        "Échec de la création du compte MetaAPI";
+      return {
+        ok: false,
+        validation: isServerValidationError(response.status, data),
+        error: msg,
+        data,
+      };
+    }
+
+    if (!data.id) {
+      return {
+        ok: false,
+        validation: false,
+        error: "MetaApi n'a pas retourné d'ID de compte.",
+        data,
+      };
+    }
+
     return {
-      ok: false,
-      validation: false,
-      error: "MetaApi n'a pas retourné d'ID de compte.",
+      ok: true,
+      accountId: data.id as string,
+      server: params.server,
       data,
     };
   }
 
   return {
-    ok: true,
-    accountId: data.id as string,
-    server: params.server,
-    data,
+    ok: false,
+    validation: false,
+    error: "MetaAPI n'a pas répondu à temps.",
   };
 }
 
@@ -300,6 +345,17 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!/^\d+$/.test(login)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Numéro de compte invalide — uniquement des chiffres (login MT4/MT5).",
+        },
+        { status: 400 },
+      );
+    }
+
     const token = process.env.METAAPI_TOKEN;
 
     const provisioningRegion =
@@ -313,18 +369,28 @@ export async function POST(request: Request) {
     const accountType =
       accountTypeRaw === "cloud-g1" ? "cloud-g1" : "cloud-g2";
 
-    const attempts = await buildConnectAttempts(
+    const initialAttempts = await buildConnectAttempts(
       normalizeServer(String(rawServer ?? "")),
       brokerHint,
       token,
     );
 
+    const queue: ConnectAttempt[] = [...initialAttempts];
+    const triedServers = new Set<string>();
+
     let accountId: string | undefined;
     let connectedServer = displayServer;
     let lastCreateError = "Échec de la création du compte MetaAPI";
     let lastCreateData: Record<string, unknown> | undefined;
+    const triedList: string[] = [];
 
-    for (const attempt of attempts) {
+    while (queue.length > 0 && !accountId) {
+      const attempt = queue.shift()!;
+      const attemptKey = attempt.server.toLowerCase();
+      if (triedServers.has(attemptKey)) continue;
+      triedServers.add(attemptKey);
+      triedList.push(attempt.server);
+
       await removeDuplicateProvisioningAccounts(
         token,
         login,
@@ -346,6 +412,7 @@ export async function POST(request: Request) {
       console.log(
         "MetaApi create attempt:",
         attempt.server,
+        attempt.platform,
         created.ok ? "OK" : created.error,
       );
 
@@ -357,7 +424,24 @@ export async function POST(request: Request) {
 
       lastCreateError = created.error;
       lastCreateData = created.data;
-      if (!created.validation) break;
+
+      if (created.validation && created.data) {
+        for (const sug of extractSuggestedServersFromMetaApiError(
+          created.data,
+        )) {
+          const sugKey = sug.server.toLowerCase();
+          if (!triedServers.has(sugKey)) {
+            queue.push({
+              server: sug.server,
+              platform: attempt.platform,
+              keywords: sug.keywords,
+            });
+          }
+        }
+        continue;
+      }
+
+      break;
     }
 
     if (!accountId) {
@@ -370,7 +454,7 @@ export async function POST(request: Request) {
             brokerHint,
           ),
           details: lastCreateData,
-          triedServers: attempts.map((a) => a.server),
+          triedServers: triedList,
         },
         { status: 200 },
       );
