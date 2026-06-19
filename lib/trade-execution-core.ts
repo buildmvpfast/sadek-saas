@@ -12,6 +12,7 @@ import { parseLocaleNumber } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
 import { snapVolumeForMetaApiSymbol } from "@/lib/trade-volume";
 import { resolveBrokerSymbol, invalidateSymbolCache } from "@/lib/broker-symbol-resolver";
+import { mandatoryBrokerGoldSymbol } from "@/lib/broker-symbol-fallback";
 import { normalizeSymbol } from "@/lib/symbol-normalizer";
 import {
   applyLotMultiplier,
@@ -430,6 +431,14 @@ function isUnknownSymbolError(error?: string | null): boolean {
   );
 }
 
+function isRetryableTradeError(error?: string | null): boolean {
+  if (!error) return false;
+  return (
+    isUnknownSymbolError(error) ||
+    /validation failed|invalid.?stops|invalid.?price/i.test(error)
+  );
+}
+
 async function postTradeWithSymbolRetry(
   supabase: SupabaseClient,
   metaApiAccountId: string,
@@ -453,8 +462,18 @@ async function postTradeWithSymbolRetry(
     const result = isMarket
       ? await postMetaApiMarketReliable(metaApiAccountId, order, token)
       : await postMetaApiTradeWithStopsFallback(metaApiAccountId, order, token);
-    if (result.ok || !isUnknownSymbolError(result.error)) {
+    if (result.ok || !isRetryableTradeError(result.error)) {
       return { ...result, symbol };
+    }
+
+    const mandatory = mandatoryBrokerGoldSymbol(prepared.brokerName);
+    if (
+      mandatory &&
+      !tried.has(mandatory) &&
+      (prepared.standardSymbol === "GOLD" || prepared.standardSymbol === "XAUUSD")
+    ) {
+      symbol = mandatory;
+      continue;
     }
 
     invalidateSymbolCache(metaApiAccountId);

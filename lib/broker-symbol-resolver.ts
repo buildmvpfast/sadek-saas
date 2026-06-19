@@ -4,6 +4,7 @@
 import {
   brokerMappingKeys,
   staticBrokerSymbol,
+  mandatoryBrokerGoldSymbol,
 } from "@/lib/broker-symbol-fallback";
 import { normalizeSymbol } from "@/lib/symbol-normalizer";
 import { fetchMetaApiSymbolNames } from "@/lib/metaapi-trade-client";
@@ -236,6 +237,8 @@ function finalizeBrokerSymbol(
 
   if (normalizedSymbol === "GOLD" && (picked === "GOLD" || stdOnly.has(picked))) {
     const xau =
+      ordered.find((c) => /^XAUUSD\+$/i.test(c)) ??
+      ordered.find((c) => /XAUUSD-VIP/i.test(c)) ??
       ordered.find((c) => /^XAUUSD/i.test(c)) ??
       ordered.find((c) => /XAUUSD/i.test(c)) ??
       "XAUUSD";
@@ -259,6 +262,15 @@ function finalizeBrokerSymbol(
   }
 
   return picked;
+}
+
+function applyBrokerGoldOverride(
+  symbol: string,
+  normalizedSymbol: string,
+  brokerName: string | null,
+): string {
+  if (normalizedSymbol !== "GOLD") return symbol;
+  return mandatoryBrokerGoldSymbol(brokerName) ?? symbol;
 }
 
 export async function resolveBrokerSymbol(
@@ -339,7 +351,11 @@ export async function resolveBrokerSymbol(
         if (!mapped || exclude.has(mapped)) continue;
         const hit = findInLiveSet(mapped, live.symbols);
         if (hit && !exclude.has(hit)) {
-          return finalizeBrokerSymbol(hit, normalizedSymbol, ordered);
+          return applyBrokerGoldOverride(
+            finalizeBrokerSymbol(hit, normalizedSymbol, ordered),
+            normalizedSymbol,
+            brokerName,
+          );
         }
       }
 
@@ -350,19 +366,30 @@ export async function resolveBrokerSymbol(
         exclude,
         brokerName,
       );
-      if (picked) return finalizeBrokerSymbol(picked, normalizedSymbol, ordered);
+      if (picked) {
+        return applyBrokerGoldOverride(
+          finalizeBrokerSymbol(picked, normalizedSymbol, ordered),
+          normalizedSymbol,
+          brokerName,
+        );
+      }
       const fuzzy = fuzzyMatchSymbol(
         live.symbols,
         normalizedSymbol,
         exclude,
         brokerName,
       );
-      if (fuzzy) return fuzzy;
+      if (fuzzy) {
+        return applyBrokerGoldOverride(fuzzy, normalizedSymbol, brokerName);
+      }
     }
   }
 
-  // Sans liste live : fallback statique uniquement
   const fallback =
     ordered.find((c) => !exclude.has(c)) ?? normalizedSymbol;
-  return finalizeBrokerSymbol(fallback, normalizedSymbol, ordered);
+  return applyBrokerGoldOverride(
+    finalizeBrokerSymbol(fallback, normalizedSymbol, ordered),
+    normalizedSymbol,
+    brokerName,
+  );
 }

@@ -132,6 +132,18 @@ export function staticBrokerSymbol(
   return STATIC_BROKER_SYMBOL[brokerKey]?.[standardSymbol] ?? null;
 }
 
+/** Symbole GOLD imposé par broker (ignore la résolution live). */
+export function mandatoryBrokerGoldSymbol(
+  brokerName: string | null | undefined,
+): string | null {
+  if (!brokerName) return null;
+  for (const key of brokerMappingKeys(brokerName)) {
+    const sym = staticBrokerSymbol(key, "GOLD");
+    if (sym) return sym;
+  }
+  return null;
+}
+
 export function allStaticBrokerKeys(): string[] {
   return Object.keys(STATIC_BROKER_SYMBOL);
 }
