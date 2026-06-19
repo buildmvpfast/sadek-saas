@@ -188,11 +188,13 @@ function pickLiveSymbol(
   brokerName?: string | null,
 ): string | null {
   if (standardSymbol === "GOLD") {
-    const sorted = [...candidates].sort(
-      (a, b) =>
-        scoreGoldForBroker(a, brokerName ?? null) -
-        scoreGoldForBroker(b, brokerName ?? null),
-    );
+    const sorted = [...candidates]
+      .filter((c) => !exclude?.has(c) && isUsdGoldSymbol(c) && !isCrossGoldSymbol(c))
+      .sort(
+        (a, b) =>
+          scoreGoldForBroker(a, brokerName ?? null) -
+          scoreGoldForBroker(b, brokerName ?? null),
+      );
     for (const c of sorted) {
       if (exclude?.has(c)) continue;
       if (!isUsdGoldSymbol(c)) continue;
@@ -332,6 +334,15 @@ export async function resolveBrokerSymbol(
       live = await getLiveSymbols(accountId, token, true);
     }
     if (live.ok && live.symbols.size > 0) {
+      for (const name of namesOrdered) {
+        const mapped = staticBrokerSymbol(name, normalizedSymbol);
+        if (!mapped || exclude.has(mapped)) continue;
+        const hit = findInLiveSet(mapped, live.symbols);
+        if (hit && !exclude.has(hit)) {
+          return finalizeBrokerSymbol(hit, normalizedSymbol, ordered);
+        }
+      }
+
       const picked = pickLiveSymbol(
         ordered,
         live.symbols,

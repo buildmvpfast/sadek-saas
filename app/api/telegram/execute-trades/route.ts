@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
       `,
       )
       .in("status", ["pending", "pending_partial"])
+      .gte("created_at", new Date(Date.now() - 60 * 60 * 1000).toISOString())
       .order("created_at", { ascending: false })
       .limit(10);
 
