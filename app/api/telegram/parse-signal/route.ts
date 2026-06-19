@@ -477,6 +477,35 @@ export async function POST(request: NextRequest) {
 
     const takeProfitsForSave = dedupeTakeProfits(signal.takeProfits || []);
 
+    // Évite double exécution si webhook/curl rejoué (même signal, message_id différent)
+    const dedupSince = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    let recentDupQuery = supabase
+      .from("telegram_signals")
+      .select("id")
+      .eq("channel_id", channel.id)
+      .eq("signal_type", signal.type)
+      .eq("symbol", signal.symbol)
+      .gte("parsed_at", dedupSince)
+      .limit(1);
+
+    if (signal.entryPrice != null) {
+      recentDupQuery = recentDupQuery.eq("entry_price", signal.entryPrice);
+    } else {
+      recentDupQuery = recentDupQuery.is("entry_price", null);
+    }
+
+    const { data: recentDup } = await recentDupQuery.maybeSingle();
+    if (recentDup?.id) {
+      console.log(
+        `⏭️ Signal dupliqué ignoré (< 3 min): ${signal.type} ${signal.symbol}`,
+      );
+      return NextResponse.json({
+        success: true,
+        message: "Signal dupliqué ignoré",
+        signal_id: recentDup.id,
+      });
+    }
+
     // Sauvegarder le signal
     const { data: savedSignal, error } = await supabase
       .from("telegram_signals")

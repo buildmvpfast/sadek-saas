@@ -71,6 +71,7 @@ const STATIC_BROKER_SYMBOL: Record<string, SymbolMap> = {
   },
   "VT Markets": {
     ...GENERIC_PACK,
+    GOLD: "XAUUSD-VIP",
     EURUSD: "EURUSD-ECN",
     EURGBP: "EURGBP-ECN",
     EURJPY: "EURJPY-ECN",

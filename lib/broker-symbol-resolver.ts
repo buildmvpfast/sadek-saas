@@ -9,6 +9,45 @@ import { normalizeSymbol } from "@/lib/symbol-normalizer";
 import { fetchMetaApiSymbolNames } from "@/lib/metaapi-trade-client";
 import type { SymbolProfile } from "@/lib/trade-risk";
 
+const SYMBOL_CACHE_MS = 5 * 60 * 1000;
+const symbolCache = new Map<
+  string,
+  { at: number; symbols: Set<string> }
+>();
+
+export function invalidateSymbolCache(accountId?: string): void {
+  if (accountId) symbolCache.delete(accountId);
+  else symbolCache.clear();
+}
+
+async function getLiveSymbols(
+  accountId: string,
+  token: string,
+  refresh = false,
+): Promise<{ ok: true; symbols: Set<string> } | { ok: false; error: string }> {
+  if (!refresh) {
+    const hit = symbolCache.get(accountId);
+    if (hit && Date.now() - hit.at < SYMBOL_CACHE_MS) {
+      return { ok: true, symbols: hit.symbols };
+    }
+  }
+
+  const live = await fetchMetaApiSymbolNames(accountId, token);
+  if (live.ok) {
+    symbolCache.set(accountId, { at: Date.now(), symbols: live.symbols });
+  }
+  return live;
+}
+
+function findInLiveSet(candidate: string, live: Set<string>): string | null {
+  if (live.has(candidate)) return candidate;
+  const lc = candidate.toLowerCase();
+  for (const s of live) {
+    if (s.toLowerCase() === lc) return s;
+  }
+  return null;
+}
+
 function ecnStpCandidates(standardSymbol: string): string[] {
   const s = standardSymbol.toUpperCase();
   const out: string[] = [];
@@ -73,9 +112,11 @@ function orderByProfile(
 function fuzzyMatchSymbol(
   available: Set<string>,
   standardSymbol: string,
+  exclude?: Set<string>,
 ): string | null {
   const compact = standardSymbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   for (const sym of Array.from(available)) {
+    if (exclude?.has(sym)) continue;
     const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
     if (c === compact || c.startsWith(compact) || compact.startsWith(c)) {
       return sym;
@@ -84,7 +125,9 @@ function fuzzyMatchSymbol(
   if (standardSymbol === "GOLD") {
     const gold = Array.from(available).filter(
       (sym) =>
-        /XAU|GOLD/i.test(sym) && !/^(BTC|ETH)/i.test(sym.replace(/[^A-Z0-9]/gi, "")),
+        !exclude?.has(sym) &&
+        /XAU|GOLD/i.test(sym) &&
+        !/^(BTC|ETH)/i.test(sym.replace(/[^A-Z0-9]/gi, "")),
     );
     const score = (sym: string): number => {
       const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -100,6 +143,20 @@ function fuzzyMatchSymbol(
   return null;
 }
 
+function pickLiveSymbol(
+  candidates: string[],
+  live: Set<string>,
+  standardSymbol: string,
+  exclude?: Set<string>,
+): string | null {
+  for (const c of candidates) {
+    if (exclude?.has(c)) continue;
+    const hit = findInLiveSet(c, live);
+    if (hit && !exclude?.has(hit)) return hit;
+  }
+  return fuzzyMatchSymbol(live, standardSymbol, exclude);
+}
+
 export async function resolveBrokerSymbol(
   standardSymbolInput: string,
   brokerName: string | null,
@@ -108,10 +165,15 @@ export async function resolveBrokerSymbol(
     metaApiAccountId?: string | null;
     metaApiToken?: string | null;
     symbolProfile?: SymbolProfile | null;
+    excludeSymbols?: string[];
+    refreshSymbols?: boolean;
   },
 ): Promise<string> {
   const normalizedSymbol = normalizeSymbol(standardSymbolInput);
   const profile = options?.symbolProfile ?? "auto";
+  const exclude = new Set(
+    (options?.excludeSymbols ?? []).map((s) => s.trim()).filter(Boolean),
+  );
 
   const namesOrdered: string[] = [];
   for (const n of brokerMappingKeys(brokerName ?? "")) {
@@ -151,20 +213,32 @@ export async function resolveBrokerSymbol(
   candidates.push(...ecnStpCandidates(normalizedSymbol));
   candidates.push(normalizedSymbol);
 
-  const ordered = orderByProfile(Array.from(new Set(candidates)), profile);
+  const ordered = orderByProfile(
+    Array.from(new Set(candidates)).filter((c) => !exclude.has(c)),
+    profile,
+  );
 
   const token = options?.metaApiToken;
   const accountId = options?.metaApiAccountId;
   if (token && accountId) {
-    const live = await fetchMetaApiSymbolNames(accountId, token);
+    let live = await getLiveSymbols(
+      accountId,
+      token,
+      options?.refreshSymbols ?? false,
+    );
+    if (!live.ok) {
+      live = await getLiveSymbols(accountId, token, true);
+    }
     if (live.ok && live.symbols.size > 0) {
-      for (const c of ordered) {
-        if (live.symbols.has(c)) return c;
-      }
-      const fuzzy = fuzzyMatchSymbol(live.symbols, normalizedSymbol);
-      if (fuzzy) return fuzzy;
+      const picked = pickLiveSymbol(
+        ordered,
+        live.symbols,
+        normalizedSymbol,
+        exclude,
+      );
+      if (picked) return picked;
     }
   }
 
-  return ordered[0] ?? normalizedSymbol;
+  return ordered.find((c) => !exclude.has(c)) ?? normalizedSymbol;
 }

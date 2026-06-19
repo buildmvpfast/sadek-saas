@@ -10,7 +10,7 @@ import {
 import { parseLocaleNumber } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
 import { snapVolumeForMetaApiSymbol } from "@/lib/trade-volume";
-import { resolveBrokerSymbol } from "@/lib/broker-symbol-resolver";
+import { resolveBrokerSymbol, invalidateSymbolCache } from "@/lib/broker-symbol-resolver";
 import { normalizeSymbol } from "@/lib/symbol-normalizer";
 import {
   applyLotMultiplier,
@@ -220,6 +220,9 @@ type PreparedMarketOrder = {
   kind: "market";
   order: Record<string, unknown>;
   brokerSymbol: string;
+  standardSymbol: string;
+  brokerName: string | null;
+  symbolProfile: "auto" | "ecn" | "stp";
 };
 
 type PreparedPartialClose = {
@@ -253,6 +256,8 @@ async function prepareTradeExecution(
   const signalRow = embed(trade.telegram_signals);
   const standardSymbol = normalizeSymbol(signalRow?.symbol ?? trade.symbol);
   const brokerName = mt5Account?.broker_name ?? null;
+  const profile =
+    (mt5Account?.symbol_profile as "auto" | "ecn" | "stp" | null) ?? "auto";
   let brokerSymbol = String(trade.symbol);
   if (brokerName) {
     brokerSymbol = await resolveBrokerSymbol(
@@ -262,9 +267,7 @@ async function prepareTradeExecution(
       {
         metaApiAccountId,
         metaApiToken: token,
-        symbolProfile:
-          (mt5Account?.symbol_profile as "auto" | "ecn" | "stp" | null) ??
-          "auto",
+        symbolProfile: profile,
       },
     );
   }
@@ -387,7 +390,65 @@ async function prepareTradeExecution(
     if (Number.isFinite(tp)) order.takeProfit = tp;
   }
 
-  return { ok: true, prepared: { kind: "market", order, brokerSymbol } };
+  return { ok: true, prepared: { kind: "market", order, brokerSymbol, standardSymbol, brokerName, symbolProfile: profile } };
+}
+
+function isUnknownSymbolError(error?: string | null): boolean {
+  if (!error) return false;
+  return /UNKNOWN_SYMBOL|ERR_MARKET_UNKNOWN|4301|invalid symbol|unknown symbol/i.test(
+    error,
+  );
+}
+
+async function postTradeWithSymbolRetry(
+  supabase: SupabaseClient,
+  metaApiAccountId: string,
+  prepared: PreparedMarketOrder,
+  token: string,
+): Promise<
+  Awaited<ReturnType<typeof postMetaApiTradeWithStopsFallback>> & {
+    symbol: string;
+  }
+> {
+  const tried = new Set<string>();
+  let order = { ...prepared.order };
+  let symbol = prepared.brokerSymbol;
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    tried.add(symbol);
+    order = { ...order, symbol };
+    const result = await postMetaApiTradeWithStopsFallback(
+      metaApiAccountId,
+      order,
+      token,
+    );
+    if (result.ok || !isUnknownSymbolError(result.error)) {
+      return { ...result, symbol };
+    }
+
+    invalidateSymbolCache(metaApiAccountId);
+    const alt = await resolveBrokerSymbol(
+      prepared.standardSymbol,
+      prepared.brokerName,
+      supabase,
+      {
+        metaApiAccountId,
+        metaApiToken: token,
+        symbolProfile: prepared.symbolProfile,
+        excludeSymbols: Array.from(tried),
+        refreshSymbols: true,
+      },
+    );
+    if (!alt || tried.has(alt)) break;
+    symbol = alt;
+  }
+
+  const last = await postMetaApiTradeWithStopsFallback(
+    metaApiAccountId,
+    order,
+    token,
+  );
+  return { ...last, symbol };
 }
 
 export async function executeOnePendingTrade(
@@ -474,9 +535,10 @@ export async function executeOnePendingTrade(
       return { ok: true };
     }
 
-    const result = await postMetaApiTradeWithStopsFallback(
+    const result = await postTradeWithSymbolRetry(
+      supabase,
       metaApiAccountId,
-      prepared.prepared.order,
+      prepared.prepared,
       token,
     );
 
@@ -514,7 +576,7 @@ export async function executeOnePendingTrade(
         executed_at: new Date().toISOString(),
         entry_price: data.price ?? trade.entry_price,
         position_id: positionId,
-        symbol: prepared.prepared.brokerSymbol,
+        symbol: result.symbol,
         error_message:
           (data.orderId != null ? String(data.orderId) : null) ||
           (data.numericOrderId != null ? String(data.numericOrderId) : null),
