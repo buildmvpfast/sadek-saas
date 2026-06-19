@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { executeOnePendingTrade } from "@/lib/trade-execution-core";
+import { executeOnePendingTrade, releaseStaleExecutingTrades } from "@/lib/trade-execution-core";
 import { requireInternalSecret } from "@/lib/internal-auth";
 import { isTransientMetaApiError } from "@/lib/metaapi-errors";
 
@@ -26,6 +26,11 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("🔍 Recherche des trades en attente...");
+    const released = await releaseStaleExecutingTrades(supabase);
+    if (released > 0) {
+      console.warn(`♻️ ${released} trade(s) executing débloqué(s) → pending`);
+    }
+
     const { data: pendingTrades, error: fetchError } = await supabase
       .from("telegram_trades")
       .select(

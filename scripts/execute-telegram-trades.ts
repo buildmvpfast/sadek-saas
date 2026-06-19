@@ -3,7 +3,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
-import { executeOnePendingTrade } from "../lib/trade-execution-core";
+import { executeOnePendingTrade, releaseStaleExecutingTrades } from "../lib/trade-execution-core";
 import { isTransientMetaApiError } from "../lib/metaapi-errors";
 
 dotenv.config({ path: ".env.local" });
@@ -13,17 +13,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
-async function releaseStaleExecutingTrades(): Promise<void> {
-  const cutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
-  const { data } = await supabase
-    .from("telegram_trades")
-    .update({ status: "pending", executed_at: null })
-    .eq("status", "executing")
-    .lt("executed_at", cutoff)
-    .select("id");
-  if (data?.length) {
-    console.warn(`♻️ ${data.length} trade(s) executing bloqués → pending`);
-  }
+async function releaseStaleExecutingTradesLocal(): Promise<void> {
+  const n = await releaseStaleExecutingTrades(supabase);
+  if (n > 0) console.warn(`♻️ ${n} trade(s) executing bloqués → pending`);
 }
 
 async function executePendingTrades() {
@@ -32,7 +24,7 @@ async function executePendingTrades() {
     return;
   }
 
-  await releaseStaleExecutingTrades();
+  await releaseStaleExecutingTradesLocal();
 
   const { data: pendingTrades, error } = await supabase
     .from("telegram_trades")

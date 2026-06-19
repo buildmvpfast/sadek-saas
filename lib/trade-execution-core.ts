@@ -174,6 +174,21 @@ async function releaseExecutingTrade(
     .eq("status", "executing");
 }
 
+/** Débloque les trades restés en `executing` après crash / timeout MetaAPI. */
+export async function releaseStaleExecutingTrades(
+  supabase: SupabaseClient,
+  olderThanMs = 3 * 60 * 1000,
+): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanMs).toISOString();
+  const { data } = await supabase
+    .from("telegram_trades")
+    .update({ status: "pending", executed_at: null })
+    .eq("status", "executing")
+    .lt("executed_at", cutoff)
+    .select("id");
+  return data?.length ?? 0;
+}
+
 export async function executeOnePendingTrade(
   supabase: SupabaseClient,
   trade: PendingTradeRow,
