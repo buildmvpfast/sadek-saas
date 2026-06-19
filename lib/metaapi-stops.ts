@@ -57,35 +57,64 @@ export function sanitizeStopsForOpenPrice(
   return out;
 }
 
-/** Prix cohérent avec SL/TP du signal (évite XAUUSD générique vs XAUUSD-VIP / XAUUSD+). */
+/** Détecte symbole broker incorrect (ex. XAUAUD vs XAUUSD), pas les SL/TP larges. */
 export function isQuoteConsistentWithStops(
   quote: number,
   side: StopSide,
   stopLoss?: number | null,
   takeProfit?: number | null,
 ): boolean {
-  const refs = [stopLoss, takeProfit].filter(
-    (v): v is number => v != null && Number.isFinite(v) && v > 0,
-  );
-  if (refs.length === 0) return true;
-
-  const anchor =
-    refs.length === 1
-      ? refs[0]
-      : side === "BUY"
-        ? Math.min(...refs)
-        : Math.max(...refs);
-
-  const diffRatio = Math.abs(quote - anchor) / anchor;
-  if (diffRatio > 0.12) return false;
-
-  if (takeProfit != null && Number.isFinite(takeProfit)) {
-    if (side === "BUY" && quote >= takeProfit) return false;
-    if (side === "SELL" && quote <= takeProfit) return false;
-  }
   if (stopLoss != null && Number.isFinite(stopLoss)) {
     if (side === "BUY" && quote <= stopLoss) return false;
     if (side === "SELL" && quote >= stopLoss) return false;
   }
+  if (takeProfit != null && Number.isFinite(takeProfit)) {
+    if (side === "BUY" && quote >= takeProfit) return false;
+    if (side === "SELL" && quote <= takeProfit) return false;
+  }
+
+  const refs = [stopLoss, takeProfit].filter(
+    (v): v is number => v != null && Number.isFinite(v) && v > 0,
+  );
+  if (refs.length >= 2) {
+    const mid = refs.reduce((a, b) => a + b, 0) / refs.length;
+    if (mid > 500 && mid < 50_000) {
+      const drift = Math.abs(quote - mid) / mid;
+      if (drift > 0.35) return false;
+    }
+  }
   return true;
+}
+
+/** Ramène SL/TP dans la distance max broker (~3% du prix). */
+export function clampStopsToBrokerMaxDistance(
+  side: StopSide,
+  refPrice: number,
+  stopLoss?: number | null,
+  takeProfit?: number | null,
+  maxPct = 0.03,
+): { stopLoss?: number; takeProfit?: number } {
+  const maxDist = Math.max(refPrice * maxPct, 30);
+  const out: { stopLoss?: number; takeProfit?: number } = {};
+  const buy = side === "BUY";
+
+  if (stopLoss != null && Number.isFinite(stopLoss)) {
+    if (buy) {
+      const minSl = refPrice - maxDist;
+      out.stopLoss = stopLoss < minSl ? minSl : stopLoss;
+    } else {
+      const maxSl = refPrice + maxDist;
+      out.stopLoss = stopLoss > maxSl ? maxSl : stopLoss;
+    }
+  }
+  if (takeProfit != null && Number.isFinite(takeProfit)) {
+    if (buy) {
+      const maxTp = refPrice + maxDist;
+      out.takeProfit = takeProfit > maxTp ? maxTp : takeProfit;
+    } else {
+      const minTp = refPrice - maxDist;
+      out.takeProfit = takeProfit < minTp ? minTp : takeProfit;
+    }
+  }
+  return out;
 }

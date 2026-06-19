@@ -10,6 +10,7 @@ import {
   parseStopSide,
   sanitizeStopsForOpenPrice,
   isQuoteConsistentWithStops,
+  clampStopsToBrokerMaxDistance,
 } from "@/lib/metaapi-stops";
 
 export type MetaApiTradeBody = Record<string, unknown>;
@@ -247,7 +248,7 @@ export async function postMetaApiTrade(
 }
 
 const STOPS_RELATED =
-  /invalid.?stops|stops.?level|invalid.?prices?|price.?distance|TRADE_RETCODE_INVALID_STOPS|TRADE_RETCODE_INVALID_PRICE|ERR_INVALID_STOPS|\b10015\b|\b130\b/i;
+  /invalid.?stops|stops.?level|invalid.?prices?|price.?distance|validation failed|TRADE_RETCODE_INVALID_STOPS|TRADE_RETCODE_INVALID_PRICE|ERR_INVALID_STOPS|\b10015\b|\b130\b/i;
 
 function stripStops(body: MetaApiTradeBody, sl: boolean, tp: boolean): MetaApiTradeBody {
   const next = { ...body };
@@ -304,30 +305,36 @@ export async function fetchMetaApiSymbolQuote(
   symbol: string,
   token: string,
 ): Promise<MetaApiSymbolQuote | null> {
-  const sym = encodeURIComponent(symbol);
   const id = encodeURIComponent(accountId);
+  const variants = [symbol];
+  if (/\+/.test(symbol)) variants.push(symbol.replace(/\+$/i, ""));
+  if (/-VIP/i.test(symbol)) variants.push(symbol.replace(/-VIP/i, ""));
+
   let lastErr = "";
   let lastTlsErr = "";
 
-  for (const root of METAAPI_CLIENT_ROOTS) {
-    const url = `${root}/users/current/accounts/${id}/symbols/${sym}/current-price`;
-    try {
-      const response = await fetch(url, { headers: { "auth-token": token } });
-      if (!response.ok) {
-        lastErr = `HTTP ${response.status}`;
-        continue;
+  for (const variant of Array.from(new Set(variants))) {
+    const sym = encodeURIComponent(variant);
+    for (const root of METAAPI_CLIENT_ROOTS) {
+      const url = `${root}/users/current/accounts/${id}/symbols/${sym}/current-price`;
+      try {
+        const response = await fetch(url, { headers: { "auth-token": token } });
+        if (!response.ok) {
+          lastErr = `HTTP ${response.status}`;
+          continue;
+        }
+        const data = (await response.json()) as Record<string, unknown>;
+        const bid = parseFloat(String(data.bid ?? ""));
+        const ask = parseFloat(String(data.ask ?? ""));
+        if (Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 && ask > 0) {
+          return { bid, ask };
+        }
+        lastErr = "bid/ask invalides";
+      } catch (e: unknown) {
+        const err = e instanceof Error ? e.message : String(e);
+        if (isTlsCertificateError(err)) lastTlsErr = err;
+        else lastErr = err;
       }
-      const data = (await response.json()) as Record<string, unknown>;
-      const bid = parseFloat(String(data.bid ?? ""));
-      const ask = parseFloat(String(data.ask ?? ""));
-      if (Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 && ask > 0) {
-        return { bid, ask };
-      }
-      lastErr = "bid/ask invalides";
-    } catch (e: unknown) {
-      const err = e instanceof Error ? e.message : String(e);
-      if (isTlsCertificateError(err)) lastTlsErr = err;
-      else lastErr = err;
     }
   }
 
@@ -362,11 +369,17 @@ function buildMarketOrderWithValidatedStops(
   }
 
   const dist = minStopDistance(refPrice);
-  const sanitized = sanitizeStopsForOpenPrice(
+  const maxClamped = clampStopsToBrokerMaxDistance(
     side,
     refPrice,
     stopLoss,
     takeProfit,
+  );
+  const sanitized = sanitizeStopsForOpenPrice(
+    side,
+    refPrice,
+    maxClamped.stopLoss ?? stopLoss,
+    maxClamped.takeProfit ?? takeProfit,
     dist,
   );
 
@@ -424,27 +437,43 @@ export async function postMetaApiMarketReliable(
   const result = await postMetaApiTrade(accountId, built.order, token);
   if (result.ok) return result;
 
-  if (
-    STOPS_RELATED.test(result.error || "") &&
-    quote &&
-    body.stopLoss != null
-  ) {
-    const side = parseStopSide(action);
+  if (STOPS_RELATED.test(result.error || "") && quote) {
     const ref = side === "BUY" ? quote.ask : quote.bid;
-    const wider = sanitizeStopsForOpenPrice(
+    const clamped = clampStopsToBrokerMaxDistance(
       side,
       ref,
       body.stopLoss as number,
       body.takeProfit as number,
+      0.03,
+    );
+    const clampOrder: MetaApiTradeBody = {
+      ...body,
+      ...(clamped.stopLoss != null ? { stopLoss: clamped.stopLoss } : {}),
+      ...(clamped.takeProfit != null ? { takeProfit: clamped.takeProfit } : {}),
+    };
+    const clampedResult = await postMetaApiTrade(accountId, clampOrder, token);
+    if (clampedResult.ok) return clampedResult;
+
+    const wider = sanitizeStopsForOpenPrice(
+      side,
+      ref,
+      clamped.stopLoss,
+      clamped.takeProfit,
       minStopDistance(ref) * 3,
     );
-    const retry: MetaApiTradeBody = {
+    const widerOrder: MetaApiTradeBody = {
       ...body,
       ...(wider.stopLoss != null ? { stopLoss: wider.stopLoss } : {}),
       ...(wider.takeProfit != null ? { takeProfit: wider.takeProfit } : {}),
     };
-    const second = await postMetaApiTrade(accountId, retry, token);
+    const second = await postMetaApiTrade(accountId, widerOrder, token);
     if (second.ok) return second;
+
+    const naked = { ...body };
+    delete naked.stopLoss;
+    delete naked.takeProfit;
+    const third = await postMetaApiTrade(accountId, naked, token);
+    if (third.ok) return third;
   }
 
   return result;

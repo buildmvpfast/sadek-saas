@@ -188,7 +188,12 @@ function pickLiveSymbol(
   brokerName?: string | null,
 ): string | null {
   if (standardSymbol === "GOLD") {
-    for (const c of candidates) {
+    const sorted = [...candidates].sort(
+      (a, b) =>
+        scoreGoldForBroker(a, brokerName ?? null) -
+        scoreGoldForBroker(b, brokerName ?? null),
+    );
+    for (const c of sorted) {
       if (exclude?.has(c)) continue;
       if (!isUsdGoldSymbol(c)) continue;
       const hit = findInLiveSet(c, live);
