@@ -35,3 +35,38 @@ export function resolvePendingOrderKind(
 
   return "MARKET";
 }
+
+export function adjustOrderKindForQuote(
+  signalType: string,
+  kind: PendingOrderKind,
+  entry: number,
+  quote: { bid: number; ask: number } | null,
+): PendingOrderKind {
+  if (!quote || !Number.isFinite(entry) || entry <= 0) return kind;
+  const buy = signalType.toUpperCase() === "BUY";
+
+  // Buy limit au-dessus du marché → buy stop ; sell limit en-dessous → sell stop
+  if (kind === "LIMIT") {
+    if (buy && entry >= quote.ask) return "STOP";
+    if (!buy && entry <= quote.bid) return "STOP";
+  }
+  if (kind === "STOP") {
+    if (buy && entry <= quote.bid) return "LIMIT";
+    if (!buy && entry >= quote.ask) return "LIMIT";
+  }
+  return kind;
+}
+
+export function actionTypeForOrder(
+  signalType: string,
+  kind: PendingOrderKind,
+): string {
+  const buy = signalType.toUpperCase() === "BUY";
+  if (kind === "STOP") {
+    return buy ? "ORDER_TYPE_BUY_STOP" : "ORDER_TYPE_SELL_STOP";
+  }
+  if (kind === "LIMIT") {
+    return buy ? "ORDER_TYPE_BUY_LIMIT" : "ORDER_TYPE_SELL_LIMIT";
+  }
+  return buy ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL";
+}

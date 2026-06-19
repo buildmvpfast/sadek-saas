@@ -506,6 +506,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const resolvedOrderType = signal.orderType || orderType;
+    const isMarketOrder = String(resolvedOrderType).toUpperCase() === "MARKET";
+
     // Sauvegarder le signal
     const { data: savedSignal, error } = await supabase
       .from("telegram_signals")
@@ -514,14 +517,14 @@ export async function POST(request: NextRequest) {
         message_id: messageId,
         signal_type: signal.type,
         symbol: signal.symbol,
-        entry_price: signal.entryPrice, // Peut être null pour market orders
+        entry_price: isMarketOrder ? null : signal.entryPrice,
         stop_loss: signal.stopLoss,
         take_profit: signal.takeProfit,
         // Store all TP values so we can create one trade per TP later
         all_tp: takeProfitsForSave.length > 0 ? takeProfitsForSave : null,
         volume: signal.volume || 0.01,
         message_text: messageText,
-        order_type: signal.orderType || orderType, // MARKET, LIMIT, ou STOP
+        order_type: resolvedOrderType,
       })
       .select()
       .single();
@@ -1155,7 +1158,7 @@ async function executeTradesForSignal(signalId: string) {
           signal_type: signal.signal_type,
           order_type: orderTypeResolved,
           volume: volumeForTp,
-          entry_price: signal.entry_price,
+          entry_price: orderTypeResolved === "MARKET" ? null : signal.entry_price,
           stop_loss: signal.stop_loss,
           take_profit: tpValue,
           status: "failed",
@@ -1200,7 +1203,7 @@ async function executeTradesForSignal(signalId: string) {
         signal_type: signal.signal_type,
         order_type: orderTypeResolved,
         volume: volumeForTp,
-        entry_price: signal.entry_price,
+        entry_price: orderTypeResolved === "MARKET" ? null : signal.entry_price,
         stop_loss: signal.stop_loss,
         take_profit: tpValue,
         status: "pending",

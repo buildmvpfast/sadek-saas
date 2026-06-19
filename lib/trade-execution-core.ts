@@ -177,7 +177,7 @@ async function releaseExecutingTrade(
 /** Débloque les trades restés en `executing` après crash / timeout MetaAPI. */
 export async function releaseStaleExecutingTrades(
   supabase: SupabaseClient,
-  olderThanMs = 90 * 1000,
+  olderThanMs = 30 * 1000,
 ): Promise<number> {
   const cutoff = new Date(Date.now() - olderThanMs).toISOString();
 
@@ -350,11 +350,19 @@ async function prepareTradeExecution(
         ? entryFromSignal
         : Number.NaN;
 
-  const orderKind = resolvePendingOrderKind(
-    trade.order_type,
-    signalRow?.order_type,
-    entryParsed,
-  );
+  const orderKind =
+    String(trade.order_type ?? "")
+      .toUpperCase()
+      .includes("MARKET") ||
+    String(signalRow?.order_type ?? "")
+      .toUpperCase()
+      .includes("MARKET")
+      ? "MARKET"
+      : resolvePendingOrderKind(
+          trade.order_type,
+          signalRow?.order_type,
+          entryParsed,
+        );
 
   if (
     (orderKind === "LIMIT" || orderKind === "STOP") &&
