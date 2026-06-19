@@ -493,7 +493,6 @@ export async function postMetaApiMarketReliable(
         ref,
         body.stopLoss as number,
         body.takeProfit as number,
-        0.03,
       );
       const clampOrder: MetaApiTradeBody = {
         ...body,

@@ -289,11 +289,22 @@ async function recoverOrSkipDuplicateMarket(
     posAt >= tradeAt - 5000 &&
     Number.isFinite(pid)
   ) {
-    return {
-      action: "skip",
-      positionId: pid,
-      reason: "Position déjà ouverte sur MT5 (worker ou exécution parallèle)",
-    };
+    const tradeTp = parseLocaleNumber(trade.take_profit);
+    const posTp = match.takeProfit;
+    if (
+      tradeTp != null &&
+      Number.isFinite(tradeTp) &&
+      posTp != null &&
+      Number.isFinite(posTp) &&
+      Math.abs(posTp - tradeTp) < 5
+    ) {
+      return {
+        action: "skip",
+        positionId: pid,
+        reason: "Position déjà ouverte sur MT5 (worker ou exécution parallèle)",
+      };
+    }
+    return { action: "proceed" };
   }
 
   if (Number.isFinite(tradeAt) && Number.isFinite(posAt) && posAt < tradeAt - 5000) {

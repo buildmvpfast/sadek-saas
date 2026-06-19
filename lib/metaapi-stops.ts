@@ -86,15 +86,23 @@ export function isQuoteConsistentWithStops(
   return true;
 }
 
-/** Ramène SL/TP dans la distance max broker (~3% du prix). */
+/** Distance max SL/TP vs prix (gold a besoin de plus que 3%). */
+export function maxStopDistancePct(refPrice: number): number {
+  if (refPrice > 2000) return 0.08;
+  if (refPrice > 1000) return 0.05;
+  return 0.03;
+}
+
+/** Ramène SL/TP dans la distance max broker (~3–8% du prix selon actif). */
 export function clampStopsToBrokerMaxDistance(
   side: StopSide,
   refPrice: number,
   stopLoss?: number | null,
   takeProfit?: number | null,
-  maxPct = 0.03,
+  maxPct?: number,
 ): { stopLoss?: number; takeProfit?: number } {
-  const maxDist = Math.max(refPrice * maxPct, 30);
+  const pct = maxPct ?? maxStopDistancePct(refPrice);
+  const maxDist = Math.max(refPrice * pct, 30);
   const out: { stopLoss?: number; takeProfit?: number } = {};
   const buy = side === "BUY";
 
