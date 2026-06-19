@@ -344,20 +344,26 @@ function minStopDistance(refPrice: number): number {
   return 0.00005;
 }
 
+type BuiltMarketOrderResult =
+  | { ok: true; order: MetaApiTradeBody }
+  | { ok: false; error: string };
+
 function buildMarketOrderWithValidatedStops(
   body: MetaApiTradeBody,
   quote: MetaApiSymbolQuote | null,
-): MetaApiTradeBody | { error: string } {
+): BuiltMarketOrderResult {
   const action = String(body.actionType ?? "");
   const side = parseStopSide(action);
   const refPrice = side === "BUY" ? quote?.ask : quote?.bid;
   const stopLoss = body.stopLoss as number | undefined;
   const takeProfit = body.takeProfit as number | undefined;
 
-  if (stopLoss == null && takeProfit == null) return { ...body };
+  if (stopLoss == null && takeProfit == null) {
+    return { ok: true, order: { ...body } };
+  }
 
   if (refPrice == null || !Number.isFinite(refPrice)) {
-    return { ...body };
+    return { ok: true, order: { ...body } };
   }
 
   const dist = minStopDistance(refPrice);
@@ -371,19 +377,24 @@ function buildMarketOrderWithValidatedStops(
 
   if (stopLoss != null && sanitized.stopLoss == null) {
     return {
+      ok: false,
       error: `SL ${stopLoss} invalide vs prix marché ${refPrice} (${side})`,
     };
   }
   if (takeProfit != null && sanitized.takeProfit == null) {
     return {
+      ok: false,
       error: `TP ${takeProfit} invalide vs prix marché ${refPrice} (${side})`,
     };
   }
 
   return {
-    ...body,
-    ...(sanitized.stopLoss != null ? { stopLoss: sanitized.stopLoss } : {}),
-    ...(sanitized.takeProfit != null ? { takeProfit: sanitized.takeProfit } : {}),
+    ok: true,
+    order: {
+      ...body,
+      ...(sanitized.stopLoss != null ? { stopLoss: sanitized.stopLoss } : {}),
+      ...(sanitized.takeProfit != null ? { takeProfit: sanitized.takeProfit } : {}),
+    },
   };
 }
 
@@ -410,11 +421,11 @@ export async function postMetaApiMarketReliable(
       : null;
 
   const built = buildMarketOrderWithValidatedStops(body, quote);
-  if ("error" in built) {
+  if (!built.ok) {
     return { ok: false, status: 400, data: null, error: built.error };
   }
 
-  const result = await postMetaApiTrade(accountId, built, token);
+  const result = await postMetaApiTrade(accountId, built.order, token);
   if (result.ok) return result;
 
   if (
