@@ -1,7 +1,11 @@
 /**
  * Client MetaAPI REST (trade + lecture positions)
  */
-import { formatFetchError } from "@/lib/metaapi-errors";
+import { formatFetchError, isTlsCertificateError } from "@/lib/metaapi-errors";
+import {
+  METAAPI_CLIENT_ROOTS,
+  metaApiClientAccountPath,
+} from "@/lib/metaapi-endpoints";
 import {
   parseStopSide,
   sanitizeStopsForOpenPrice,
@@ -10,27 +14,12 @@ import {
 export type MetaApiTradeBody = Record<string, unknown>;
 
 export function metaApiTradeUrls(accountId: string): string[] {
-  const id = encodeURIComponent(accountId);
-  return [
-    `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${id}/trade`,
-    `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${id}/trade`,
-    `https://mt-client-api-v1.singapore.agiliumtrade.ai/users/current/accounts/${id}/trade`,
-    `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
-    `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
-    `https://metaapi-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
-  ];
+  return metaApiClientAccountPath(accountId, "/trade");
 }
 
 /** Hôtes client REST pour GET positions (doit coller à la région du compte côté MetaAPI). */
 export function metaApiPositionsUrls(accountId: string): string[] {
-  const id = encodeURIComponent(accountId);
-  return [
-    `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${id}/positions`,
-    `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${id}/positions`,
-    `https://mt-client-api-v1.singapore.agiliumtrade.ai/users/current/accounts/${id}/positions`,
-    `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/positions`,
-    `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/positions`,
-  ];
+  return metaApiClientAccountPath(accountId, "/positions");
 }
 
 /** Codes string de succès (MetatraderTradeResponse, doc MetaAPI). */
@@ -190,6 +179,7 @@ export async function postMetaApiTrade(
   let lastData: unknown = null;
   let lastUrl: string | undefined;
   let lastText = "";
+  let lastTlsText = "";
 
   for (const url of metaApiTradeUrls(accountId)) {
     lastUrl = url;
@@ -237,7 +227,9 @@ export async function postMetaApiTrade(
         error: lastText,
       };
     } catch (e: unknown) {
-      lastText = formatFetchError(e);
+      const err = formatFetchError(e);
+      if (isTlsCertificateError(err)) lastTlsText = err;
+      else lastText = err;
     }
   }
 
@@ -248,6 +240,7 @@ export async function postMetaApiTrade(
     url: lastUrl,
     error:
       lastText ||
+      lastTlsText ||
       `MetaAPI trade impossible (HTTP ${lastStatus || "?"}) pour le compte`,
   };
 }
@@ -313,8 +306,9 @@ export async function fetchMetaApiSymbolQuote(
   const sym = encodeURIComponent(symbol);
   const id = encodeURIComponent(accountId);
   let lastErr = "";
+  let lastTlsErr = "";
 
-  for (const root of metaApiClientRoots()) {
+  for (const root of METAAPI_CLIENT_ROOTS) {
     const url = `${root}/users/current/accounts/${id}/symbols/${sym}/current-price`;
     try {
       const response = await fetch(url, { headers: { "auth-token": token } });
@@ -330,11 +324,13 @@ export async function fetchMetaApiSymbolQuote(
       }
       lastErr = "bid/ask invalides";
     } catch (e: unknown) {
-      lastErr = e instanceof Error ? e.message : String(e);
+      const err = e instanceof Error ? e.message : String(e);
+      if (isTlsCertificateError(err)) lastTlsErr = err;
+      else lastErr = err;
     }
   }
 
-  console.warn(`fetchMetaApiSymbolQuote ${symbol}: ${lastErr}`);
+  console.warn(`fetchMetaApiSymbolQuote ${symbol}: ${lastErr || lastTlsErr}`);
   return null;
 }
 
@@ -461,13 +457,7 @@ export function metaApiClosePositionUrls(
 ): string[] {
   const id = encodeURIComponent(accountId);
   const pid = encodeURIComponent(String(positionId));
-  const roots = [
-    "https://mt-client-api-v1.london.agiliumtrade.ai",
-    "https://mt-client-api-v1.new-york.agiliumtrade.ai",
-    "https://mt-client-api-v1.singapore.agiliumtrade.ai",
-    "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai",
-    "https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai",
-  ];
+  const roots = [...METAAPI_CLIENT_ROOTS];
   return roots.map(
     (r) =>
       `${r}/users/current/accounts/${id}/positions/${pid}/close`,
@@ -532,16 +522,7 @@ export async function fetchMetaApiPositionsJson(
 }
 
 export function metaApiSymbolsUrls(accountId: string): string[] {
-  const id = encodeURIComponent(accountId);
-  const roots = [
-    "https://mt-client-api-v1.london.agiliumtrade.ai",
-    "https://mt-client-api-v1.new-york.agiliumtrade.ai",
-    "https://mt-client-api-v1.singapore.agiliumtrade.ai",
-    "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai",
-  ];
-  return roots.map(
-    (r) => `${r}/users/current/accounts/${id}/symbols`,
-  );
+  return metaApiClientAccountPath(accountId, "/symbols");
 }
 
 export async function fetchMetaApiSymbolNames(
@@ -637,12 +618,7 @@ export async function postMetaApiClosePositionVolume(
 }
 
 function metaApiClientRoots(): string[] {
-  return [
-    "https://mt-client-api-v1.london.agiliumtrade.ai",
-    "https://mt-client-api-v1.new-york.agiliumtrade.ai",
-    "https://mt-client-api-v1.singapore.agiliumtrade.ai",
-    "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai",
-  ];
+  return [...METAAPI_CLIENT_ROOTS];
 }
 
 export function metaApiOrdersUrls(accountId: string): string[] {

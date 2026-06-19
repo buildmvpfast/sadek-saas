@@ -7,8 +7,9 @@ import {
   fxcessStaticServerCandidates,
 } from "@/lib/fxcess-servers";
 
-const KNOWN_MT_SERVERS_BASE =
-  "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/known-mt-servers";
+import { METAAPI_KNOWN_SERVERS_URL } from "@/lib/metaapi-endpoints";
+
+const KNOWN_MT_SERVERS_BASE = METAAPI_KNOWN_SERVERS_URL;
 
 export type KnownServerMatch = {
   server: string;

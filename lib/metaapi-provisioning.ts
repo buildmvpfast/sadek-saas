@@ -1,5 +1,6 @@
-export const METAAPI_PROVISIONING_ACCOUNTS_URL =
-  "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts";
+import { METAAPI_PROVISIONING_ACCOUNTS_URL } from "@/lib/metaapi-endpoints";
+
+export { METAAPI_PROVISIONING_ACCOUNTS_URL };
 
 export async function deleteProvisioningAccount(
   accountId: string,

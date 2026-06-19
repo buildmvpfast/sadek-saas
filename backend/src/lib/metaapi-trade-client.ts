@@ -12,9 +12,6 @@ export function metaApiTradeUrls(accountId: string): string[] {
     `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${id}/trade`,
     `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${id}/trade`,
     `https://mt-client-api-v1.singapore.agiliumtrade.ai/users/current/accounts/${id}/trade`,
-    `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
-    `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
-    `https://metaapi-api.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/trade`,
   ];
 }
 
@@ -25,8 +22,6 @@ export function metaApiPositionsUrls(accountId: string): string[] {
     `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${id}/positions`,
     `https://mt-client-api-v1.new-york.agiliumtrade.ai/users/current/accounts/${id}/positions`,
     `https://mt-client-api-v1.singapore.agiliumtrade.ai/users/current/accounts/${id}/positions`,
-    `https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/positions`,
-    `https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai/users/current/accounts/${id}/positions`,
   ];
 }
 
@@ -289,8 +284,6 @@ export function metaApiClosePositionUrls(
     "https://mt-client-api-v1.london.agiliumtrade.ai",
     "https://mt-client-api-v1.new-york.agiliumtrade.ai",
     "https://mt-client-api-v1.singapore.agiliumtrade.ai",
-    "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai",
-    "https://mt-client-api-v1.london.agiliumtrade.agiliumtrade.ai",
   ];
   return roots.map(
     (r) =>
