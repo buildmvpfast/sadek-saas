@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 /**
  * Validates that a request comes from an internal caller (cron, server-to-server).
  * Callers must pass `Authorization: Bearer <INTERNAL_API_SECRET>`.
- * Returns a 401 NextResponse if invalid, or null if the request is authorised.
  */
 export function requireInternalSecret(
   req: NextRequest,
@@ -22,4 +21,16 @@ export function requireInternalSecret(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return null;
+}
+
+/** INTERNAL_API_SECRET ou TELEGRAM_WEBHOOK_SECRET (header Telegram). */
+export function requireInternalOrWebhookSecret(
+  req: NextRequest,
+): NextResponse | null {
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const tgHeader = req.headers.get("X-Telegram-Bot-Api-Secret-Token");
+  if (webhookSecret && tgHeader === webhookSecret) {
+    return null;
+  }
+  return requireInternalSecret(req);
 }

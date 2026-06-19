@@ -3,20 +3,18 @@
  *
  * Usage:
  *   METAAPI_TOKEN=... NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
- *   npx tsx scripts/close-pending-orders.ts --broker FXcess
+ *   npx tsx scripts/close-pending-orders.ts --all
  *
- *   npx tsx scripts/close-pending-orders.ts --account b2f7ffb6-1f64-47c0-b428-5a5c9ab3d954
+ *   npx tsx scripts/close-pending-orders.ts --account a7d26e9a-dc9c-418d-9cc1-bb3350aa435e
  *
- *   npx tsx scripts/close-pending-orders.ts --broker FXcess --symbol XAUUSD
+ *   npx tsx scripts/close-pending-orders.ts --broker "VT Markets"
  */
 import { createClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
 import {
-  fetchMetaApiOrdersJson,
-  postMetaApiCancelOrder,
-  postMetaApiClosePosition,
-  fetchMetaApiPositionsJson,
-} from "../lib/metaapi-trade-client";
+  cancelPendingOrdersForAccounts,
+  loadMetaApiAccountsFromSupabase,
+} from "../lib/cancel-pending-orders";
 
 dotenv.config({ path: ".env.local" });
 
@@ -26,19 +24,11 @@ function arg(name: string): string | undefined {
   return process.argv[i + 1];
 }
 
-function orderId(row: Record<string, unknown>): string | null {
-  const id =
-    row.id ??
-    row.orderId ??
-    row.ticket ??
-    row.numericOrderId ??
-    row.order_id;
-  return id != null ? String(id) : null;
-}
-
-function orderSymbol(row: Record<string, unknown>): string {
-  return String(row.symbol ?? row.brokerSymbol ?? "");
-}
+const KNOWN_ACCOUNTS = [
+  { id: "a7d26e9a-dc9c-418d-9cc1-bb3350aa435e", brokerName: "VT Markets", login: null },
+  { id: "b48f5708-8c82-406e-8264-c41deb761872", brokerName: "Vantage", login: null },
+  { id: "b2f7ffb6-1f64-47c0-b428-5a5c9ab3d954", brokerName: "FXcess", login: null },
+];
 
 async function main() {
   const token = process.env.METAAPI_TOKEN;
@@ -47,91 +37,63 @@ async function main() {
   const brokerFilter = arg("broker");
   const accountArg = arg("account");
   const symbolFilter = arg("symbol");
+  const allAccounts = process.argv.includes("--all");
 
   if (!token) {
     console.error("❌ METAAPI_TOKEN manquant (.env.local ou export)");
     process.exit(1);
   }
 
-  let accountIds: string[] = [];
+  let accounts: Array<{ id: string; brokerName: string | null; login: string | null }> = [];
+
+  const knownOnly = process.argv.includes("--known");
 
   if (accountArg) {
-    accountIds = [accountArg];
-  } else if (brokerFilter && supabaseUrl && serviceKey) {
+    accounts = [{ id: accountArg, brokerName: null, login: null }];
+  } else if (knownOnly) {
+    accounts = KNOWN_ACCOUNTS;
+    console.log(`📋 ${accounts.length} compte(s) connus (sans Supabase)`);
+  } else if ((allAccounts || brokerFilter) && supabaseUrl && serviceKey) {
     const supabase = createClient(supabaseUrl, serviceKey);
-    const { data } = await supabase
-      .from("mt5_accounts")
-      .select("metaapi_account_id, broker_name, login")
-      .ilike("broker_name", `%${brokerFilter}%`)
-      .not("metaapi_account_id", "is", null);
-    accountIds = (data ?? [])
-      .map((r) => r.metaapi_account_id as string)
-      .filter(Boolean);
+    accounts = await loadMetaApiAccountsFromSupabase(supabase, {
+      broker: brokerFilter,
+    });
     console.log(
-      `📋 ${accountIds.length} compte(s) ${brokerFilter}:`,
-      (data ?? []).map((r) => `${r.login} (${r.metaapi_account_id})`).join(", "),
+      `📋 ${accounts.length} compte(s):`,
+      accounts
+        .map((a) => `${a.brokerName} ${a.login} (${a.id})`)
+        .join("\n   "),
     );
   } else {
-    console.error("❌ --account UUID ou --broker FXcess + Supabase env");
+    console.error(
+      "❌ --account UUID | --known | --broker \"VT Markets\" | --all",
+    );
     process.exit(1);
   }
 
-  if (!accountIds.length) {
+  if (!accounts.length) {
     console.error("❌ Aucun compte MetaAPI trouvé");
     process.exit(1);
   }
 
-  let cancelled = 0;
-  let closed = 0;
+  const result = await cancelPendingOrdersForAccounts(
+    accounts.map((a) => ({ id: a.id, brokerName: a.brokerName })),
+    token,
+    symbolFilter,
+  );
 
-  for (const accountId of accountIds) {
-    console.log(`\n🔍 Compte ${accountId}`);
-
-    const ordersRes = await fetchMetaApiOrdersJson(accountId, token);
-    if (ordersRes.ok) {
-      for (const raw of ordersRes.orders) {
-        if (!raw || typeof raw !== "object") continue;
-        const row = raw as Record<string, unknown>;
-        const sym = orderSymbol(row);
-        if (symbolFilter && !sym.toUpperCase().includes(symbolFilter.toUpperCase())) {
-          continue;
-        }
-        const id = orderId(row);
-        if (!id) continue;
-        console.log(`  🗑️ Cancel order ${id} ${sym}`);
-        const res = await postMetaApiCancelOrder(accountId, id, token);
-        if (res.ok) cancelled++;
-        else console.warn(`     ⚠️ ${res.error}`);
-      }
-    } else {
-      console.warn(`  ⚠️ orders: ${ordersRes.error}`);
+  for (const d of result.details) {
+    if (d.orderId === "-") {
+      console.warn(`⚠️ ${d.accountId}: ${d.error}`);
+      continue;
     }
-
-    const posRes = await fetchMetaApiPositionsJson(accountId, token);
-    if (posRes.ok) {
-      for (const raw of posRes.positions) {
-        if (!raw || typeof raw !== "object") continue;
-        const row = raw as Record<string, unknown>;
-        const sym = orderSymbol(row);
-        if (symbolFilter && !sym.toUpperCase().includes(symbolFilter.toUpperCase())) {
-          continue;
-        }
-        const id =
-          row.id ?? row.positionId ?? row.ticket ?? row.numericPositionId;
-        if (id == null) continue;
-        console.log(`  🔴 Close position ${id} ${sym}`);
-        const res = await postMetaApiClosePosition(
-          accountId,
-          String(id),
-          token,
-        );
-        if (res.ok) closed++;
-        else console.warn(`     ⚠️ ${res.error}`);
-      }
-    }
+    const mark = d.ok ? "✅" : "⚠️";
+    console.log(
+      `${mark} ${d.brokerName ?? d.accountId} cancel ${d.orderId} ${d.symbol} (${d.type})${d.error ? ` — ${d.error}` : ""}`,
+    );
   }
 
-  console.log(`\n✅ ${cancelled} ordre(s) annulé(s), ${closed} position(s) fermée(s)`);
+  console.log(`\n✅ ${result.cancelled} ordre(s) pending annulé(s)`);
 }
 
 main().catch((e) => {

@@ -365,9 +365,14 @@ async function prepareTradeExecution(
           entryParsed,
         );
 
+  const entryForOrder =
+    orderKind === "MARKET"
+      ? Number.NaN
+      : entryParsed;
+
   if (
     (orderKind === "LIMIT" || orderKind === "STOP") &&
-    (!Number.isFinite(entryParsed) || entryParsed <= 0)
+    (!Number.isFinite(entryForOrder) || entryForOrder <= 0)
   ) {
     return {
       ok: false,
@@ -403,7 +408,7 @@ async function prepareTradeExecution(
   }
 
   if (orderKind === "LIMIT" || orderKind === "STOP") {
-    order.openPrice = entryParsed;
+    order.openPrice = entryForOrder;
   }
 
   if (trade.stop_loss) {

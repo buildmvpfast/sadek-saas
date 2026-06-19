@@ -59,7 +59,8 @@ export async function POST(request: NextRequest) {
       `,
       )
       .in("status", ["pending", "pending_partial"])
-      .limit(50);
+      .order("created_at", { ascending: false })
+      .limit(10);
 
     if (fetchError) {
       console.error("❌ Erreur récupération trades:", fetchError);
