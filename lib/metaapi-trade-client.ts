@@ -88,6 +88,10 @@ export function metaApiTradeFailureMessage(data: unknown): string {
     d.stringCode,
     d.numericCode != null ? String(d.numericCode) : null,
   ].filter(Boolean);
+  const details = d.details;
+  if (typeof d.message === "string" && /validation failed/i.test(d.message) && details) {
+    parts.push(typeof details === "string" ? details : JSON.stringify(details));
+  }
   return parts.join(" — ") || "Trade refusé par MetaTrader";
 }
 
@@ -95,16 +99,21 @@ function sanitizeTradeBody(body: MetaApiTradeBody): MetaApiTradeBody {
   const out: MetaApiTradeBody = {};
   for (const [k, v] of Object.entries(body)) {
     if (v === undefined || v === null) continue;
+    if (k === "deviation") {
+      const n = typeof v === "number" ? v : parseFloat(String(v));
+      if (Number.isFinite(n) && n >= 0) out.slippage = Math.round(n);
+      continue;
+    }
     if (k === "volume") {
       const n = typeof v === "number" ? v : parseFloat(String(v));
       if (!Number.isFinite(n) || n <= 0) continue;
       out[k] = Math.round(n * 1e8) / 1e8;
       continue;
     }
-    if (k === "stopLoss" || k === "takeProfit" || k === "openPrice") {
+    if (k === "stopLoss" || k === "takeProfit" || k === "openPrice" || k === "slippage") {
       const n = typeof v === "number" ? v : parseFloat(String(v));
       if (!Number.isFinite(n)) continue;
-      out[k] = n;
+      out[k] = k === "slippage" ? Math.round(n) : n;
       continue;
     }
     out[k] = v;

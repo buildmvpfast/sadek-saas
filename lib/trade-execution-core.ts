@@ -403,9 +403,9 @@ async function prepareTradeExecution(
     volume,
   };
 
-  const deviation = slippageDeviation(settings);
-  if (deviation != null && orderKind === "MARKET") {
-    order.deviation = deviation;
+  const slippage = slippageDeviation(settings);
+  if (slippage != null && orderKind === "MARKET") {
+    order.slippage = slippage;
   }
 
   if (orderKind === "LIMIT" || orderKind === "STOP") {
