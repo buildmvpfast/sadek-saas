@@ -343,9 +343,26 @@ export async function fetchMetaApiSymbolQuote(
 }
 
 function minStopDistance(refPrice: number): number {
-  if (refPrice > 1000) return Math.max(refPrice * 0.00015, 1);
+  if (refPrice > 2000) return Math.max(refPrice * 0.002, 50);
+  if (refPrice > 1000) return Math.max(refPrice * 0.001, 20);
   if (refPrice > 10) return Math.max(refPrice * 0.0001, 0.01);
   return 0.00005;
+}
+
+function adjustStopToMinDistance(
+  side: ReturnType<typeof parseStopSide>,
+  refPrice: number,
+  value: number,
+  dist: number,
+  kind: "sl" | "tp",
+): number {
+  const buy = side === "BUY";
+  if (kind === "sl") {
+    if (buy) return Math.min(value, refPrice - dist);
+    return Math.max(value, refPrice + dist);
+  }
+  if (buy) return Math.max(value, refPrice + dist);
+  return Math.min(value, refPrice - dist);
 }
 
 type BuiltMarketOrderResult = { ok: true; order: MetaApiTradeBody };
@@ -384,11 +401,16 @@ function buildMarketOrderWithValidatedStops(
   );
 
   const order: MetaApiTradeBody = { ...body };
-  if (sanitized.stopLoss != null) order.stopLoss = sanitized.stopLoss;
-  else if (stopLoss != null) order.stopLoss = stopLoss;
-
-  if (sanitized.takeProfit != null) order.takeProfit = sanitized.takeProfit;
-  else if (takeProfit != null) order.takeProfit = takeProfit;
+  if (stopLoss != null) {
+    order.stopLoss =
+      sanitized.stopLoss ??
+      adjustStopToMinDistance(side, refPrice, stopLoss, dist, "sl");
+  }
+  if (takeProfit != null) {
+    order.takeProfit =
+      sanitized.takeProfit ??
+      adjustStopToMinDistance(side, refPrice, takeProfit, dist, "tp");
+  }
 
   return { ok: true, order };
 }
@@ -438,6 +460,12 @@ export async function postMetaApiMarketReliable(
   if (result.ok) return result;
 
   if (STOPS_RELATED.test(result.error || "")) {
+    const naked = { ...body };
+    delete naked.stopLoss;
+    delete naked.takeProfit;
+    const bare = await postMetaApiTrade(accountId, naked, token);
+    if (bare.ok) return bare;
+
     const ref = quote
       ? side === "BUY"
         ? quote.ask
@@ -459,28 +487,7 @@ export async function postMetaApiMarketReliable(
       };
       result = await postMetaApiTrade(accountId, clampOrder, token);
       if (result.ok) return result;
-
-      const wider = sanitizeStopsForOpenPrice(
-        side,
-        ref,
-        clamped.stopLoss,
-        clamped.takeProfit,
-        minStopDistance(ref) * 3,
-      );
-      const widerOrder: MetaApiTradeBody = {
-        ...body,
-        ...(wider.stopLoss != null ? { stopLoss: wider.stopLoss } : {}),
-        ...(wider.takeProfit != null ? { takeProfit: wider.takeProfit } : {}),
-      };
-      result = await postMetaApiTrade(accountId, widerOrder, token);
-      if (result.ok) return result;
     }
-
-    const naked = { ...body };
-    delete naked.stopLoss;
-    delete naked.takeProfit;
-    const bare = await postMetaApiTrade(accountId, naked, token);
-    if (bare.ok) return bare;
   }
 
   return result;

@@ -80,16 +80,37 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`📊 ${pendingTrades.length} trade(s) en attente`);
+
+    const token = process.env.METAAPI_TOKEN!;
+    const results = await Promise.allSettled(
+      pendingTrades.map(async (trade) => {
+        const broker = (
+          trade.mt5_accounts as { broker_name?: string } | { broker_name?: string }[]
+        );
+        const brokerName = Array.isArray(broker)
+          ? broker[0]?.broker_name
+          : broker?.broker_name;
+        const result = await executeOnePendingTrade(
+          supabase,
+          trade as Parameters<typeof executeOnePendingTrade>[1],
+          token,
+        );
+        return { trade, brokerName, result };
+      }),
+    );
+
     let executed = 0;
     let failed = 0;
     let skipped = 0;
 
-    for (const trade of pendingTrades) {
-      const result = await executeOnePendingTrade(
-        supabase,
-        trade as Parameters<typeof executeOnePendingTrade>[1],
-        process.env.METAAPI_TOKEN!,
-      );
+    for (const entry of results) {
+      if (entry.status === "rejected") {
+        failed++;
+        console.error("❌ Trade batch error:", entry.reason);
+        continue;
+      }
+      const { trade, brokerName, result } = entry.value;
+      const tag = brokerName ? `[${brokerName}]` : "";
 
       if (result.ok) {
         if (result.skipped) {
@@ -97,16 +118,14 @@ export async function POST(request: NextRequest) {
           continue;
         }
         executed++;
-        console.log(`✅ Trade ${trade.id} exécuté`);
+        console.log(`✅ Trade ${trade.id} ${tag} exécuté`);
+      } else if (isTransientMetaApiError(result.error)) {
+        console.warn(
+          `⏳ Trade ${trade.id} ${tag}: réseau MetaAPI, reste pending — ${result.error}`,
+        );
       } else {
-        if (isTransientMetaApiError(result.error)) {
-          console.warn(
-            `⏳ Trade ${trade.id}: erreur réseau MetaAPI, reste pending — ${result.error}`,
-          );
-          continue;
-        }
         failed++;
-        console.error(`❌ Trade ${trade.id}:`, result.error);
+        console.error(`❌ Trade ${trade.id} ${tag}:`, result.error);
       }
     }
 
