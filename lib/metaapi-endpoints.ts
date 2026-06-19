@@ -8,7 +8,6 @@
 export const METAAPI_CLIENT_ROOTS = [
   "https://mt-client-api-v1.london.agiliumtrade.ai",
   "https://mt-client-api-v1.new-york.agiliumtrade.ai",
-  "https://mt-client-api-v1.singapore.agiliumtrade.ai",
 ] as const;
 
 export const METAAPI_PROVISIONING_ACCOUNTS_URL =

@@ -420,7 +420,7 @@ async function prepareTradeExecution(
 
 function isUnknownSymbolError(error?: string | null): boolean {
   if (!error) return false;
-  return /UNKNOWN_SYMBOL|ERR_MARKET_UNKNOWN|4301|invalid symbol|unknown symbol/i.test(
+  return /UNKNOWN_SYMBOL|ERR_MARKET_UNKNOWN|4301|invalid symbol|unknown symbol|ERR_QUOTE_SYMBOL_MISMATCH/i.test(
     error,
   );
 }

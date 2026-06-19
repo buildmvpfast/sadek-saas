@@ -283,7 +283,6 @@ export function metaApiClosePositionUrls(
   const roots = [
     "https://mt-client-api-v1.london.agiliumtrade.ai",
     "https://mt-client-api-v1.new-york.agiliumtrade.ai",
-    "https://mt-client-api-v1.singapore.agiliumtrade.ai",
   ];
   return roots.map(
     (r) =>

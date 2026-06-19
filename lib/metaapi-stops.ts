@@ -56,3 +56,36 @@ export function sanitizeStopsForOpenPrice(
 
   return out;
 }
+
+/** Prix cohérent avec SL/TP du signal (évite XAUUSD générique vs XAUUSD-VIP / XAUUSD+). */
+export function isQuoteConsistentWithStops(
+  quote: number,
+  side: StopSide,
+  stopLoss?: number | null,
+  takeProfit?: number | null,
+): boolean {
+  const refs = [stopLoss, takeProfit].filter(
+    (v): v is number => v != null && Number.isFinite(v) && v > 0,
+  );
+  if (refs.length === 0) return true;
+
+  const anchor =
+    refs.length === 1
+      ? refs[0]
+      : side === "BUY"
+        ? Math.min(...refs)
+        : Math.max(...refs);
+
+  const diffRatio = Math.abs(quote - anchor) / anchor;
+  if (diffRatio > 0.12) return false;
+
+  if (takeProfit != null && Number.isFinite(takeProfit)) {
+    if (side === "BUY" && quote >= takeProfit) return false;
+    if (side === "SELL" && quote <= takeProfit) return false;
+  }
+  if (stopLoss != null && Number.isFinite(stopLoss)) {
+    if (side === "BUY" && quote <= stopLoss) return false;
+    if (side === "SELL" && quote >= stopLoss) return false;
+  }
+  return true;
+}

@@ -9,6 +9,7 @@ import {
 import {
   parseStopSide,
   sanitizeStopsForOpenPrice,
+  isQuoteConsistentWithStops,
 } from "@/lib/metaapi-stops";
 
 export type MetaApiTradeBody = Record<string, unknown>;
@@ -340,9 +341,7 @@ function minStopDistance(refPrice: number): number {
   return 0.00005;
 }
 
-type BuiltMarketOrderResult =
-  | { ok: true; order: MetaApiTradeBody }
-  | { ok: false; error: string };
+type BuiltMarketOrderResult = { ok: true; order: MetaApiTradeBody };
 
 function buildMarketOrderWithValidatedStops(
   body: MetaApiTradeBody,
@@ -371,27 +370,14 @@ function buildMarketOrderWithValidatedStops(
     dist,
   );
 
-  if (stopLoss != null && sanitized.stopLoss == null) {
-    return {
-      ok: false,
-      error: `SL ${stopLoss} invalide vs prix marché ${refPrice} (${side})`,
-    };
-  }
-  if (takeProfit != null && sanitized.takeProfit == null) {
-    return {
-      ok: false,
-      error: `TP ${takeProfit} invalide vs prix marché ${refPrice} (${side})`,
-    };
-  }
+  const order: MetaApiTradeBody = { ...body };
+  if (sanitized.stopLoss != null) order.stopLoss = sanitized.stopLoss;
+  else if (stopLoss != null) order.stopLoss = stopLoss;
 
-  return {
-    ok: true,
-    order: {
-      ...body,
-      ...(sanitized.stopLoss != null ? { stopLoss: sanitized.stopLoss } : {}),
-      ...(sanitized.takeProfit != null ? { takeProfit: sanitized.takeProfit } : {}),
-    },
-  };
+  if (sanitized.takeProfit != null) order.takeProfit = sanitized.takeProfit;
+  else if (takeProfit != null) order.takeProfit = takeProfit;
+
+  return { ok: true, order };
 }
 
 /**
@@ -411,15 +397,29 @@ export async function postMetaApiMarketReliable(
   }
 
   const symbol = String(body.symbol ?? "");
+  const side = parseStopSide(action);
+  const stopLoss = body.stopLoss as number | undefined;
+  const takeProfit = body.takeProfit as number | undefined;
   const quote =
-    body.stopLoss != null || body.takeProfit != null
+    stopLoss != null || takeProfit != null
       ? await fetchMetaApiSymbolQuote(accountId, symbol, token)
       : null;
 
-  const built = buildMarketOrderWithValidatedStops(body, quote);
-  if (!built.ok) {
-    return { ok: false, status: 400, data: null, error: built.error };
+  if (quote) {
+    const refPrice = side === "BUY" ? quote.ask : quote.bid;
+    if (
+      !isQuoteConsistentWithStops(refPrice, side, stopLoss, takeProfit)
+    ) {
+      return {
+        ok: false,
+        status: 400,
+        data: null,
+        error: `ERR_QUOTE_SYMBOL_MISMATCH: prix ${refPrice} incohérent avec SL/TP pour ${symbol}`,
+      };
+    }
   }
+
+  const built = buildMarketOrderWithValidatedStops(body, quote);
 
   const result = await postMetaApiTrade(accountId, built.order, token);
   if (result.ok) return result;
@@ -571,12 +571,7 @@ export async function fetchMetaApiAccountInfo(
   accountId: string,
   token: string,
 ): Promise<Record<string, unknown> | null> {
-  const roots = [
-    "https://mt-client-api-v1.london.agiliumtrade.ai",
-    "https://mt-client-api-v1.new-york.agiliumtrade.ai",
-    "https://mt-client-api-v1.singapore.agiliumtrade.ai",
-  ];
-  for (const root of roots) {
+  for (const root of METAAPI_CLIENT_ROOTS) {
     try {
       const url = `${root}/users/current/accounts/${encodeURIComponent(accountId)}/account-information`;
       const response = await fetch(url, { headers: { "auth-token": token } });
