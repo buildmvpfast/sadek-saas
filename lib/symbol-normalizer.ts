@@ -165,18 +165,19 @@ export function lotSettingKeyForSymbol(standardSymbol: string): string | null {
   return map[standardSymbol] ?? null;
 }
 
-const KNOWN_TRADING_SYMBOLS = new Set<string>([
-  "GOLD",
-  "BTC",
-  "ETH",
-  "SOL30",
-  "US30",
-  "NAS100",
-  "SPX500",
-  "GER40",
-  "UK100",
-  ...FOREX_SIX,
-]);
+const KNOWN_TRADING_SYMBOLS = new Set<string>(
+  [
+    "GOLD",
+    "BTC",
+    "ETH",
+    "SOL30",
+    "US30",
+    "NAS100",
+    "SPX500",
+    "GER40",
+    "UK100",
+  ].concat(Array.from(FOREX_SIX)),
+);
 
 /** Rejette les faux signaux (POUR, CLAIRE, messages de clôture mal parsés…). */
 export function isKnownTradingSymbol(symbol: string): boolean {
