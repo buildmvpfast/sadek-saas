@@ -249,7 +249,14 @@ export async function postMetaApiTrade(
 }
 
 const STOPS_RELATED =
-  /invalid.?stops|stops.?level|invalid.?prices?|price.?distance|TRADE_RETCODE_INVALID_STOPS/i;
+  /invalid.?stops|stops.?level|invalid.?prices?|price.?distance|TRADE_RETCODE_INVALID_STOPS|TRADE_RETCODE_INVALID_PRICE|ERR_INVALID_STOPS|\b10015\b|\b130\b/i;
+
+function stripStops(body: MetaApiTradeBody, sl: boolean, tp: boolean): MetaApiTradeBody {
+  const next = { ...body };
+  if (sl) delete next.stopLoss;
+  if (tp) delete next.takeProfit;
+  return next;
+}
 
 export async function postMetaApiTradeWithStopsFallback(
   accountId: string,
@@ -257,27 +264,38 @@ export async function postMetaApiTradeWithStopsFallback(
   token: string,
 ): Promise<PostMetaApiTradeResult> {
   const hasSlTp = body.stopLoss != null || body.takeProfit != null;
-
-  const first = await postMetaApiTrade(accountId, body, token);
-  if (first.ok) return first;
-
-  const err = (first.error || "").toString();
-  if (
-    hasSlTp &&
-    STOPS_RELATED.test(err) &&
-    (body.actionType === "ORDER_TYPE_BUY" ||
-      body.actionType === "ORDER_TYPE_SELL")
-  ) {
-    const { stopLoss: _sl, takeProfit: _tp, ...rest } = body;
-    const second = await postMetaApiTrade(accountId, rest, token);
-    if (second.ok) return second;
-    return {
-      ...second,
-      error: `${second.error || ""} (après retry sans SL/TP)`,
-    };
+  const attempts: MetaApiTradeBody[] = [body];
+  if (hasSlTp) {
+    attempts.push(stripStops(body, true, false));
+    attempts.push(stripStops(body, false, true));
+    attempts.push(stripStops(body, true, true));
   }
 
-  return first;
+  const seen = new Set<string>();
+  let last: PostMetaApiTradeResult = {
+    ok: false,
+    status: 0,
+    data: null,
+    error: "Aucune tentative",
+  };
+
+  for (const attempt of attempts) {
+    const key = JSON.stringify(attempt);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const result = await postMetaApiTrade(accountId, attempt, token);
+    last = result;
+    if (result.ok) return result;
+    if (!hasSlTp || !STOPS_RELATED.test(result.error || "")) {
+      return result;
+    }
+  }
+
+  if (hasSlTp && last.error) {
+    return { ...last, error: `${last.error} (après retry sans SL/TP)` };
+  }
+  return last;
 }
 
 /** POST .../positions/:id/close — mêmes bases que GET positions */
@@ -460,4 +478,59 @@ export async function postMetaApiClosePositionVolume(
     body.volume = volume;
   }
   return postMetaApiTrade(accountId, body, token);
+}
+
+function metaApiClientRoots(): string[] {
+  return [
+    "https://mt-client-api-v1.london.agiliumtrade.ai",
+    "https://mt-client-api-v1.new-york.agiliumtrade.ai",
+    "https://mt-client-api-v1.singapore.agiliumtrade.ai",
+    "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai",
+  ];
+}
+
+export function metaApiOrdersUrls(accountId: string): string[] {
+  const id = encodeURIComponent(accountId);
+  return metaApiClientRoots().map(
+    (r) => `${r}/users/current/accounts/${id}/orders`,
+  );
+}
+
+export async function fetchMetaApiOrdersJson(
+  accountId: string,
+  token: string,
+): Promise<{ ok: true; orders: unknown[] } | { ok: false; error: string }> {
+  let lastErr = "";
+  for (const url of metaApiOrdersUrls(accountId)) {
+    try {
+      const response = await fetch(url, {
+        headers: { "auth-token": token },
+      });
+      if (!response.ok) {
+        lastErr = `HTTP ${response.status}`;
+        continue;
+      }
+      const data: unknown = await response.json();
+      if (!Array.isArray(data)) {
+        lastErr = "orders: not array";
+        continue;
+      }
+      return { ok: true, orders: data };
+    } catch (e: unknown) {
+      lastErr = e instanceof Error ? e.message : String(e);
+    }
+  }
+  return { ok: false, error: lastErr || "orders unavailable" };
+}
+
+export async function postMetaApiCancelOrder(
+  accountId: string,
+  orderId: string,
+  token: string,
+): Promise<PostMetaApiTradeResult> {
+  return postMetaApiTrade(
+    accountId,
+    { actionType: "ORDER_CANCEL", orderId: String(orderId) },
+    token,
+  );
 }

@@ -157,6 +157,40 @@ function pickLiveSymbol(
   return fuzzyMatchSymbol(live, standardSymbol, exclude);
 }
 
+/** Ne jamais envoyer le symbole standard (GOLD) tel quel au broker. */
+function finalizeBrokerSymbol(
+  picked: string,
+  normalizedSymbol: string,
+  ordered: string[],
+): string {
+  const stdOnly = new Set([
+    "GOLD",
+    "BTC",
+    "ETH",
+    "SOL30",
+    "US30",
+    "NAS100",
+    "GER40",
+    "UK100",
+    "SPX500",
+  ]);
+
+  if (normalizedSymbol === "GOLD" && (picked === "GOLD" || stdOnly.has(picked))) {
+    const xau =
+      ordered.find((c) => /^XAUUSD/i.test(c)) ??
+      ordered.find((c) => /XAUUSD/i.test(c)) ??
+      "XAUUSD";
+    return xau;
+  }
+
+  if (stdOnly.has(picked) && picked === normalizedSymbol) {
+    const alt = ordered.find((c) => c !== picked);
+    if (alt) return alt;
+  }
+
+  return picked;
+}
+
 export async function resolveBrokerSymbol(
   standardSymbolInput: string,
   brokerName: string | null,
@@ -236,9 +270,11 @@ export async function resolveBrokerSymbol(
         normalizedSymbol,
         exclude,
       );
-      if (picked) return picked;
+      if (picked) return finalizeBrokerSymbol(picked, normalizedSymbol, ordered);
     }
   }
 
-  return ordered.find((c) => !exclude.has(c)) ?? normalizedSymbol;
+  const fallback =
+    ordered.find((c) => !exclude.has(c)) ?? normalizedSymbol;
+  return finalizeBrokerSymbol(fallback, normalizedSymbol, ordered);
 }

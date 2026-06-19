@@ -270,6 +270,22 @@ async function prepareTradeExecution(
         symbolProfile: profile,
       },
     );
+    if (
+      brokerSymbol === standardSymbol ||
+      brokerSymbol === "GOLD"
+    ) {
+      brokerSymbol = await resolveBrokerSymbol(
+        standardSymbol,
+        brokerName,
+        supabase,
+        {
+          metaApiAccountId,
+          metaApiToken: token,
+          symbolProfile: profile,
+          refreshSymbols: true,
+        },
+      );
+    }
   }
 
   const rawVol = Number(trade.volume) > 0 ? Number(trade.volume) : 0.01;
