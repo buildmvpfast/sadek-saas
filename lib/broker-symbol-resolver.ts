@@ -42,7 +42,7 @@ async function getLiveSymbols(
 function findInLiveSet(candidate: string, live: Set<string>): string | null {
   if (live.has(candidate)) return candidate;
   const lc = candidate.toLowerCase();
-  for (const s of live) {
+  for (const s of Array.from(live)) {
     if (s.toLowerCase() === lc) return s;
   }
   return null;
