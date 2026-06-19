@@ -6,6 +6,7 @@ import {
   fetchMetaApiAccountEquity,
   postMetaApiClosePositionVolume,
   postMetaApiTradeWithStopsFallback,
+  postMetaApiMarketReliable,
 } from "@/lib/metaapi-trade-client";
 import { parseLocaleNumber } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
@@ -441,11 +442,12 @@ async function postTradeWithSymbolRetry(
   for (let attempt = 0; attempt < 4; attempt++) {
     tried.add(symbol);
     order = { ...order, symbol };
-    const result = await postMetaApiTradeWithStopsFallback(
-      metaApiAccountId,
-      order,
-      token,
-    );
+    const action = String(order.actionType ?? "");
+    const isMarket =
+      action === "ORDER_TYPE_BUY" || action === "ORDER_TYPE_SELL";
+    const result = isMarket
+      ? await postMetaApiMarketReliable(metaApiAccountId, order, token)
+      : await postMetaApiTradeWithStopsFallback(metaApiAccountId, order, token);
     if (result.ok || !isUnknownSymbolError(result.error)) {
       return { ...result, symbol };
     }
@@ -472,6 +474,11 @@ async function postTradeWithSymbolRetry(
     order,
     token,
   );
+  const lastAction = String(order.actionType ?? "");
+  if (lastAction === "ORDER_TYPE_BUY" || lastAction === "ORDER_TYPE_SELL") {
+    const m = await postMetaApiMarketReliable(metaApiAccountId, order, token);
+    return { ...m, symbol };
+  }
   return { ...last, symbol };
 }
 

@@ -2,6 +2,10 @@
  * Client MetaAPI REST (trade + lecture positions)
  */
 import { formatFetchError } from "@/lib/metaapi-errors";
+import {
+  parseStopSide,
+  sanitizeStopsForOpenPrice,
+} from "@/lib/metaapi-stops";
 
 export type MetaApiTradeBody = Record<string, unknown>;
 
@@ -296,6 +300,147 @@ export async function postMetaApiTradeWithStopsFallback(
     return { ...last, error: `${last.error} (après retry sans SL/TP)` };
   }
   return last;
+}
+
+export type MetaApiSymbolQuote = { bid: number; ask: number };
+
+/** Prix live bid/ask pour valider SL/TP avant ordre MARKET. */
+export async function fetchMetaApiSymbolQuote(
+  accountId: string,
+  symbol: string,
+  token: string,
+): Promise<MetaApiSymbolQuote | null> {
+  const sym = encodeURIComponent(symbol);
+  const id = encodeURIComponent(accountId);
+  let lastErr = "";
+
+  for (const root of metaApiClientRoots()) {
+    const url = `${root}/users/current/accounts/${id}/symbols/${sym}/current-price`;
+    try {
+      const response = await fetch(url, { headers: { "auth-token": token } });
+      if (!response.ok) {
+        lastErr = `HTTP ${response.status}`;
+        continue;
+      }
+      const data = (await response.json()) as Record<string, unknown>;
+      const bid = parseFloat(String(data.bid ?? ""));
+      const ask = parseFloat(String(data.ask ?? ""));
+      if (Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 && ask > 0) {
+        return { bid, ask };
+      }
+      lastErr = "bid/ask invalides";
+    } catch (e: unknown) {
+      lastErr = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  console.warn(`fetchMetaApiSymbolQuote ${symbol}: ${lastErr}`);
+  return null;
+}
+
+function minStopDistance(refPrice: number): number {
+  if (refPrice > 1000) return Math.max(refPrice * 0.00015, 1);
+  if (refPrice > 10) return Math.max(refPrice * 0.0001, 0.01);
+  return 0.00005;
+}
+
+function buildMarketOrderWithValidatedStops(
+  body: MetaApiTradeBody,
+  quote: MetaApiSymbolQuote | null,
+): MetaApiTradeBody | { error: string } {
+  const action = String(body.actionType ?? "");
+  const side = parseStopSide(action);
+  const refPrice = side === "BUY" ? quote?.ask : quote?.bid;
+  const stopLoss = body.stopLoss as number | undefined;
+  const takeProfit = body.takeProfit as number | undefined;
+
+  if (stopLoss == null && takeProfit == null) return { ...body };
+
+  if (refPrice == null || !Number.isFinite(refPrice)) {
+    return { ...body };
+  }
+
+  const dist = minStopDistance(refPrice);
+  const sanitized = sanitizeStopsForOpenPrice(
+    side,
+    refPrice,
+    stopLoss,
+    takeProfit,
+    dist,
+  );
+
+  if (stopLoss != null && sanitized.stopLoss == null) {
+    return {
+      error: `SL ${stopLoss} invalide vs prix marché ${refPrice} (${side})`,
+    };
+  }
+  if (takeProfit != null && sanitized.takeProfit == null) {
+    return {
+      error: `TP ${takeProfit} invalide vs prix marché ${refPrice} (${side})`,
+    };
+  }
+
+  return {
+    ...body,
+    ...(sanitized.stopLoss != null ? { stopLoss: sanitized.stopLoss } : {}),
+    ...(sanitized.takeProfit != null ? { takeProfit: sanitized.takeProfit } : {}),
+  };
+}
+
+/**
+ * MARKET : SL/TP inclus dans l'ordre initial (1 seul POST MetaAPI).
+ * Prix live vérifié avant envoi — pas d'ouverture nue.
+ */
+export async function postMetaApiMarketReliable(
+  accountId: string,
+  body: MetaApiTradeBody,
+  token: string,
+): Promise<PostMetaApiTradeResult> {
+  const action = String(body.actionType ?? "");
+  const isMarket =
+    action === "ORDER_TYPE_BUY" || action === "ORDER_TYPE_SELL";
+  if (!isMarket) {
+    return postMetaApiTradeWithStopsFallback(accountId, body, token);
+  }
+
+  const symbol = String(body.symbol ?? "");
+  const quote =
+    body.stopLoss != null || body.takeProfit != null
+      ? await fetchMetaApiSymbolQuote(accountId, symbol, token)
+      : null;
+
+  const built = buildMarketOrderWithValidatedStops(body, quote);
+  if ("error" in built) {
+    return { ok: false, status: 400, data: null, error: built.error };
+  }
+
+  const result = await postMetaApiTrade(accountId, built, token);
+  if (result.ok) return result;
+
+  if (
+    STOPS_RELATED.test(result.error || "") &&
+    quote &&
+    body.stopLoss != null
+  ) {
+    const side = parseStopSide(action);
+    const ref = side === "BUY" ? quote.ask : quote.bid;
+    const wider = sanitizeStopsForOpenPrice(
+      side,
+      ref,
+      body.stopLoss as number,
+      body.takeProfit as number,
+      minStopDistance(ref) * 3,
+    );
+    const retry: MetaApiTradeBody = {
+      ...body,
+      ...(wider.stopLoss != null ? { stopLoss: wider.stopLoss } : {}),
+      ...(wider.takeProfit != null ? { takeProfit: wider.takeProfit } : {}),
+    };
+    const second = await postMetaApiTrade(accountId, retry, token);
+    if (second.ok) return second;
+  }
+
+  return result;
 }
 
 /** POST .../positions/:id/close — mêmes bases que GET positions */

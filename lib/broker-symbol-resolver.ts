@@ -109,10 +109,36 @@ function orderByProfile(
   return candidates;
 }
 
+function scoreGoldForBroker(sym: string, brokerName: string | null): number {
+  const b = (brokerName ?? "").toLowerCase().replace(/\s+/g, "");
+  const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+
+  if (/vantage/i.test(b)) {
+    if (/XAUUSD\+$/i.test(sym) || sym.endsWith("+")) return 0;
+    if (c.startsWith("XAUUSD")) return 4;
+    return 12;
+  }
+  if (/vtmarket/i.test(b)) {
+    if (/VIP/i.test(sym)) return 0;
+    if (/ECN/i.test(sym)) return 6;
+    if (c === "XAUUSD") return 8;
+    return 14;
+  }
+  if (/fxcess/i.test(b)) {
+    if (c === "XAUUSD" || c === "GOLD") return 0;
+    return 10;
+  }
+  if (c === "XAUUSD") return 5;
+  if (/^XAUUSD/i.test(sym)) return 7;
+  if (/^GOLD/i.test(sym)) return 9;
+  return 15;
+}
+
 function fuzzyMatchSymbol(
   available: Set<string>,
   standardSymbol: string,
   exclude?: Set<string>,
+  brokerName?: string | null,
 ): string | null {
   const compact = standardSymbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   for (const sym of Array.from(available)) {
@@ -129,15 +155,11 @@ function fuzzyMatchSymbol(
         /XAU|GOLD/i.test(sym) &&
         !/^(BTC|ETH)/i.test(sym.replace(/[^A-Z0-9]/gi, "")),
     );
-    const score = (sym: string): number => {
-      const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-      if (c === "XAUUSD") return 0;
-      if (/^XAUUSD/i.test(sym)) return 1;
-      if (/XAUUSD/i.test(sym)) return 2;
-      if (/^GOLD/i.test(sym)) return 3;
-      return 4;
-    };
-    gold.sort((a, b) => score(a) - score(b));
+    gold.sort(
+      (a, b) =>
+        scoreGoldForBroker(a, brokerName ?? null) -
+        scoreGoldForBroker(b, brokerName ?? null),
+    );
     if (gold[0]) return gold[0];
   }
   return null;
@@ -148,13 +170,19 @@ function pickLiveSymbol(
   live: Set<string>,
   standardSymbol: string,
   exclude?: Set<string>,
+  brokerName?: string | null,
 ): string | null {
+  if (standardSymbol === "GOLD") {
+    const fuzzy = fuzzyMatchSymbol(live, standardSymbol, exclude, brokerName);
+    if (fuzzy) return fuzzy;
+  }
+
   for (const c of candidates) {
     if (exclude?.has(c)) continue;
     const hit = findInLiveSet(c, live);
     if (hit && !exclude?.has(hit)) return hit;
   }
-  return fuzzyMatchSymbol(live, standardSymbol, exclude);
+  return fuzzyMatchSymbol(live, standardSymbol, exclude, brokerName);
 }
 
 /** Ne jamais envoyer le symbole standard (GOLD) tel quel au broker. */
@@ -269,11 +297,20 @@ export async function resolveBrokerSymbol(
         live.symbols,
         normalizedSymbol,
         exclude,
+        brokerName,
       );
       if (picked) return finalizeBrokerSymbol(picked, normalizedSymbol, ordered);
+      const fuzzy = fuzzyMatchSymbol(
+        live.symbols,
+        normalizedSymbol,
+        exclude,
+        brokerName,
+      );
+      if (fuzzy) return fuzzy;
     }
   }
 
+  // Sans liste live : fallback statique uniquement
   const fallback =
     ordered.find((c) => !exclude.has(c)) ?? normalizedSymbol;
   return finalizeBrokerSymbol(fallback, normalizedSymbol, ordered);
