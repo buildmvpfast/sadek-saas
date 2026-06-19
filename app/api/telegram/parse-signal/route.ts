@@ -9,6 +9,7 @@ import {
   type TradingRiskSettings,
 } from "@/lib/trade-risk";
 import { fetchMetaApiAccountEquity } from "@/lib/metaapi-trade-client";
+import { releaseStaleExecutingTrades } from "@/lib/trade-execution-core";
 import {
   effectiveUserVolumeForIndexSplit,
   lotStepForStandard,
@@ -544,14 +545,32 @@ export async function POST(request: NextRequest) {
     console.log(`🔄 Création des trades pour le signal ${savedSignal.id}`);
     await executeTradesForSignal(savedSignal.id);
 
-    // Exécuter immédiatement les trades (double sécurité avec le worker Render)
+    // Exécuter immédiatement (+ 2e passe si trades encore pending)
     try {
       const baseUrl =
         process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-      await fetch(`${baseUrl}/api/telegram/execute-trades`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${process.env.INTERNAL_API_SECRET}` },
-      });
+      const secret = process.env.INTERNAL_API_SECRET;
+      if (secret) {
+        for (let pass = 0; pass < 2; pass++) {
+          await fetch(`${baseUrl}/api/telegram/execute-trades`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${secret}` },
+          });
+          if (pass === 0) {
+            await new Promise((r) => setTimeout(r, 3500));
+            const supabase = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              process.env.SUPABASE_SERVICE_ROLE_KEY!,
+            );
+            const { count } = await supabase
+              .from("telegram_trades")
+              .select("id", { count: "exact", head: true })
+              .eq("signal_id", savedSignal.id)
+              .in("status", ["pending", "pending_partial"]);
+            if ((count ?? 0) === 0) break;
+          }
+        }
+      }
     } catch (error) {
       console.error("Error triggering trade execution:", error);
     }
@@ -913,6 +932,11 @@ async function executeTradesForSignal(signalId: string) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  const released = await releaseStaleExecutingTrades(supabase, 3_000);
+  if (released > 0) {
+    console.log(`♻️ ${released} trade(s) executing débloqué(s) avant création`);
+  }
 
   // Récupérer les données du signal
   const { data: signal } = await supabase

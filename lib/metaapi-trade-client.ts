@@ -681,6 +681,87 @@ export function metaApiOrdersUrls(accountId: string): string[] {
   );
 }
 
+export type MetaApiOpenPosition = {
+  id: string;
+  symbol: string;
+  type: string;
+  takeProfit?: number;
+  time?: string;
+};
+
+export function compactGoldSymbol(sym: string): string {
+  const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  if (c === "GOLD" || c.startsWith("XAUUSD")) return "XAUUSD";
+  return c;
+}
+
+export function goldSymbolsEquivalent(a: string, b: string): boolean {
+  return compactGoldSymbol(a) === "XAUUSD" && compactGoldSymbol(b) === "XAUUSD";
+}
+
+export function brokerSymbolsEquivalent(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (goldSymbolsEquivalent(a, b)) return true;
+  return (
+    a.replace(/[^A-Z0-9]/gi, "").toUpperCase() ===
+    b.replace(/[^A-Z0-9]/gi, "").toUpperCase()
+  );
+}
+
+export function signalTypeMatchesPosition(
+  signalType: string,
+  positionType: string,
+): boolean {
+  const buy = signalType.toUpperCase() === "BUY";
+  const t = positionType.toUpperCase();
+  const posBuy = t.includes("BUY") && !t.includes("SELL");
+  const posSell = t.includes("SELL");
+  if (buy) return posBuy;
+  return posSell;
+}
+
+export function parseMetaApiOpenPositions(raw: unknown[]): MetaApiOpenPosition[] {
+  const out: MetaApiOpenPosition[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const p = row as Record<string, unknown>;
+    const id = p.id ?? p.positionId ?? p.ticket;
+    const symbol = p.symbol;
+    const type = p.type ?? p.side;
+    if (id == null || typeof symbol !== "string" || typeof type !== "string") {
+      continue;
+    }
+    const tp = p.takeProfit ?? p.take_profit;
+    out.push({
+      id: String(id),
+      symbol,
+      type,
+      takeProfit:
+        typeof tp === "number" && Number.isFinite(tp) ? tp : undefined,
+      time:
+        typeof p.time === "string"
+          ? p.time
+          : typeof p.openTime === "string"
+            ? p.openTime
+            : undefined,
+    });
+  }
+  return out;
+}
+
+export function findMatchingOpenPosition(
+  positions: MetaApiOpenPosition[],
+  brokerSymbol: string,
+  signalType: string,
+): MetaApiOpenPosition | null {
+  for (const p of positions) {
+    if (!brokerSymbolsEquivalent(brokerSymbol, p.symbol)) continue;
+    if (!signalTypeMatchesPosition(signalType, p.type)) continue;
+    return p;
+  }
+  return null;
+}
+
 export async function fetchMetaApiOrdersJson(
   accountId: string,
   token: string,

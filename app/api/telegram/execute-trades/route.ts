@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
         error_message,
         status,
         position_id,
+        created_at,
         partial_close_percent,
         mt5_accounts!inner(metaapi_account_id, broker_name, symbol_profile),
         telegram_signals (

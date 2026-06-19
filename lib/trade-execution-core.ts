@@ -6,6 +6,9 @@ import {
   fetchMetaApiAccountEquity,
   fetchMetaApiSymbolNames,
   fetchMetaApiSymbolQuote,
+  fetchMetaApiPositionsJson,
+  findMatchingOpenPosition,
+  parseMetaApiOpenPositions,
   postMetaApiClosePositionVolume,
   postMetaApiTradeWithStopsFallback,
   postMetaApiMarketReliable,
@@ -43,6 +46,7 @@ export type PendingTradeRow = {
   take_profit?: number | string | null;
   error_message?: string | null;
   status: string;
+  created_at?: string | null;
   position_id?: number | string | null;
   partial_close_percent?: number | string | null;
   mt5_accounts?:
@@ -221,6 +225,86 @@ async function markTradeFailed(
     .update({ status: "failed", error_message: error, executed_at: null })
     .eq("id", tradeId)
     .in("status", fromStatuses);
+}
+
+async function siblingAlreadyExecuted(
+  supabase: SupabaseClient,
+  trade: PendingTradeRow,
+): Promise<boolean> {
+  if (!trade.signal_id || !trade.mt5_account_id) return false;
+  let q = supabase
+    .from("telegram_trades")
+    .select("id", { count: "exact", head: true })
+    .eq("signal_id", trade.signal_id)
+    .eq("mt5_account_id", trade.mt5_account_id)
+    .eq("status", "executed")
+    .neq("id", trade.id);
+  if (trade.take_profit != null && trade.take_profit !== "") {
+    q = q.eq("take_profit", trade.take_profit);
+  } else {
+    q = q.is("take_profit", null);
+  }
+  const { count } = await q;
+  return (count ?? 0) > 0;
+}
+
+/** Worker déjà passé ou position MT5 ouverte pour ce trade → pas de 2e MARKET. */
+async function recoverOrSkipDuplicateMarket(
+  supabase: SupabaseClient,
+  trade: PendingTradeRow,
+  metaApiAccountId: string,
+  token: string,
+  brokerSymbol: string,
+): Promise<
+  | { action: "proceed" }
+  | { action: "skip"; positionId?: number; reason: string }
+> {
+  if (await siblingAlreadyExecuted(supabase, trade)) {
+    return {
+      action: "skip",
+      reason: "Trade déjà exécuté pour ce signal / TP",
+    };
+  }
+
+  const posRes = await fetchMetaApiPositionsJson(metaApiAccountId, token);
+  if (!posRes.ok) return { action: "proceed" };
+
+  const positions = parseMetaApiOpenPositions(posRes.positions);
+  const match = findMatchingOpenPosition(
+    positions,
+    brokerSymbol,
+    trade.signal_type,
+  );
+  if (!match) return { action: "proceed" };
+
+  const tradeAt = trade.created_at
+    ? new Date(trade.created_at).getTime()
+    : Number.NaN;
+  const posAt = match.time ? new Date(match.time).getTime() : Number.NaN;
+  const pid = parseInt(String(match.id), 10);
+
+  if (
+    Number.isFinite(tradeAt) &&
+    Number.isFinite(posAt) &&
+    posAt >= tradeAt - 5000 &&
+    Number.isFinite(pid)
+  ) {
+    return {
+      action: "skip",
+      positionId: pid,
+      reason: "Position déjà ouverte sur MT5 (worker ou exécution parallèle)",
+    };
+  }
+
+  if (Number.isFinite(tradeAt) && Number.isFinite(posAt) && posAt < tradeAt - 5000) {
+    return {
+      action: "skip",
+      reason:
+        "Position GOLD déjà ouverte sur ce compte — fermez-la avant un nouveau test (scripts/close-positions-curl.sh vt)",
+    };
+  }
+
+  return { action: "proceed" };
 }
 
 type PreparedMarketOrder = {
@@ -622,6 +706,42 @@ export async function executeOnePendingTrade(
         return { ok: false, error: updErr.message };
       }
       return { ok: true };
+    }
+
+    if (prepared.prepared.kind === "market") {
+      const guard = await recoverOrSkipDuplicateMarket(
+        supabase,
+        trade,
+        metaApiAccountId,
+        token,
+        prepared.prepared.brokerSymbol,
+      );
+      if (guard.action === "skip") {
+        if (guard.positionId != null) {
+          await supabase
+            .from("telegram_trades")
+            .update({
+              status: "executed",
+              executed_at: new Date().toISOString(),
+              position_id: guard.positionId,
+              symbol: prepared.prepared.brokerSymbol,
+              error_message: guard.reason,
+            })
+            .eq("id", trade.id)
+            .eq("status", "executing");
+          return { ok: true, positionId: guard.positionId, skipped: true };
+        }
+        await supabase
+          .from("telegram_trades")
+          .update({
+            status: "failed",
+            error_message: guard.reason,
+            executed_at: null,
+          })
+          .eq("id", trade.id)
+          .eq("status", "executing");
+        return { ok: false, error: guard.reason };
+      }
     }
 
     const result = await postTradeWithSymbolRetry(
