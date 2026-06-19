@@ -264,13 +264,48 @@ function finalizeBrokerSymbol(
   return picked;
 }
 
+/** Symboles GOLD/XAUUSD triés par préférence broker (live MetaAPI uniquement). */
+export function listRankedLiveGoldSymbols(
+  live: Set<string>,
+  brokerName: string | null,
+  exclude?: Set<string>,
+): string[] {
+  return Array.from(live)
+    .filter(
+      (sym) =>
+        !exclude?.has(sym) &&
+        isUsdGoldSymbol(sym) &&
+        !isCrossGoldSymbol(sym) &&
+        !/^(BTC|ETH)/i.test(sym.replace(/[^A-Z0-9]/gi, "")),
+    )
+    .sort(
+      (a, b) =>
+        scoreGoldForBroker(a, brokerName) -
+        scoreGoldForBroker(b, brokerName),
+    );
+}
+
 function applyBrokerGoldOverride(
   symbol: string,
   normalizedSymbol: string,
   brokerName: string | null,
+  live?: Set<string> | null,
 ): string {
   if (normalizedSymbol !== "GOLD") return symbol;
-  return mandatoryBrokerGoldSymbol(brokerName) ?? symbol;
+  const mandatory = mandatoryBrokerGoldSymbol(brokerName);
+  if (!mandatory) return symbol;
+
+  if (live && live.size > 0) {
+    const mandatoryHit = findInLiveSet(mandatory, live);
+    if (mandatoryHit) return mandatoryHit;
+    const symbolHit = findInLiveSet(symbol, live);
+    if (symbolHit) return symbolHit;
+    const ranked = listRankedLiveGoldSymbols(live, brokerName);
+    if (ranked[0]) return ranked[0];
+    return symbol;
+  }
+
+  return mandatory;
 }
 
 export async function resolveBrokerSymbol(
@@ -355,6 +390,7 @@ export async function resolveBrokerSymbol(
             finalizeBrokerSymbol(hit, normalizedSymbol, ordered),
             normalizedSymbol,
             brokerName,
+            live.symbols,
           );
         }
       }
@@ -371,6 +407,7 @@ export async function resolveBrokerSymbol(
           finalizeBrokerSymbol(picked, normalizedSymbol, ordered),
           normalizedSymbol,
           brokerName,
+          live.symbols,
         );
       }
       const fuzzy = fuzzyMatchSymbol(
@@ -380,7 +417,17 @@ export async function resolveBrokerSymbol(
         brokerName,
       );
       if (fuzzy) {
-        return applyBrokerGoldOverride(fuzzy, normalizedSymbol, brokerName);
+        return applyBrokerGoldOverride(
+          fuzzy,
+          normalizedSymbol,
+          brokerName,
+          live.symbols,
+        );
+      }
+
+      if (normalizedSymbol === "GOLD") {
+        const ranked = listRankedLiveGoldSymbols(live.symbols, brokerName, exclude);
+        if (ranked[0]) return ranked[0];
       }
     }
   }

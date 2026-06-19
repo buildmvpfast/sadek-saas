@@ -4,6 +4,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   fetchMetaApiAccountEquity,
+  fetchMetaApiSymbolNames,
+  fetchMetaApiSymbolQuote,
   postMetaApiClosePositionVolume,
   postMetaApiTradeWithStopsFallback,
   postMetaApiMarketReliable,
@@ -11,8 +13,11 @@ import {
 import { parseLocaleNumber } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
 import { snapVolumeForMetaApiSymbol } from "@/lib/trade-volume";
-import { resolveBrokerSymbol, invalidateSymbolCache } from "@/lib/broker-symbol-resolver";
-import { mandatoryBrokerGoldSymbol } from "@/lib/broker-symbol-fallback";
+import {
+  resolveBrokerSymbol,
+  invalidateSymbolCache,
+  listRankedLiveGoldSymbols,
+} from "@/lib/broker-symbol-resolver";
 import { normalizeSymbol } from "@/lib/symbol-normalizer";
 import {
   applyLotMultiplier,
@@ -288,6 +293,29 @@ async function prepareTradeExecution(
         },
       );
     }
+
+    if (standardSymbol === "GOLD" || standardSymbol === "XAUUSD") {
+      const quote = await fetchMetaApiSymbolQuote(
+        metaApiAccountId,
+        brokerSymbol,
+        token,
+      );
+      if (!quote) {
+        invalidateSymbolCache(metaApiAccountId);
+        brokerSymbol = await resolveBrokerSymbol(
+          standardSymbol,
+          brokerName,
+          supabase,
+          {
+            metaApiAccountId,
+            metaApiToken: token,
+            symbolProfile: profile,
+            excludeSymbols: [brokerSymbol],
+            refreshSymbols: true,
+          },
+        );
+      }
+    }
   }
 
   const rawVol = Number(trade.volume) > 0 ? Number(trade.volume) : 0.01;
@@ -431,14 +459,6 @@ function isUnknownSymbolError(error?: string | null): boolean {
   );
 }
 
-function isRetryableTradeError(error?: string | null): boolean {
-  if (!error) return false;
-  return (
-    isUnknownSymbolError(error) ||
-    /validation failed|invalid.?stops|invalid.?price/i.test(error)
-  );
-}
-
 async function postTradeWithSymbolRetry(
   supabase: SupabaseClient,
   metaApiAccountId: string,
@@ -450,60 +470,74 @@ async function postTradeWithSymbolRetry(
   }
 > {
   const tried = new Set<string>();
-  let order = { ...prepared.order };
-  let symbol = prepared.brokerSymbol;
+  const candidates: string[] = [prepared.brokerSymbol];
+  const isGold =
+    prepared.standardSymbol === "GOLD" ||
+    prepared.standardSymbol === "XAUUSD";
 
-  for (let attempt = 0; attempt < 4; attempt++) {
+  invalidateSymbolCache(metaApiAccountId);
+  const live = await fetchMetaApiSymbolNames(metaApiAccountId, token);
+  if (live.ok && isGold) {
+    for (const sym of listRankedLiveGoldSymbols(
+      live.symbols,
+      prepared.brokerName,
+    )) {
+      if (!candidates.includes(sym)) candidates.push(sym);
+    }
+  }
+
+  let lastResult: Awaited<
+    ReturnType<typeof postMetaApiTradeWithStopsFallback>
+  > = {
+    ok: false,
+    status: 0,
+    data: null,
+    error: "Aucune tentative",
+  };
+
+  for (const symbol of candidates) {
+    if (tried.has(symbol)) continue;
     tried.add(symbol);
-    order = { ...order, symbol };
-    const action = String(order.actionType ?? "");
+
+    const order = { ...prepared.order, symbol };
+    const action = String(prepared.order.actionType ?? "");
     const isMarket =
       action === "ORDER_TYPE_BUY" || action === "ORDER_TYPE_SELL";
     const result = isMarket
       ? await postMetaApiMarketReliable(metaApiAccountId, order, token)
       : await postMetaApiTradeWithStopsFallback(metaApiAccountId, order, token);
-    if (result.ok || !isRetryableTradeError(result.error)) {
+
+    lastResult = result;
+    if (result.ok) return { ...result, symbol };
+    if (!isUnknownSymbolError(result.error)) {
       return { ...result, symbol };
     }
-
-    const mandatory = mandatoryBrokerGoldSymbol(prepared.brokerName);
-    if (
-      mandatory &&
-      !tried.has(mandatory) &&
-      (prepared.standardSymbol === "GOLD" || prepared.standardSymbol === "XAUUSD")
-    ) {
-      symbol = mandatory;
-      continue;
-    }
-
-    invalidateSymbolCache(metaApiAccountId);
-    const alt = await resolveBrokerSymbol(
-      prepared.standardSymbol,
-      prepared.brokerName,
-      supabase,
-      {
-        metaApiAccountId,
-        metaApiToken: token,
-        symbolProfile: prepared.symbolProfile,
-        excludeSymbols: Array.from(tried),
-        refreshSymbols: true,
-      },
-    );
-    if (!alt || tried.has(alt)) break;
-    symbol = alt;
   }
 
-  const last = await postMetaApiTradeWithStopsFallback(
-    metaApiAccountId,
-    order,
-    token,
+  const alt = await resolveBrokerSymbol(
+    prepared.standardSymbol,
+    prepared.brokerName,
+    supabase,
+    {
+      metaApiAccountId,
+      metaApiToken: token,
+      symbolProfile: prepared.symbolProfile,
+      excludeSymbols: Array.from(tried),
+      refreshSymbols: true,
+    },
   );
-  const lastAction = String(order.actionType ?? "");
-  if (lastAction === "ORDER_TYPE_BUY" || lastAction === "ORDER_TYPE_SELL") {
-    const m = await postMetaApiMarketReliable(metaApiAccountId, order, token);
-    return { ...m, symbol };
+  if (alt && !tried.has(alt)) {
+    const order = { ...prepared.order, symbol: alt };
+    const action = String(prepared.order.actionType ?? "");
+    const isMarket =
+      action === "ORDER_TYPE_BUY" || action === "ORDER_TYPE_SELL";
+    const result = isMarket
+      ? await postMetaApiMarketReliable(metaApiAccountId, order, token)
+      : await postMetaApiTradeWithStopsFallback(metaApiAccountId, order, token);
+    return { ...result, symbol: alt };
   }
-  return { ...last, symbol };
+
+  return { ...lastResult, symbol: prepared.brokerSymbol };
 }
 
 export async function executeOnePendingTrade(

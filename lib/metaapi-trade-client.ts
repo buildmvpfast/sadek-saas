@@ -318,6 +318,12 @@ export async function fetchMetaApiSymbolQuote(
   const variants = [symbol];
   if (/\+/.test(symbol)) variants.push(symbol.replace(/\+$/i, ""));
   if (/-VIP/i.test(symbol)) variants.push(symbol.replace(/-VIP/i, ""));
+  if (/^XAUUSD/i.test(symbol) && !/\+$/i.test(symbol)) {
+    variants.push(`${symbol}+`, "XAUUSD+", "GOLD");
+  }
+  if (/^GOLD$/i.test(symbol)) {
+    variants.push("XAUUSD", "XAUUSD+", "XAUUSD-VIP");
+  }
 
   let lastErr = "";
   let lastTlsErr = "";
