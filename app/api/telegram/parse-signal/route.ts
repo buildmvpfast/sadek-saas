@@ -17,6 +17,7 @@ import {
 import {
   lotSettingKeyForSymbol,
   normalizeSymbol,
+  isKnownTradingSymbol,
 } from "@/lib/symbol-normalizer";
 import { parseLocaleNumber, parseLocaleNumberOr } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
@@ -390,6 +391,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: "Pas de signal détecté",
+      });
+    }
+
+    if (!signal.isPartialClose && !isKnownTradingSymbol(signal.symbol)) {
+      console.log(`❌ Symbole non tradable ignoré: ${signal.symbol}`);
+      return NextResponse.json({
+        success: true,
+        message: `Symbole non tradable ignoré: ${signal.symbol}`,
       });
     }
 
@@ -1072,7 +1081,7 @@ async function executeTradesForSignal(signalId: string) {
       .from("telegram_trades")
       .select("id", { count: "exact", head: true })
       .eq("user_id", subscription.user_id)
-      .in("status", ["executed", "pending", "pending_partial", "executing"]);
+      .eq("status", "executed");
     // Sinon : un trade par TP (forex / index en LIMIT, ou 1 seul TP).
     const tpCount = tpValues.length;
     const entryN = parseLocaleNumber(signal.entry_price);
