@@ -5,6 +5,7 @@ import Link from "next/link";
 import { syncOrphanMetaApiAccount } from "@/lib/mt5-account-persist";
 import DashboardPositionsSection from "@/components/DashboardPositionsSection";
 import OpenPositionsStat from "@/components/OpenPositionsStat";
+import CloseAllTradesButton from "@/components/CloseAllTradesButton";
 
 export default async function DashboardPage() {
   const supabase = createServerClient();
@@ -73,6 +74,8 @@ export default async function DashboardPage() {
             Gérez vos comptes MT5 et suivez vos trades
           </p>
         </div>
+
+        <CloseAllTradesButton disabled={!mt5Accounts?.length} />
 
         <div className="grid md:grid-cols-3 gap-6 mb-8">
           <div className="card-white">
