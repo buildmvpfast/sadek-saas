@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { isMetaApiTradeSuccess } from "@/lib/metaapi-trade-client";
+import { requireInternalSecret } from "@/lib/internal-auth";
+import { cancelPendingOrdersForChannelUsers } from "@/lib/cancel-pending-orders";
 import { resolveBrokerSymbol } from "@/lib/broker-symbol-resolver";
 import {
   applyLotMultiplier,
@@ -8,7 +9,10 @@ import {
   volumeFromEquityPercent,
   type TradingRiskSettings,
 } from "@/lib/trade-risk";
-import { fetchMetaApiAccountEquity } from "@/lib/metaapi-trade-client";
+import {
+  fetchMetaApiAccountEquity,
+  isMetaApiTradeSuccess,
+} from "@/lib/metaapi-trade-client";
 import { releaseStaleExecutingTrades } from "@/lib/trade-execution-core";
 import {
   effectiveUserVolumeForIndexSplit,
@@ -22,7 +26,6 @@ import {
 } from "@/lib/symbol-normalizer";
 import { parseLocaleNumber, parseLocaleNumberOr } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
-import { requireInternalSecret } from "@/lib/internal-auth";
 
 /** Déduplique les TP (évite 9 positions si le parser renvoie des doublons). */
 function dedupeTakeProfits(values: number[]): number[] {
@@ -92,7 +95,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Gérer les messages d'annulation
-    const isCancelCommand = /annuler|cancel|effacer|supprimer|delete/i.test(
+    const isCancelCommand = /annuler|cancel|effacer|supprimer|delete|retirer/i.test(
       messageText,
     );
 
@@ -174,6 +177,31 @@ export async function POST(request: NextRequest) {
           cancelledCount: cancelledTrades?.length || 0,
         });
       } else {
+        if (
+          /limite|limit|stop/i.test(messageText) &&
+          process.env.METAAPI_TOKEN
+        ) {
+          const side = /sell|vente|short/i.test(messageText)
+            ? ("SELL" as const)
+            : /buy|achat|long/i.test(messageText)
+              ? ("BUY" as const)
+              : undefined;
+          const orderResult = await cancelPendingOrdersForChannelUsers(
+            supabase,
+            channel.id,
+            process.env.METAAPI_TOKEN,
+            { side, symbolIncludes: "XAU" },
+          );
+          console.log(
+            `✅ ${orderResult.cancelled} ordre(s) pending annulé(s) MetaAPI (canal ${channel.username})`,
+          );
+          return NextResponse.json({
+            success: true,
+            message: `${orderResult.cancelled} ordre(s) limit/stop annulé(s) sur MetaAPI`,
+            metaApiCancelled: orderResult.cancelled,
+          });
+        }
+
         console.log("❌ Aucun trade en attente trouvé à annuler");
         return NextResponse.json({
           success: true,

@@ -248,6 +248,24 @@ async function siblingAlreadyExecuted(
   return (count ?? 0) > 0;
 }
 
+/** Autre signal exécuté sur le même compte dans les 4 dernières minutes (multi-TP même signal OK). */
+async function blockedByRecentSignalOnAccount(
+  supabase: SupabaseClient,
+  trade: PendingTradeRow,
+  windowMs = 4 * 60 * 1000,
+): Promise<boolean> {
+  if (!trade.mt5_account_id || !trade.signal_id) return false;
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { count } = await supabase
+    .from("telegram_trades")
+    .select("id", { count: "exact", head: true })
+    .eq("mt5_account_id", trade.mt5_account_id)
+    .eq("status", "executed")
+    .gte("executed_at", since)
+    .neq("signal_id", trade.signal_id);
+  return (count ?? 0) > 0;
+}
+
 /** Worker déjà passé ou position MT5 ouverte pour ce trade → pas de 2e MARKET. */
 async function recoverOrSkipDuplicateMarket(
   supabase: SupabaseClient,
@@ -263,6 +281,14 @@ async function recoverOrSkipDuplicateMarket(
     return {
       action: "skip",
       reason: "Trade déjà exécuté pour ce signal / TP",
+    };
+  }
+
+  if (await blockedByRecentSignalOnAccount(supabase, trade)) {
+    return {
+      action: "skip",
+      reason:
+        "Signal précédent exécuté sur ce compte il y a moins de 4 min — multi-TP même signal autorisé",
     };
   }
 
@@ -304,15 +330,6 @@ async function recoverOrSkipDuplicateMarket(
         reason: "Position déjà ouverte sur MT5 (worker ou exécution parallèle)",
       };
     }
-    return { action: "proceed" };
-  }
-
-  if (Number.isFinite(tradeAt) && Number.isFinite(posAt) && posAt < tradeAt - 5000) {
-    return {
-      action: "skip",
-      reason:
-        "Position GOLD déjà ouverte sur ce compte — fermez-la avant un nouveau test (scripts/close-positions-curl.sh vt)",
-    };
   }
 
   return { action: "proceed" };

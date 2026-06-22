@@ -113,14 +113,6 @@ export function checkTradeRisk(input: RiskCheckInput): RiskCheckResult {
     };
   }
 
-  const maxPos = num(s?.max_open_positions, 999);
-  if (openPositionCount >= maxPos) {
-    return {
-      allowed: false,
-      reason: `Max positions ouvertes (${maxPos}) atteint`,
-    };
-  }
-
   const mult = num(s?.lot_multiplier, 1);
   const effectiveVol = volume * (mult > 0 ? mult : 1);
   const maxLot = num(s?.max_lot_size, 0);

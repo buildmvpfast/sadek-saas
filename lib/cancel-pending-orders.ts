@@ -92,6 +92,89 @@ export async function cancelPendingOrdersForAccounts(
   return { accounts: accountIds.length, cancelled, details };
 }
 
+export async function cancelPendingOrdersForChannelUsers(
+  supabase: SupabaseClient,
+  channelId: string,
+  token: string,
+  options?: { side?: "BUY" | "SELL"; symbolIncludes?: string },
+): Promise<CancelPendingOrdersResult> {
+  const { data: subs } = await supabase
+    .from("user_telegram_subscriptions")
+    .select("user_id")
+    .eq("channel_id", channelId)
+    .eq("is_active", true);
+
+  const userIds = (subs ?? []).map((s) => s.user_id).filter(Boolean);
+  if (!userIds.length) {
+    return { accounts: 0, cancelled: 0, details: [] };
+  }
+
+  const { data: rows } = await supabase
+    .from("mt5_accounts")
+    .select("metaapi_account_id, broker_name")
+    .in("user_id", userIds)
+    .eq("is_active", true)
+    .not("metaapi_account_id", "is", null);
+
+  const accounts = (rows ?? [])
+    .map((r) => ({
+      id: r.metaapi_account_id as string,
+      brokerName: (r.broker_name as string | null) ?? null,
+    }))
+    .filter((a) => a.id);
+
+  const details: CancelPendingOrdersResult["details"] = [];
+  let cancelled = 0;
+
+  for (const { id: accountId, brokerName } of accounts) {
+    const ordersRes = await fetchMetaApiOrdersJson(accountId, token);
+    if (!ordersRes.ok) {
+      details.push({
+        accountId,
+        brokerName,
+        orderId: "-",
+        symbol: "",
+        type: "",
+        ok: false,
+        error: ordersRes.error,
+      });
+      continue;
+    }
+
+    for (const raw of ordersRes.orders) {
+      if (!raw || typeof raw !== "object") continue;
+      const row = raw as Record<string, unknown>;
+      const sym = orderSymbol(row);
+      if (
+        options?.symbolIncludes &&
+        !sym.toUpperCase().includes(options.symbolIncludes.toUpperCase())
+      ) {
+        continue;
+      }
+      const typeLabel = orderTypeLabel(row).toUpperCase();
+      if (options?.side === "SELL" && !typeLabel.includes("SELL")) continue;
+      if (options?.side === "BUY" && !typeLabel.includes("BUY")) continue;
+
+      const id = orderId(row);
+      if (!id) continue;
+
+      const res = await postMetaApiCancelOrder(accountId, id, token);
+      details.push({
+        accountId,
+        brokerName,
+        orderId: id,
+        symbol: sym,
+        type: orderTypeLabel(row),
+        ok: res.ok,
+        error: res.error,
+      });
+      if (res.ok) cancelled++;
+    }
+  }
+
+  return { accounts: accounts.length, cancelled, details };
+}
+
 export async function loadMetaApiAccountsFromSupabase(
   supabase: SupabaseClient,
   options?: { broker?: string; accountId?: string },
