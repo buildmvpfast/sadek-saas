@@ -86,9 +86,47 @@ export async function persistMt5AccountRow(
 
   if (byMetaId) {
     if (byMetaId.user_id === input.userId) {
+      await supabase
+        .from("mt5_accounts")
+        .update({
+          broker_name: input.brokerName.trim(),
+          server_name: input.serverName.trim(),
+          account_number: accountNumber,
+          is_active: true,
+          symbol_profile: input.symbolProfile ?? "auto",
+        })
+        .eq("id", byMetaId.id);
       return { ok: true, id: byMetaId.id };
     }
     return { ok: false, error: "Ce compte MetaAPI est déjà lié à un autre utilisateur" };
+  }
+
+  if (!input.isAdminAccount) {
+    const { data: existingForUser } = await supabase
+      .from("mt5_accounts")
+      .select("id")
+      .eq("user_id", input.userId)
+      .eq("is_admin_account", false)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingForUser?.id) {
+      const { error: updErr } = await supabase
+        .from("mt5_accounts")
+        .update({
+          metaapi_account_id: input.metaApiAccountId,
+          broker_name: input.brokerName.trim(),
+          server_name: input.serverName.trim(),
+          account_number: accountNumber,
+          is_active: true,
+          symbol_profile: input.symbolProfile ?? "auto",
+        })
+        .eq("id", existingForUser.id);
+
+      if (updErr) return { ok: false, error: updErr.message };
+      return { ok: true, id: existingForUser.id };
+    }
   }
 
   const { count } = await supabase

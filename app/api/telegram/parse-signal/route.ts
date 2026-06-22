@@ -1073,7 +1073,10 @@ async function executeTradesForSignal(signalId: string) {
       .select("id, metaapi_account_id, broker_name, symbol_profile")
       .eq("user_id", subscription.user_id)
       .eq("is_active", true)
-      .single();
+      .not("metaapi_account_id", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (!mt5Account?.metaapi_account_id) {
       console.log(

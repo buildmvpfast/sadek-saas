@@ -22,6 +22,7 @@ import {
   buildMetaApiAccountLabel,
   persistMt5AccountRow,
 } from "@/lib/mt5-account-persist";
+import { ensureUserSubscribedToActiveChannels } from "@/lib/telegram-channel-subscription";
 
 /** Garde du temps pour deploy + JSON ; doit rester aligné avec `maxDuration` (littéral requis par Next.js). */
 const CONNECT_ROUTE_MAX_DURATION_SEC = 120;
@@ -364,6 +365,17 @@ async function persistUserMt5Account(
     console.warn("persistMt5AccountRow:", persisted.error);
     return false;
   }
+
+  const channels = await ensureUserSubscribedToActiveChannels(
+    adminSupabase,
+    userId,
+  );
+  if (channels > 0) {
+    console.log(
+      `📡 User ${userId} abonné à ${channels} canal/canaux Telegram actif(s)`,
+    );
+  }
+
   return true;
 }
 
