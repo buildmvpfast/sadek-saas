@@ -564,10 +564,15 @@ async function prepareTradeExecution(
   return { ok: true, prepared: { kind: "market", order, brokerSymbol, standardSymbol, brokerName, symbolProfile: profile } };
 }
 
-function isUnknownSymbolError(error?: string | null): boolean {
+function isRetryableSymbolError(error?: string | null): boolean {
   if (!error) return false;
-  return /UNKNOWN_SYMBOL|ERR_MARKET_UNKNOWN|4301|invalid symbol|unknown symbol|ERR_QUOTE_SYMBOL_MISMATCH/i.test(
-    error,
+  return (
+    /UNKNOWN_SYMBOL|ERR_MARKET_UNKNOWN|4301|invalid symbol|unknown symbol|ERR_QUOTE_SYMBOL_MISMATCH/i.test(
+      error,
+    ) ||
+    /SYMBOL_TRADE_MODE_DISABLED|TRADE_MODE_DISABLED|trade disabled for selected symbol/i.test(
+      error,
+    )
   );
 }
 
@@ -621,7 +626,7 @@ async function postTradeWithSymbolRetry(
 
     lastResult = result;
     if (result.ok) return { ...result, symbol };
-    if (!isUnknownSymbolError(result.error)) {
+    if (!isRetryableSymbolError(result.error)) {
       return { ...result, symbol };
     }
   }

@@ -10,9 +10,11 @@ import {
   type TradingRiskSettings,
 } from "@/lib/trade-risk";
 import {
-  fetchMetaApiAccountEquity,
-  isMetaApiTradeSuccess,
-} from "@/lib/metaapi-trade-client";
+  applySlTpUpdatesForSignal,
+  detectSlTpUpdateMessage,
+  resolveSignalIdForPositionUpdate,
+} from "@/lib/telegram-position-updates";
+import { fetchMetaApiAccountEquity } from "@/lib/metaapi-trade-client";
 import { releaseStaleExecutingTrades } from "@/lib/trade-execution-core";
 import {
   effectiveUserVolumeForIndexSplit,
@@ -210,202 +212,50 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Handle SL/TP updates sent as a separate Telegram message replying to the original signal
-    // Examples: "BE", "break even", "SL: 2640", "TP1: 2670 TP2: 2680"
-    const isBeUpdate =
-      /\bBE\b/i.test(messageText) ||
-      /break[-\s]?even/i.test(messageText) ||
-      /move\s*sl\s*(to|=)\s*(be|break\s*even|break-even)/i.test(messageText) ||
-      /sl\s*(to|=)\s*(be|break\s*even|break-even)/i.test(messageText);
+    // SL/TP/BE updates — reply au signal ou dernier signal exécuté (24h)
+    const slTpUpdate = detectSlTpUpdateMessage(messageText);
 
-    const slMatch =
-      messageText.match(/\bS\/?L\b[:=\s]*([\d.]+)/i) ||
-      messageText.match(/\bSL\b[:=\s]*([\d.]+)/i);
-    const nextStopLoss = slMatch && slMatch[1] ? parseFloat(slMatch[1]) : null;
+    if (slTpUpdate.hasUpdate) {
+      const signalIdToUpdate = await resolveSignalIdForPositionUpdate(
+        supabase,
+        channel.id,
+        replyToMessageId,
+      );
 
-    const tpMatches = Array.from(
-      messageText.matchAll(/\bTP\d*\b[:=\s]*([\d.]+)/gi) as any,
-    )
-      .map((m: any) => (m && m[1] ? parseFloat(m[1]) : null))
-      .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-
-    const hasUpdate = Boolean(
-      isBeUpdate || nextStopLoss !== null || tpMatches.length > 0,
-    );
-
-    // Require replyToMessageId so we only update the intended original positions
-    if (hasUpdate && replyToMessageId) {
-      const { data: originalSignal } = await supabase
-        .from("telegram_signals")
-        .select("id")
-        .eq("channel_id", channel.id)
-        .eq("message_id", replyToMessageId)
-        .maybeSingle();
-
-      if (originalSignal?.id) {
-        const signalIdToUpdate = originalSignal.id;
-
-        // Fetch all executed trades for this original signal (1 trade per TP)
-        const { data: executedTrades, error: tradesError } = await supabase
-          .from("telegram_trades")
-          .select(
-            `
-            id,
-            user_id,
-            mt5_account_id,
-            position_id,
-            entry_price,
-            take_profit,
-            stop_loss,
-            error_message,
-            mt5_accounts!inner(metaapi_account_id)
-          `,
-          )
-          .eq("signal_id", signalIdToUpdate)
-          .eq("status", "executed");
-
-        if (tradesError) {
-          console.error(
-            "Error fetching executed trades for update:",
-            tradesError,
-          );
-        } else if (executedTrades && executedTrades.length > 0) {
-          // For TP updates: map sorted TPs to sorted existing trades (null take_profit goes last)
-          const sortedTakeProfits = [...tpMatches].sort((a, b) => a - b);
-          const sortedTradesByTp = [...executedTrades].sort((a, b) => {
-            const aTp =
-              a.take_profit === null
-                ? Number.POSITIVE_INFINITY
-                : Number(a.take_profit);
-            const bTp =
-              b.take_profit === null
-                ? Number.POSITIVE_INFINITY
-                : Number(b.take_profit);
-            return aTp - bTp;
-          });
-
-          const metaToken = process.env.METAAPI_TOKEN;
-          if (!metaToken) {
-            return NextResponse.json(
-              { success: false, error: "METAAPI_TOKEN non configuré" },
-              { status: 500 },
-            );
-          }
-
-          for (let i = 0; i < executedTrades.length; i++) {
-            const trade = executedTrades[i] as any;
-            const metaApiAccountId = trade.mt5_accounts?.metaapi_account_id;
-
-            const rawPositionId =
-              trade.position_id ??
-              (trade.error_message &&
-              !Number.isNaN(parseInt(trade.error_message, 10))
-                ? parseInt(trade.error_message, 10)
-                : null);
-
-            if (
-              !metaApiAccountId ||
-              rawPositionId === null ||
-              rawPositionId === undefined
-            ) {
-              console.log(
-                `⏭️ Skip update trade ${trade.id}: missing metaapi_account_id or position_id`,
-              );
-              continue;
-            }
-
-            let updatedStopLoss: number | null = null;
-            if (isBeUpdate) {
-              if (
-                trade.entry_price !== null &&
-                trade.entry_price !== undefined
-              ) {
-                updatedStopLoss = parseFloat(trade.entry_price);
-              }
-            } else if (nextStopLoss !== null) {
-              updatedStopLoss = nextStopLoss;
-            }
-
-            let updatedTakeProfit: number | null = null;
-            if (sortedTakeProfits.length > 0) {
-              const tpIndex = sortedTradesByTp.findIndex(
-                (t) => t.id === trade.id,
-              );
-              // Map by index in the sorted order
-              const mapped = sortedTakeProfits[tpIndex];
-              // If the message doesn't specify enough TP values, don't wipe existing TP.
-              updatedTakeProfit =
-                mapped !== undefined ? mapped : (trade.take_profit ?? null);
-            }
-
-            // If nothing to change, skip
-            if (updatedStopLoss === null && updatedTakeProfit === null) {
-              continue;
-            }
-
-            const body: any = {
-              actionType: "POSITION_MODIFY",
-              positionId: rawPositionId.toString(),
-              stopLossUnits: "ABSOLUTE_PRICE",
-              takeProfitUnits: "ABSOLUTE_PRICE",
-            };
-            if (updatedStopLoss !== null) body.stopLoss = updatedStopLoss;
-            if (updatedTakeProfit !== null) body.takeProfit = updatedTakeProfit;
-
-            try {
-              const modifyUrl = `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/trade`;
-              const resp = await fetch(modifyUrl, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "auth-token": metaToken,
-                },
-                body: JSON.stringify(body),
-              });
-
-              const respData = await resp.json().catch(() => ({}));
-              if (!resp.ok || !isMetaApiTradeSuccess(respData)) {
-                console.error(
-                  `❌ POSITION_MODIFY failed for trade ${trade.id}:`,
-                  resp.status,
-                  respData,
-                );
-                continue;
-              }
-            } catch (e: any) {
-              console.error(
-                `❌ POSITION_MODIFY error for trade ${trade.id}:`,
-                e.message,
-              );
-              continue;
-            }
-
-            // Update DB so subsequent updates know the last applied values
-            await supabase
-              .from("telegram_trades")
-              .update({
-                stop_loss:
-                  updatedStopLoss !== null ? updatedStopLoss : trade.stop_loss,
-                take_profit:
-                  updatedTakeProfit !== null
-                    ? updatedTakeProfit
-                    : trade.take_profit,
-              })
-              .eq("id", trade.id);
-          }
-        } else {
-          console.log(
-            `⚠️ Aucune trade exécutée à mettre à jour pour signal ${signalIdToUpdate}`,
-          );
-        }
-
+      if (!signalIdToUpdate) {
+        console.log("⚠️ Mise à jour SL/TP/BE: aucun signal récent avec positions");
         return NextResponse.json({
           success: true,
-          message: "Positions SL/TP mises à jour",
-          signal_id: originalSignal.id,
-          updated: true,
+          message: "Aucune position récente à mettre à jour",
         });
       }
+
+      const metaToken = process.env.METAAPI_TOKEN;
+      if (!metaToken) {
+        return NextResponse.json(
+          { success: false, error: "METAAPI_TOKEN non configuré" },
+          { status: 500 },
+        );
+      }
+
+      const { updated, skipped } = await applySlTpUpdatesForSignal(
+        supabase,
+        signalIdToUpdate,
+        metaToken,
+        slTpUpdate,
+      );
+
+      console.log(
+        `✅ SL/TP/BE signal ${signalIdToUpdate}: ${updated} modifié(s), ${skipped} ignoré(s)${replyToMessageId ? "" : " (fallback dernier signal)"}`,
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: `${updated} position(s) SL/TP mises à jour`,
+        signal_id: signalIdToUpdate,
+        updated,
+        skipped,
+      });
     }
 
     // Parser le signal

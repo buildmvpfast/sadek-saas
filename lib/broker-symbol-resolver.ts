@@ -98,6 +98,7 @@ function ecnStpCandidates(standardSymbol: string): string[] {
 function orderByProfile(
   candidates: string[],
   profile: SymbolProfile,
+  brokerName?: string | null,
 ): string[] {
   const isEcn = (sym: string) =>
     /[-+]ECN|ECN|\.ecn|\.raw|\.pro|\+$/i.test(sym) || /\.s$/i.test(sym);
@@ -105,7 +106,11 @@ function orderByProfile(
     !isEcn(sym) &&
     (/^[A-Z0-9]{3,10}$/.test(sym) || /\.std|\.m$/i.test(sym));
 
-  if (profile === "ecn") {
+  const preferEcn =
+    profile === "ecn" ||
+    (profile === "auto" && /vt\s*markets/i.test(brokerName ?? ""));
+
+  if (preferEcn) {
     return [
       ...candidates.filter(isEcn),
       ...candidates.filter((c) => !isEcn(c)),
@@ -367,6 +372,7 @@ export async function resolveBrokerSymbol(
   const ordered = orderByProfile(
     Array.from(new Set(candidates)).filter((c) => !exclude.has(c)),
     profile,
+    brokerName,
   );
 
   const token = options?.metaApiToken;
