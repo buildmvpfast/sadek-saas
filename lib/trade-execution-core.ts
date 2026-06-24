@@ -185,10 +185,16 @@ async function releaseExecutingTrade(
     .eq("status", "executing");
 }
 
+/** Anti-spam : 2e signal même sens (BUY/BUY ou SELL/SELL) sur le même compte. SELL après BUY OK. */
+export const SAME_DIRECTION_SIGNAL_COOLDOWN_MS = 30_000;
+
+/** Ne pas remettre en pending tant que MetaAPI peut encore répondre (évite doublons). */
+export const EXECUTING_STALE_RELEASE_MS = 120_000;
+
 /** Débloque les trades restés en `executing` après crash / timeout MetaAPI. */
 export async function releaseStaleExecutingTrades(
   supabase: SupabaseClient,
-  olderThanMs = 30 * 1000,
+  olderThanMs = EXECUTING_STALE_RELEASE_MS,
 ): Promise<number> {
   const cutoff = new Date(Date.now() - olderThanMs).toISOString();
 
@@ -248,18 +254,21 @@ async function siblingAlreadyExecuted(
   return (count ?? 0) > 0;
 }
 
-/** Autre signal exécuté sur le même compte dans les 4 dernières minutes (multi-TP même signal OK). */
+/** Autre signal même sens exécuté sur le compte récemment (multi-TP même signal OK). */
 async function blockedByRecentSignalOnAccount(
   supabase: SupabaseClient,
   trade: PendingTradeRow,
-  windowMs = 4 * 60 * 1000,
+  windowMs = SAME_DIRECTION_SIGNAL_COOLDOWN_MS,
 ): Promise<boolean> {
-  if (!trade.mt5_account_id || !trade.signal_id) return false;
+  if (!trade.mt5_account_id || !trade.signal_id || !trade.signal_type) {
+    return false;
+  }
   const since = new Date(Date.now() - windowMs).toISOString();
   const { count } = await supabase
     .from("telegram_trades")
     .select("id", { count: "exact", head: true })
     .eq("mt5_account_id", trade.mt5_account_id)
+    .eq("signal_type", trade.signal_type)
     .eq("status", "executed")
     .gte("executed_at", since)
     .neq("signal_id", trade.signal_id);
@@ -288,7 +297,7 @@ async function recoverOrSkipDuplicateMarket(
     return {
       action: "skip",
       reason:
-        "Signal précédent exécuté sur ce compte il y a moins de 4 min — multi-TP même signal autorisé",
+        "Signal même sens exécuté sur ce compte il y a moins de 30 s — multi-TP même signal autorisé",
     };
   }
 
@@ -587,7 +596,7 @@ async function postTradeWithSymbolRetry(
   }
 > {
   const tried = new Set<string>();
-  const candidates: string[] = [prepared.brokerSymbol];
+  const candidates: string[] = [];
   const isGold =
     prepared.standardSymbol === "GOLD" ||
     prepared.standardSymbol === "XAUUSD";
@@ -601,6 +610,9 @@ async function postTradeWithSymbolRetry(
     )) {
       if (!candidates.includes(sym)) candidates.push(sym);
     }
+  }
+  if (!candidates.includes(prepared.brokerSymbol)) {
+    candidates.push(prepared.brokerSymbol);
   }
 
   let lastResult: Awaited<

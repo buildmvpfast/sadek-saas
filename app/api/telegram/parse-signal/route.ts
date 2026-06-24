@@ -15,7 +15,6 @@ import {
   resolveSignalIdForPositionUpdate,
 } from "@/lib/telegram-position-updates";
 import { fetchMetaApiAccountEquity } from "@/lib/metaapi-trade-client";
-import { releaseStaleExecutingTrades } from "@/lib/trade-execution-core";
 import {
   effectiveUserVolumeForIndexSplit,
   lotStepForStandard,
@@ -27,7 +26,7 @@ import {
   isKnownTradingSymbol,
 } from "@/lib/symbol-normalizer";
 import { parseLocaleNumber, parseLocaleNumberOr } from "@/lib/locale-number";
-import { resolvePendingOrderKind } from "@/lib/order-type";
+import { resolveOrderTypeFromMessage, resolvePendingOrderKind } from "@/lib/order-type";
 
 /** Déduplique les TP (évite 9 positions si le parser renvoie des doublons). */
 function dedupeTakeProfits(values: number[]): number[] {
@@ -349,10 +348,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Déterminer order_type: MARKET si pas de entry_price, LIMIT si entry_price existe
-    const orderType =
-      (signal as { orderType?: string }).orderType ||
-      (signal.entryPrice ? "LIMIT" : "MARKET");
+    // order_type : MARKET sauf buy/sell limit|stop explicite dans le message
+    const resolvedOrderType = resolveOrderTypeFromMessage(messageText);
+    const isMarketOrder = resolvedOrderType === "MARKET";
 
     const takeProfitsForSave = dedupeTakeProfits(signal.takeProfits || []);
 
@@ -384,9 +382,6 @@ export async function POST(request: NextRequest) {
         signal_id: recentDup.id,
       });
     }
-
-    const resolvedOrderType = signal.orderType || orderType;
-    const isMarketOrder = String(resolvedOrderType).toUpperCase() === "MARKET";
 
     // Sauvegarder le signal
     const { data: savedSignal, error } = await supabase
@@ -470,8 +465,9 @@ async function parseSignal(messageText: string) {
     try {
       const aiParsed = await parseSignalWithAI(messageText);
       if (aiParsed) {
-        console.log("✅ Signal parsé avec AI:", aiParsed);
-        return aiParsed;
+        const orderType = resolveOrderTypeFromMessage(messageText);
+        console.log("✅ Signal parsé avec AI:", { ...aiParsed, orderType });
+        return { ...aiParsed, orderType };
       }
     } catch (error) {
       console.warn("⚠️ Erreur parsing AI, fallback sur regex:", error);
@@ -609,9 +605,7 @@ async function parseSignal(messageText: string) {
         }
       }
 
-      let orderType: string | undefined;
-      if (/LIMIT|LIMITE/i.test(messageText)) orderType = "LIMIT";
-      else if (/\bSTOP\b/i.test(messageText)) orderType = "STOP";
+      let orderType: string = resolveOrderTypeFromMessage(messageText);
 
       // Validation minimale: type et symbol requis
       if (type && symbol && symbol !== "LIMIT" && symbol !== "STOP") {
@@ -659,13 +653,12 @@ RÈGLE TP MULTIPLES (CRITIQUE):
 - Si plusieurs TP (TP1, TP2, Tp1, TP: 2670, etc.), EXTRAIS-TOUS dans "takeProfits" dans l'ordre du message.
 - Chaque TP deviendra une position séparée côté exécution — ne fusionne jamais en un seul TP.
 
-TYPE & ORDRE:
+TYPE & ORDRE (CRITIQUE):
 - type: "BUY" ou "SELL" (ACHAT/LONG/🟢 → BUY ; VENTE/SHORT/🔴 → SELL)
-- orderType: "MARKET" | "LIMIT" | "STOP"
-  - "Buy Limit" / "Sell Limit" / "limite" → LIMIT
-  - "Buy Stop" / "Sell Stop" → STOP
-  - Sans prix d'entrée explicite → MARKET
-- Plage d'entrée "4832.5-4833" → entryPrice = premier nombre pour BUY LIMIT, dernier pour SELL LIMIT
+- orderType: presque toujours "MARKET"
+- LIMIT ou STOP UNIQUEMENT si écrit explicitement : "buy limit", "sell limit", "buy stop", "sell stop" (ou achat/vente + limite/stop)
+- Un prix d'entrée ("Entrée:", "Entry:", @ prix) NE change PAS le type → reste MARKET sauf limit/stop explicite
+- Plage d'entrée "4832.5-4833" avec "buy limit" → entryPrice = premier pour BUY, dernier pour SELL
 
 SYMBOLES — normalise vers ces clés:
 - Or: GOLD (alias: XAUUSD, XAU/USD, GOLD, OR, gold)
@@ -690,7 +683,7 @@ FERMETURES PARTIELLES:
 JSON UNIQUEMENT (ou null si type+symbol impossibles):
 {
   "type": "BUY",
-  "orderType": "LIMIT",
+  "orderType": "MARKET",
   "symbol": "GOLD",
   "entryPrice": 4832.5,
   "stopLoss": 4828.5,
@@ -782,10 +775,7 @@ JSON UNIQUEMENT (ou null si type+symbol impossibles):
       ? parseLocaleNumber(parsed.stopLoss)
       : Number.NaN;
 
-    const orderTypeRaw = String(parsed.orderType || "MARKET").toUpperCase();
-    let orderType = "MARKET";
-    if (orderTypeRaw.includes("LIMIT")) orderType = "LIMIT";
-    else if (orderTypeRaw.includes("STOP")) orderType = "STOP";
+    const orderType = resolveOrderTypeFromMessage(messageText);
 
     return {
       type: parsed.type.toUpperCase(),
@@ -811,10 +801,7 @@ async function executeTradesForSignal(signalId: string) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const released = await releaseStaleExecutingTrades(supabase, 3_000);
-  if (released > 0) {
-    console.log(`♻️ ${released} trade(s) executing débloqué(s) avant création`);
-  }
+  // Ne pas releaseStale ici : ça remettait des BUY en pending quand un SELL arrivait → doublons Vantage.
 
   // Récupérer les données du signal
   const { data: signal } = await supabase

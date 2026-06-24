@@ -1,12 +1,43 @@
 export type PendingOrderKind = "MARKET" | "LIMIT" | "STOP";
 
 /**
+ * LIMIT/STOP uniquement si le message contient clairement l'un des 4 :
+ * buy limit, sell limit, buy stop, sell stop (FR : achat/vente + limite/stop).
+ * Sinon → null (→ MARKET).
+ */
+export function explicitPendingOrderKindFromMessage(
+  messageText: string,
+): PendingOrderKind | null {
+  const explicitLimit =
+    /\b(?:buy|achat|long|sell|vente|short)\s+(?:limit|limite)\b/i.test(
+      messageText,
+    ) ||
+    /\b(?:limit|limite)\s+(?:buy|achat|long|sell|vente|short)\b/i.test(
+      messageText,
+    );
+  const explicitStop =
+    /\b(?:buy|achat|long|sell|vente|short)\s+stop\b/i.test(messageText) ||
+    /\bstop\s+(?:buy|achat|long|sell|vente|short)\b/i.test(messageText);
+
+  if (explicitStop) return "STOP";
+  if (explicitLimit) return "LIMIT";
+  return null;
+}
+
+/** Règle canal : pas de limit/stop explicite → MARKET (même avec un prix d'entrée). */
+export function resolveOrderTypeFromMessage(
+  messageText: string,
+): PendingOrderKind {
+  return explicitPendingOrderKindFromMessage(messageText) ?? "MARKET";
+}
+
+/**
  * Déduit MARKET / LIMIT / STOP à partir des champs trade + signal (texte ou codes).
  */
 export function resolvePendingOrderKind(
   tradeOrderType: unknown,
   signalOrderType: unknown,
-  entryPriceParsed: number,
+  _entryPriceParsed?: number,
 ): PendingOrderKind {
   const blob = `${String(tradeOrderType ?? "").trim()} ${String(signalOrderType ?? "").trim()}`
     .toUpperCase()
@@ -27,10 +58,6 @@ export function resolvePendingOrderKind(
     blob.includes("AU MARCH")
   ) {
     return "MARKET";
-  }
-
-  if (Number.isFinite(entryPriceParsed) && entryPriceParsed > 0) {
-    return "LIMIT";
   }
 
   return "MARKET";

@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("🔍 Recherche des trades en attente...");
-    const released = await releaseStaleExecutingTrades(supabase, 8_000);
+    const released = await releaseStaleExecutingTrades(supabase);
     if (released > 0) {
       console.warn(`♻️ ${released} trade(s) executing débloqué(s) → pending`);
     }

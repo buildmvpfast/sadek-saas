@@ -140,12 +140,18 @@ function scoreGoldForBroker(sym: string, brokerName: string | null): number {
     if (/XAUUSD/i.test(sym) && /VIP/i.test(sym)) return 0;
     if (/VIP/i.test(sym)) return 50;
     if (/ECN/i.test(sym)) return 6;
+    if (/\.crp$/i.test(sym)) return 20;
     if (c === "XAUUSD") return 8;
     return 14;
   }
   if (/fxcess/i.test(b)) {
     if (c === "XAUUSD" || c === "GOLD") return 0;
     return 10;
+  }
+  if (/raise/i.test(b)) {
+    if (c === "GOLD") return 0;
+    if (c === "XAUUSD" || c.startsWith("XAUUSD")) return 4;
+    return 12;
   }
   if (c === "XAUUSD") return 5;
   if (/^XAUUSD/i.test(sym)) return 7;
@@ -387,6 +393,20 @@ export async function resolveBrokerSymbol(
       live = await getLiveSymbols(accountId, token, true);
     }
     if (live.ok && live.symbols.size > 0) {
+      if (normalizedSymbol === "GOLD") {
+        const mandatory = mandatoryBrokerGoldSymbol(brokerName);
+        if (mandatory) {
+          const mHit = findInLiveSet(mandatory, live.symbols);
+          if (mHit && !exclude.has(mHit)) return mHit;
+        }
+        const ranked = listRankedLiveGoldSymbols(
+          live.symbols,
+          brokerName,
+          exclude,
+        );
+        if (ranked[0]) return ranked[0];
+      }
+
       for (const name of namesOrdered) {
         const mapped = staticBrokerSymbol(name, normalizedSymbol);
         if (!mapped || exclude.has(mapped)) continue;
