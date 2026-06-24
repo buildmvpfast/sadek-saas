@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isMetaApiTradeSuccess } from "@/lib/metaapi-trade-client";
+import { looksLikeNewOpeningSignal } from "@/lib/order-type";
 
 export function detectSlTpUpdateMessage(messageText: string): {
   isBeUpdate: boolean;
@@ -7,9 +8,23 @@ export function detectSlTpUpdateMessage(messageText: string): {
   takeProfits: number[];
   hasUpdate: boolean;
 } {
+  if (looksLikeNewOpeningSignal(messageText)) {
+    return {
+      isBeUpdate: false,
+      nextStopLoss: null,
+      takeProfits: [],
+      hasUpdate: false,
+    };
+  }
+
+  const isStatusNotInstruction =
+    /\b(?:be|tp\d?)\s+hit\b/i.test(messageText) ||
+    /\bhit\s*[.!…]*\s*$/i.test(messageText.trim());
+
   const isBeUpdate =
-    /\bBE\b/i.test(messageText) ||
-    /break[-\s]?even/i.test(messageText) ||
+    (!isStatusNotInstruction &&
+      (/\bBE\b/i.test(messageText) ||
+        /break[-\s]?even/i.test(messageText))) ||
     /mettre\s+(à|en|au)\s*BE/i.test(messageText) ||
     /passer\s+.*\sBE/i.test(messageText) ||
     /move\s*sl\s*(to|=)\s*(be|break\s*even|break-even)/i.test(messageText) ||

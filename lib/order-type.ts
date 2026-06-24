@@ -31,6 +31,43 @@ export function resolveOrderTypeFromMessage(
   return explicitPendingOrderKindFromMessage(messageText) ?? "MARKET";
 }
 
+const OPEN_SIDE =
+  /\b(?:buy|sell|achat|vente|long|short|🟢|🔴)\b/i;
+const OPEN_SYMBOL =
+  /\b(?:gold|xau\s*\/?\s*usd|eur\s*\/?\s*usd|gbp\s*\/?\s*usd|usd\s*\/?\s*jpy|btc|eth|us30|nas100|ger40|uk100|spx500|sol30|[a-z]{6,10})\b/i;
+
+/**
+ * Message d'ouverture (market/limit/stop) — ne pas traiter comme mise à jour SL/TP/BE.
+ */
+export function looksLikeNewOpeningSignal(messageText: string): boolean {
+  const t = messageText.trim();
+  if (!t) return false;
+
+  if (explicitPendingOrderKindFromMessage(t)) return true;
+
+  const hasSide = OPEN_SIDE.test(t);
+  const hasSymbol = OPEN_SYMBOL.test(t);
+  const hasSl = /\b(?:SL|S\/L)\b/i.test(t);
+  const hasTp = /\bTP\d*\b/i.test(t);
+  const hasPrice = /\d{2,5}(?:[.,]\d+)?/.test(t);
+  const hasEntry =
+    /(?:entrée|entry)\s*[:=\s]/i.test(t) ||
+    /\b(?:buy|sell|achat|vente|long|short)\s+\S+\s+[\d.,]+/i.test(t);
+
+  if (hasSide && hasSymbol && hasSl && hasTp && hasPrice) return true;
+  if (hasSide && hasSymbol && (hasEntry || hasSl) && hasPrice) return true;
+
+  if (
+    /(?:imprimante\s+trading|signal)\s*[•·]/i.test(t) &&
+    hasSide &&
+    hasSymbol
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Déduit MARKET / LIMIT / STOP à partir des champs trade + signal (texte ou codes).
  */

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireInternalSecret } from "@/lib/internal-auth";
-import { cancelPendingOrdersForChannelUsers } from "@/lib/cancel-pending-orders";
+import {
+  cancelOrCloseSignalTrades,
+  isCancelOrCutCommand,
+  resolveSignalIdForCancel,
+} from "@/lib/telegram-cancel-signal";
 import { resolveBrokerSymbol } from "@/lib/broker-symbol-resolver";
 import {
   applyLotMultiplier,
@@ -95,120 +99,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Gérer les messages d'annulation
-    const isCancelCommand = /annuler|cancel|effacer|supprimer|delete|retirer/i.test(
-      messageText,
-    );
-
-    if (isCancelCommand) {
+    if (isCancelOrCutCommand(messageText)) {
       console.log(
-        `⚠️ Commande d'annulation détectée dans ${channel.username}: "${messageText}"`,
+        `⚠️ Annulation / couper détecté dans ${channel.username}: "${messageText}"`,
       );
 
-      let signalIdToCancel = null;
-
-      // Cas 1: Annulation par réponse à un message
-      if (replyToMessageId) {
-        console.log(
-          `🔍 Recherche du signal à annuler (replyToMessageId: ${replyToMessageId})`,
+      const metaToken = process.env.METAAPI_TOKEN;
+      if (!metaToken) {
+        return NextResponse.json(
+          { success: false, error: "METAAPI_TOKEN non configuré" },
+          { status: 500 },
         );
-        const { data: originalSignal } = await supabase
-          .from("telegram_signals")
-          .select("id")
-          .eq("channel_id", channel.id)
-          .eq("message_id", replyToMessageId)
-          .maybeSingle();
-
-        if (originalSignal) {
-          signalIdToCancel = originalSignal.id;
-          console.log(`✅ Signal trouvé par reply_to: ${signalIdToCancel}`);
-        }
       }
 
-      // Cas 2: Annulation du dernier pending si pas de réponse ou signal non trouvé
+      const signalIdToCancel = await resolveSignalIdForCancel(
+        supabase,
+        channel.id,
+        replyToMessageId,
+      );
+
       if (!signalIdToCancel) {
-        console.log(
-          `🔍 Recherche du dernier signal du canal avec des trades en attente...`,
-        );
-        // On cherche le dernier signal du canal qui a au moins un trade 'pending'
-        const { data: lastPendingTrade } = await supabase
-          .from("telegram_trades")
-          .select("signal_id, telegram_signals!inner(id, channel_id)")
-          .eq("status", "pending")
-          .eq("telegram_signals.channel_id", channel.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (lastPendingTrade) {
-          signalIdToCancel = lastPendingTrade.signal_id;
-          console.log(
-            `✅ Dernier signal en attente du canal trouvé: ${signalIdToCancel}`,
-          );
-        }
-      }
-
-      if (signalIdToCancel) {
-        // Annuler tous les trades 'pending' pour ce signal
-        const { data: cancelledTrades, error: cancelError } = await supabase
-          .from("telegram_trades")
-          .update({
-            status: "failed",
-            error_message: "Annulé par commande Telegram",
-          })
-          .eq("signal_id", signalIdToCancel)
-          .eq("status", "pending")
-          .select();
-
-        if (cancelError) {
-          console.error("❌ Erreur lors de l'annulation:", cancelError);
-          return NextResponse.json(
-            { error: "Erreur lors de l'annulation" },
-            { status: 500 },
-          );
-        }
-
-        console.log(
-          `✅ ${cancelledTrades?.length || 0} trade(s) annulé(s) pour le signal ${signalIdToCancel}`,
-        );
-
+        console.log("❌ Aucun signal récent à annuler / couper");
         return NextResponse.json({
           success: true,
-          message: `${cancelledTrades?.length || 0} trade(s) annulé(s) avec succès`,
-          cancelledCount: cancelledTrades?.length || 0,
-        });
-      } else {
-        if (
-          /limite|limit|stop/i.test(messageText) &&
-          process.env.METAAPI_TOKEN
-        ) {
-          const side = /sell|vente|short/i.test(messageText)
-            ? ("SELL" as const)
-            : /buy|achat|long/i.test(messageText)
-              ? ("BUY" as const)
-              : undefined;
-          const orderResult = await cancelPendingOrdersForChannelUsers(
-            supabase,
-            channel.id,
-            process.env.METAAPI_TOKEN,
-            { side, symbolIncludes: "XAU" },
-          );
-          console.log(
-            `✅ ${orderResult.cancelled} ordre(s) pending annulé(s) MetaAPI (canal ${channel.username})`,
-          );
-          return NextResponse.json({
-            success: true,
-            message: `${orderResult.cancelled} ordre(s) limit/stop annulé(s) sur MetaAPI`,
-            metaApiCancelled: orderResult.cancelled,
-          });
-        }
-
-        console.log("❌ Aucun trade en attente trouvé à annuler");
-        return NextResponse.json({
-          success: true,
-          message: "Aucun trade en attente trouvé à annuler",
+          message: "Aucun signal récent à annuler",
         });
       }
+
+      const outcome = await cancelOrCloseSignalTrades(
+        supabase,
+        signalIdToCancel,
+        metaToken,
+      );
+
+      console.log(
+        `✅ Signal ${signalIdToCancel}: ${outcome.dbCancelled} DB annulé(s), ${outcome.positionsClosed} position(s) fermée(s), ${outcome.ordersCancelled} ordre(s) pending annulé(s)`,
+      );
+      if (outcome.errors.length) {
+        console.warn("⚠️ Erreurs annulation:", outcome.errors.slice(0, 5));
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `${outcome.dbCancelled} trade(s) annulé(s), ${outcome.positionsClosed} position(s) fermée(s), ${outcome.ordersCancelled} ordre(s) retiré(s)`,
+        signal_id: signalIdToCancel,
+        ...outcome,
+      });
     }
 
     // SL/TP/BE updates — reply au signal ou dernier signal exécuté (24h)
