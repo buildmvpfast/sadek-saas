@@ -357,9 +357,18 @@ export async function fetchMetaApiSymbolQuote(
   return null;
 }
 
-function minStopDistance(refPrice: number): number {
-  if (refPrice > 2000) return Math.max(refPrice * 0.002, 50);
-  if (refPrice > 1000) return Math.max(refPrice * 0.001, 20);
+function isGoldBrokerSymbol(symbol: string): boolean {
+  const c = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  return c === "GOLD" || c.startsWith("XAUUSD") || c.startsWith("XAU");
+}
+
+function minStopDistance(refPrice: number, symbol?: string): number {
+  if (symbol && isGoldBrokerSymbol(symbol)) {
+    // Signaux canal : SL/TP souvent 3–20 $ — pas 50 pts imposés
+    return Math.max(refPrice * 0.00002, 0.05);
+  }
+  if (refPrice > 2000) return Math.max(refPrice * 0.002, 5);
+  if (refPrice > 1000) return Math.max(refPrice * 0.001, 2);
   if (refPrice > 10) return Math.max(refPrice * 0.0001, 0.01);
   return 0.00005;
 }
@@ -388,6 +397,7 @@ function buildMarketOrderWithValidatedStops(
 ): BuiltMarketOrderResult {
   const action = String(body.actionType ?? "");
   const side = parseStopSide(action);
+  const symbol = String(body.symbol ?? "");
   const refPrice = side === "BUY" ? quote?.ask : quote?.bid;
   const stopLoss = body.stopLoss as number | undefined;
   const takeProfit = body.takeProfit as number | undefined;
@@ -400,7 +410,8 @@ function buildMarketOrderWithValidatedStops(
     return { ok: true, order: { ...body } };
   }
 
-  const dist = minStopDistance(refPrice);
+  const dist = minStopDistance(refPrice, symbol);
+  const buy = side === "BUY";
   const maxClamped = clampStopsToBrokerMaxDistance(
     side,
     refPrice,
@@ -416,15 +427,39 @@ function buildMarketOrderWithValidatedStops(
   );
 
   const order: MetaApiTradeBody = { ...body };
+
   if (stopLoss != null) {
-    order.stopLoss =
-      sanitized.stopLoss ??
-      adjustStopToMinDistance(side, refPrice, stopLoss, dist, "sl");
+    const slDirOk = buy ? stopLoss < refPrice : stopLoss > refPrice;
+    if (sanitized.stopLoss != null) {
+      order.stopLoss = sanitized.stopLoss;
+    } else if (slDirOk) {
+      order.stopLoss = maxClamped.stopLoss ?? stopLoss;
+    } else {
+      order.stopLoss = adjustStopToMinDistance(
+        side,
+        refPrice,
+        stopLoss,
+        dist,
+        "sl",
+      );
+    }
   }
+
   if (takeProfit != null) {
-    order.takeProfit =
-      sanitized.takeProfit ??
-      adjustStopToMinDistance(side, refPrice, takeProfit, dist, "tp");
+    const tpDirOk = buy ? takeProfit > refPrice : takeProfit < refPrice;
+    if (sanitized.takeProfit != null) {
+      order.takeProfit = sanitized.takeProfit;
+    } else if (tpDirOk) {
+      order.takeProfit = maxClamped.takeProfit ?? takeProfit;
+    } else {
+      order.takeProfit = adjustStopToMinDistance(
+        side,
+        refPrice,
+        takeProfit,
+        dist,
+        "tp",
+      );
+    }
   }
 
   return { ok: true, order };

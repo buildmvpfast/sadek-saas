@@ -132,7 +132,10 @@ function scoreGoldForBroker(sym: string, brokerName: string | null): number {
   if (isCrossGoldSymbol(sym)) return 100;
 
   if (/vantage/i.test(b)) {
-    if (/XAUUSD\+$/i.test(sym) || (sym.endsWith("+") && /XAUUSD/i.test(sym))) return 0;
+    if (/XAUUSD\+$/i.test(sym) || (sym.endsWith("+") && /XAUUSD/i.test(sym))) {
+      return 0;
+    }
+    if (/XAUUSD/i.test(sym) && !sym.endsWith("+")) return 18;
     if (c.startsWith("XAUUSD")) return 4;
     return 12;
   }
@@ -141,6 +144,7 @@ function scoreGoldForBroker(sym: string, brokerName: string | null): number {
     if (/VIP/i.test(sym)) return 50;
     if (/ECN/i.test(sym)) return 6;
     if (/\.crp$/i.test(sym)) return 20;
+    if (/[-.]STD$/i.test(sym) || /\.STD/i.test(sym)) return 22;
     if (c === "XAUUSD") return 8;
     return 14;
   }
