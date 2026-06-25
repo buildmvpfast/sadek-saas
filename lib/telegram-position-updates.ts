@@ -129,6 +129,22 @@ function resolveOpenPriceForBe(
   return null;
 }
 
+function resolveExistingTakeProfit(
+  tradeTp: string | number | null | undefined,
+  livePosition: MetaApiOpenPosition | null,
+): number | null {
+  if (
+    livePosition?.takeProfit != null &&
+    Number.isFinite(livePosition.takeProfit) &&
+    livePosition.takeProfit > 0
+  ) {
+    return livePosition.takeProfit;
+  }
+  const fromDb = parseLocaleNumber(tradeTp);
+  if (Number.isFinite(fromDb) && fromDb > 0) return fromDb;
+  return null;
+}
+
 async function loadAccountPositions(
   accountId: string,
   token: string,
@@ -296,7 +312,13 @@ export async function applySlTpUpdatesForSignal(
             : livePosition?.takeProfit ?? null;
     }
 
-    if (updatedStopLoss === null && updatedTakeProfit === null) {
+    // BE : SL seulement côté logique, mais MetaAPI efface le TP si absent → on le renvoie tel quel
+    const preserveTakeProfit = update.isBeUpdate
+      ? resolveExistingTakeProfit(row.take_profit, livePosition)
+      : null;
+    const modifyTakeProfit = updatedTakeProfit ?? preserveTakeProfit;
+
+    if (updatedStopLoss === null && modifyTakeProfit === null) {
       skipped++;
       continue;
     }
@@ -307,7 +329,7 @@ export async function applySlTpUpdatesForSignal(
       metaToken,
       {
         ...(updatedStopLoss !== null ? { stopLoss: updatedStopLoss } : {}),
-        ...(updatedTakeProfit !== null ? { takeProfit: updatedTakeProfit } : {}),
+        ...(modifyTakeProfit !== null ? { takeProfit: modifyTakeProfit } : {}),
       },
     );
 
