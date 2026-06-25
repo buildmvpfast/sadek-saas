@@ -13,6 +13,7 @@ import {
   postMetaApiTradeWithStopsFallback,
   postMetaApiMarketReliable,
 } from "@/lib/metaapi-trade-client";
+import { openPriceFromTradeData } from "@/lib/metaapi-stops";
 import { parseLocaleNumber } from "@/lib/locale-number";
 import { resolvePendingOrderKind } from "@/lib/order-type";
 import { snapVolumeForMetaApiSymbol } from "@/lib/trade-volume";
@@ -822,13 +823,17 @@ export async function executeOnePendingTrade(
 
     const positionId =
       rawPositionId != null ? parseInt(String(rawPositionId), 10) : null;
+    const fillPrice = openPriceFromTradeData(
+      data,
+      parseLocaleNumber(trade.entry_price) ?? null,
+    );
 
     const { error: updErr } = await supabase
       .from("telegram_trades")
       .update({
         status: "executed",
         executed_at: new Date().toISOString(),
-        entry_price: data.price ?? trade.entry_price,
+        entry_price: fillPrice,
         position_id: positionId,
         symbol: result.symbol,
         error_message:

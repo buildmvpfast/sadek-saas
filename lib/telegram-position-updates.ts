@@ -1,6 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isMetaApiTradeSuccess } from "@/lib/metaapi-trade-client";
+import {
+  fetchMetaApiPositionsJson,
+  findMatchingOpenPosition,
+  parseMetaApiOpenPositions,
+  postMetaApiModifyPosition,
+  type MetaApiOpenPosition,
+} from "@/lib/metaapi-trade-client";
 import { looksLikeNewOpeningSignal } from "@/lib/order-type";
+import { parseLocaleNumber } from "@/lib/locale-number";
 
 export function detectSlTpUpdateMessage(messageText: string): {
   isBeUpdate: boolean;
@@ -25,6 +32,9 @@ export function detectSlTpUpdateMessage(messageText: string): {
     (!isStatusNotInstruction &&
       (/\bBE\b/i.test(messageText) ||
         /break[-\s]?even/i.test(messageText))) ||
+    /mettez?\s+(?:le\s+)?(?:sl\s+)?(?:en\s+|à\s+|au\s+)?(?:be|break[-\s]?even)/i.test(
+      messageText,
+    ) ||
     /mettre\s+(à|en|au)\s*BE/i.test(messageText) ||
     /passer\s+.*\sBE/i.test(messageText) ||
     /move\s*sl\s*(to|=)\s*(be|break\s*even|break-even)/i.test(messageText) ||
@@ -85,6 +95,77 @@ export async function resolveSignalIdForPositionUpdate(
   return null;
 }
 
+function parseStoredPositionId(
+  positionId: string | number | null | undefined,
+  errorMessage: string | null | undefined,
+): string | null {
+  if (positionId != null && positionId !== "") {
+    return String(positionId);
+  }
+  const msg = (errorMessage ?? "").trim();
+  if (/^\d+$/.test(msg)) return msg;
+  return null;
+}
+
+function resolveOpenPriceForBe(
+  tradeEntry: string | number | null | undefined,
+  signalEntry: string | number | null | undefined,
+  position: MetaApiOpenPosition | null,
+): number | null {
+  const fromTrade = parseLocaleNumber(tradeEntry);
+  if (Number.isFinite(fromTrade) && fromTrade > 0) return fromTrade;
+
+  const fromSignal = parseLocaleNumber(signalEntry);
+  if (Number.isFinite(fromSignal) && fromSignal > 0) return fromSignal;
+
+  if (
+    position?.openPrice != null &&
+    Number.isFinite(position.openPrice) &&
+    position.openPrice > 0
+  ) {
+    return position.openPrice;
+  }
+
+  return null;
+}
+
+async function loadAccountPositions(
+  accountId: string,
+  token: string,
+  cache: Map<string, MetaApiOpenPosition[]>,
+): Promise<MetaApiOpenPosition[]> {
+  if (cache.has(accountId)) return cache.get(accountId)!;
+
+  const res = await fetchMetaApiPositionsJson(accountId, token);
+  const positions = res.ok ? parseMetaApiOpenPositions(res.positions) : [];
+  cache.set(accountId, positions);
+  return positions;
+}
+
+function matchLivePosition(
+  positions: MetaApiOpenPosition[],
+  trade: {
+    symbol: string;
+    signal_type: string;
+    take_profit: string | number | null;
+    position_id: string | number | null;
+  },
+): MetaApiOpenPosition | null {
+  const storedId = parseStoredPositionId(trade.position_id, null);
+  if (storedId) {
+    const byId = positions.find((p) => p.id === storedId);
+    if (byId) return byId;
+  }
+
+  const tp = parseLocaleNumber(trade.take_profit);
+  return findMatchingOpenPosition(
+    positions,
+    trade.symbol,
+    trade.signal_type,
+    Number.isFinite(tp) ? tp : null,
+  );
+}
+
 export async function applySlTpUpdatesForSignal(
   supabase: SupabaseClient,
   signalId: string,
@@ -102,12 +183,15 @@ export async function applySlTpUpdatesForSignal(
       id,
       user_id,
       mt5_account_id,
+      symbol,
+      signal_type,
       position_id,
       entry_price,
       take_profit,
       stop_loss,
       error_message,
-      mt5_accounts!inner(metaapi_account_id)
+      mt5_accounts!inner(metaapi_account_id),
+      telegram_signals(entry_price)
     `,
     )
     .eq("signal_id", signalId)
@@ -126,18 +210,25 @@ export async function applySlTpUpdatesForSignal(
     return aTp - bTp;
   });
 
+  const positionsCache = new Map<string, MetaApiOpenPosition[]>();
   let updated = 0;
   let skipped = 0;
 
   for (const trade of executedTrades) {
     const row = trade as {
       id: string;
+      symbol: string;
+      signal_type: string;
       entry_price: string | number | null;
       take_profit: string | number | null;
       stop_loss: string | number | null;
       position_id: string | number | null;
       error_message: string | null;
       mt5_accounts: { metaapi_account_id: string } | { metaapi_account_id: string }[];
+      telegram_signals:
+        | { entry_price: string | number | null }
+        | { entry_price: string | number | null }[]
+        | null;
     };
 
     const mt5 = Array.isArray(row.mt5_accounts)
@@ -145,21 +236,49 @@ export async function applySlTpUpdatesForSignal(
       : row.mt5_accounts;
     const metaApiAccountId = mt5?.metaapi_account_id;
 
-    const rawPositionId =
-      row.position_id ??
-      (row.error_message && !Number.isNaN(parseInt(row.error_message, 10))
-        ? parseInt(row.error_message, 10)
-        : null);
+    if (!metaApiAccountId) {
+      console.warn(`⏭️ BE/SL trade ${row.id}: compte MetaAPI manquant`);
+      skipped++;
+      continue;
+    }
 
-    if (!metaApiAccountId || rawPositionId == null) {
+    const signalRow = Array.isArray(row.telegram_signals)
+      ? row.telegram_signals[0]
+      : row.telegram_signals;
+
+    const positions = await loadAccountPositions(
+      metaApiAccountId,
+      metaToken,
+      positionsCache,
+    );
+    const livePosition = matchLivePosition(positions, row);
+
+    let positionId = parseStoredPositionId(row.position_id, row.error_message);
+    if (!positionId && livePosition) {
+      positionId = livePosition.id;
+    }
+
+    if (!positionId) {
+      console.warn(
+        `⏭️ BE/SL trade ${row.id}: position_id introuvable (${row.symbol})`,
+      );
       skipped++;
       continue;
     }
 
     let updatedStopLoss: number | null = null;
     if (update.isBeUpdate) {
-      if (row.entry_price != null) {
-        updatedStopLoss = parseFloat(String(row.entry_price));
+      updatedStopLoss = resolveOpenPriceForBe(
+        row.entry_price,
+        signalRow?.entry_price ?? null,
+        livePosition,
+      );
+      if (updatedStopLoss == null) {
+        console.warn(
+          `⏭️ BE trade ${row.id}: prix d'entrée introuvable (DB + MetaAPI)`,
+        );
+        skipped++;
+        continue;
       }
     } else if (update.nextStopLoss !== null) {
       updatedStopLoss = update.nextStopLoss;
@@ -170,9 +289,11 @@ export async function applySlTpUpdatesForSignal(
       const tpIndex = sortedTradesByTp.findIndex((t) => t.id === row.id);
       const mapped = sortedTakeProfits[tpIndex];
       updatedTakeProfit =
-        mapped !== undefined ? mapped : row.take_profit != null
-          ? parseFloat(String(row.take_profit))
-          : null;
+        mapped !== undefined
+          ? mapped
+          : row.take_profit != null
+            ? parseFloat(String(row.take_profit))
+            : livePosition?.takeProfit ?? null;
     }
 
     if (updatedStopLoss === null && updatedTakeProfit === null) {
@@ -180,54 +301,39 @@ export async function applySlTpUpdatesForSignal(
       continue;
     }
 
-    const body: Record<string, unknown> = {
-      actionType: "POSITION_MODIFY",
-      positionId: String(rawPositionId),
-      stopLossUnits: "ABSOLUTE_PRICE",
-      takeProfitUnits: "ABSOLUTE_PRICE",
-    };
-    if (updatedStopLoss !== null) body.stopLoss = updatedStopLoss;
-    if (updatedTakeProfit !== null) body.takeProfit = updatedTakeProfit;
+    const modifyResult = await postMetaApiModifyPosition(
+      metaApiAccountId,
+      positionId,
+      metaToken,
+      {
+        ...(updatedStopLoss !== null ? { stopLoss: updatedStopLoss } : {}),
+        ...(updatedTakeProfit !== null ? { takeProfit: updatedTakeProfit } : {}),
+      },
+    );
 
-    try {
-      const modifyUrl = `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${metaApiAccountId}/trade`;
-      const resp = await fetch(modifyUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "auth-token": metaToken,
-        },
-        body: JSON.stringify(body),
-      });
-
-      const respData = await resp.json().catch(() => ({}));
-      if (!resp.ok || !isMetaApiTradeSuccess(respData)) {
-        console.error(
-          `❌ POSITION_MODIFY failed for trade ${row.id}:`,
-          resp.status,
-          respData,
-        );
-        skipped++;
-        continue;
-      }
-    } catch (e) {
+    if (!modifyResult.ok) {
       console.error(
-        `❌ POSITION_MODIFY error for trade ${row.id}:`,
-        e instanceof Error ? e.message : e,
+        `❌ POSITION_MODIFY trade ${row.id} pos ${positionId}:`,
+        modifyResult.error,
       );
       skipped++;
       continue;
     }
 
-    await supabase
-      .from("telegram_trades")
-      .update({
-        stop_loss:
-          updatedStopLoss !== null ? updatedStopLoss : row.stop_loss,
-        take_profit:
-          updatedTakeProfit !== null ? updatedTakeProfit : row.take_profit,
-      })
-      .eq("id", row.id);
+    const dbPatch: Record<string, unknown> = {};
+    if (updatedStopLoss !== null) dbPatch.stop_loss = updatedStopLoss;
+    if (updatedTakeProfit !== null) dbPatch.take_profit = updatedTakeProfit;
+    if (
+      livePosition?.openPrice != null &&
+      (row.entry_price == null || row.entry_price === "")
+    ) {
+      dbPatch.entry_price = livePosition.openPrice;
+    }
+    if (row.position_id == null || row.position_id === "") {
+      dbPatch.position_id = positionId;
+    }
+
+    await supabase.from("telegram_trades").update(dbPatch).eq("id", row.id);
 
     updated++;
   }

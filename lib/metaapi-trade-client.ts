@@ -171,8 +171,10 @@ export async function postMetaApiTrade(
   const payload = sanitizeTradeBody(body);
   const actionType = String(payload.actionType ?? "");
   const isCloseById = actionType === "POSITION_CLOSE_ID";
+  const isPositionModify = actionType === "POSITION_MODIFY";
   if (
     !isCloseById &&
+    !isPositionModify &&
     (payload.volume == null ||
       typeof payload.volume !== "number" ||
       !Number.isFinite(payload.volume) ||
@@ -719,7 +721,9 @@ export type MetaApiOpenPosition = {
   id: string;
   symbol: string;
   type: string;
+  openPrice?: number;
   takeProfit?: number;
+  stopLoss?: number;
   time?: string;
 };
 
@@ -766,12 +770,23 @@ export function parseMetaApiOpenPositions(raw: unknown[]): MetaApiOpenPosition[]
       continue;
     }
     const tp = p.takeProfit ?? p.take_profit;
+    const sl = p.stopLoss ?? p.stop_loss;
+    const op = p.openPrice ?? p.price ?? p.open_price;
+    const openPrice =
+      typeof op === "number" && Number.isFinite(op)
+        ? op
+        : typeof op === "string"
+          ? parseFloat(op)
+          : NaN;
     out.push({
       id: String(id),
       symbol,
       type,
+      openPrice: Number.isFinite(openPrice) ? openPrice : undefined,
       takeProfit:
         typeof tp === "number" && Number.isFinite(tp) ? tp : undefined,
+      stopLoss:
+        typeof sl === "number" && Number.isFinite(sl) ? sl : undefined,
       time:
         typeof p.time === "string"
           ? p.time
@@ -787,13 +802,48 @@ export function findMatchingOpenPosition(
   positions: MetaApiOpenPosition[],
   brokerSymbol: string,
   signalType: string,
+  takeProfit?: number | null,
 ): MetaApiOpenPosition | null {
+  const tp =
+    takeProfit != null && Number.isFinite(Number(takeProfit))
+      ? Number(takeProfit)
+      : NaN;
   for (const p of positions) {
     if (!brokerSymbolsEquivalent(brokerSymbol, p.symbol)) continue;
     if (!signalTypeMatchesPosition(signalType, p.type)) continue;
+    if (
+      Number.isFinite(tp) &&
+      p.takeProfit != null &&
+      Number.isFinite(p.takeProfit) &&
+      Math.abs(p.takeProfit - tp) >= 5
+    ) {
+      continue;
+    }
     return p;
   }
   return null;
+}
+
+/** Modifie SL/TP d'une position ouverte (multi-région MetaAPI). */
+export async function postMetaApiModifyPosition(
+  accountId: string,
+  positionId: string,
+  token: string,
+  stops: { stopLoss?: number; takeProfit?: number },
+): Promise<PostMetaApiTradeResult> {
+  const body: MetaApiTradeBody = {
+    actionType: "POSITION_MODIFY",
+    positionId: String(positionId),
+    stopLossUnits: "ABSOLUTE_PRICE",
+    takeProfitUnits: "ABSOLUTE_PRICE",
+  };
+  if (stops.stopLoss != null && Number.isFinite(stops.stopLoss)) {
+    body.stopLoss = stops.stopLoss;
+  }
+  if (stops.takeProfit != null && Number.isFinite(stops.takeProfit)) {
+    body.takeProfit = stops.takeProfit;
+  }
+  return postMetaApiTrade(accountId, body, token);
 }
 
 export async function fetchMetaApiOrdersJson(
