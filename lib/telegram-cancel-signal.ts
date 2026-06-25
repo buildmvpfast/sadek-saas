@@ -9,10 +9,22 @@ import {
 } from "@/lib/metaapi-trade-client";
 import { normalizeSymbol } from "@/lib/symbol-normalizer";
 
-/** Annuler / couper / retirer — y compris "Annulez", "couper", "cut". */
+/** Fermeture totale / annulation — pas les partial close (CLOSE HALF, TP HIT, etc.). */
 export function isCancelOrCutCommand(messageText: string): boolean {
-  return /\b(?:annulez?|cancel(?:ler|led|ez)?|coupe[rz]?|cut|retire[rz]?|efface[rz]?|supprime[rz]?|delete|cl[oô]ture[rz]?)\b/i.test(
-    messageText,
+  const t = messageText.trim();
+  if (
+    /\b(?:CLOSE\s+HALF|PRENDRE\s+PROFIT|S[ÉE]CURISER|TP\s*HIT)\b/i.test(t)
+  ) {
+    return false;
+  }
+
+  return (
+    /\b(?:annulez?|cancel(?:ler|led|ez)?|coupe[rz]?|cut|retire[rz]?|efface[rz]?|supprime[rz]?|delete|cl[oô]ture[rz]?)\b/i.test(
+      t,
+    ) ||
+    /\b(?:sort(?:er|ez|ir|ie|ons)|sors(?:ez|-en)?)\b/i.test(t) ||
+    /\b(?:ferm(?:er|ez|e)|close|exit)\b/i.test(t) ||
+    /^\s*SORTER\s*(?:[-–]?\s*\d+\s*pips?)?\s*$/i.test(t)
   );
 }
 

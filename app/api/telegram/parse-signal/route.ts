@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
 
     if (isCancelOrCutCommand(messageText)) {
       console.log(
-        `⚠️ Annulation / couper détecté dans ${channel.username}: "${messageText}"`,
+        `⚠️ Fermeture / annulation détectée dans ${channel.username}: "${messageText}"${replyToMessageId ? ` (reply ${replyToMessageId})` : ""}`,
       );
 
       const metaToken = process.env.METAAPI_TOKEN;
@@ -615,6 +615,10 @@ MISES À JOUR (si message de suivi — géré ailleurs, mais reconnais):
 FERMETURES PARTIELLES:
 - "TP HIT", "PRENDRE PROFIT", "CLOSE HALF", "SÉCURISER" → isPartialClose: true
 - closePercent: cherche 25%, 50%, 75% ; "CLOSE HALF" = 50 ; défaut 50
+
+FERMETURE TOTALE (reply au signal — géré avant toi, réponds null):
+- SORTER, SORTEZ, SORTIR, FERMER, CLOSE, COUPER, CUT, ANNULEZ
+- "SORTER -10 Pips" = sortir / fermer la position (le "-10 Pips" est informatif, pas un %)
 
 JSON UNIQUEMENT (ou null si type+symbol impossibles):
 {
