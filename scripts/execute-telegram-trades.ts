@@ -34,7 +34,7 @@ async function executePendingTrades() {
       volume, entry_price, stop_loss, take_profit, error_message, status,
       position_id, partial_close_percent,
       mt5_accounts!inner(metaapi_account_id, broker_name, symbol_profile),
-      telegram_signals (entry_price, order_type, symbol)
+      telegram_signals (entry_price, order_type, symbol, stop_loss)
     `,
     )
     .in("status", ["pending", "pending_partial"])

@@ -55,7 +55,8 @@ export async function POST(request: NextRequest) {
         telegram_signals (
           entry_price,
           order_type,
-          symbol
+          symbol,
+          stop_loss
         )
       `,
       )

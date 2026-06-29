@@ -272,10 +272,12 @@ export async function postMetaApiTradeWithStopsFallback(
   accountId: string,
   body: MetaApiTradeBody,
   token: string,
+  options?: { allowStripStops?: boolean },
 ): Promise<PostMetaApiTradeResult> {
+  const allowStripStops = options?.allowStripStops !== false;
   const hasSlTp = body.stopLoss != null || body.takeProfit != null;
   const attempts: MetaApiTradeBody[] = [body];
-  if (hasSlTp) {
+  if (hasSlTp && allowStripStops) {
     attempts.push(stripStops(body, true, false));
     attempts.push(stripStops(body, false, true));
     attempts.push(stripStops(body, true, true));
@@ -306,6 +308,55 @@ export async function postMetaApiTradeWithStopsFallback(
     return { ...last, error: `${last.error} (après retry sans SL/TP)` };
   }
   return last;
+}
+
+export function isMetaApiMarketAction(actionType: string): boolean {
+  const a = actionType.toUpperCase();
+  return a === "ORDER_TYPE_BUY" || a === "ORDER_TYPE_SELL";
+}
+
+export function isMetaApiPendingAction(actionType: string): boolean {
+  return /ORDER_TYPE_(?:BUY|SELL)_(?:LIMIT|STOP)/i.test(actionType);
+}
+
+/** LIMIT/STOP : SL/TP obligatoires si fournis — pas d'ouverture nue sans stops. */
+export async function postMetaApiPendingOrderReliable(
+  accountId: string,
+  body: MetaApiTradeBody,
+  token: string,
+): Promise<PostMetaApiTradeResult> {
+  const action = String(body.actionType ?? "");
+  const side = parseStopSide(action);
+  const openPrice = body.openPrice as number | undefined;
+  const stopLoss = body.stopLoss as number | undefined;
+  const takeProfit = body.takeProfit as number | undefined;
+
+  const order: MetaApiTradeBody = {
+    ...body,
+    stopLossUnits: "ABSOLUTE_PRICE",
+    takeProfitUnits: "ABSOLUTE_PRICE",
+  };
+
+  if (openPrice != null && Number.isFinite(openPrice)) {
+    const sanitized = sanitizeStopsForOpenPrice(
+      side,
+      openPrice,
+      stopLoss,
+      takeProfit,
+      0,
+    );
+    if (sanitized.stopLoss != null) order.stopLoss = sanitized.stopLoss;
+    else delete order.stopLoss;
+    if (sanitized.takeProfit != null) order.takeProfit = sanitized.takeProfit;
+    else delete order.takeProfit;
+  }
+
+  const result = await postMetaApiTrade(accountId, order, token);
+  if (result.ok) return result;
+
+  return postMetaApiTradeWithStopsFallback(accountId, order, token, {
+    allowStripStops: false,
+  });
 }
 
 export type MetaApiSymbolQuote = { bid: number; ask: number };
