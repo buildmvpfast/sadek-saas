@@ -21,6 +21,7 @@ import {
   resolveBrokerSymbol,
   invalidateSymbolCache,
   listRankedLiveGoldSymbols,
+  listRankedLiveIndexSymbols,
 } from "@/lib/broker-symbol-resolver";
 import { normalizeSymbol } from "@/lib/symbol-normalizer";
 import {
@@ -604,9 +605,21 @@ async function postTradeWithSymbolRetry(
 
   invalidateSymbolCache(metaApiAccountId);
   const live = await fetchMetaApiSymbolNames(metaApiAccountId, token);
+  const isIndex = ["US30", "NAS100", "GER40", "UK100", "SPX500"].includes(
+    prepared.standardSymbol,
+  );
   if (live.ok && isGold) {
     for (const sym of listRankedLiveGoldSymbols(
       live.symbols,
+      prepared.brokerName,
+    )) {
+      if (!candidates.includes(sym)) candidates.push(sym);
+    }
+  }
+  if (live.ok && isIndex) {
+    for (const sym of listRankedLiveIndexSymbols(
+      live.symbols,
+      prepared.standardSymbol,
       prepared.brokerName,
     )) {
       if (!candidates.includes(sym)) candidates.push(sym);

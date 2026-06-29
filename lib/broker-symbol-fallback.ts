@@ -84,9 +84,24 @@ const STATIC_BROKER_SYMBOL: Record<string, SymbolMap> = {
   },
   Axi: { ...GENERIC_PACK },
   FXcess: { ...GENERIC_PACK },
-  "Raise FX": { ...GENERIC_PACK },
-  "Raise Global": { ...GENERIC_PACK },
-  "Raise Globale": { ...GENERIC_PACK },
+  "Raise FX": {
+    ...GENERIC_PACK,
+    GER40: "DE40",
+    NAS100: "NAS100",
+    US30: "US30",
+  },
+  "Raise Global": {
+    ...GENERIC_PACK,
+    GER40: "DE40",
+    NAS100: "NAS100",
+    US30: "US30",
+  },
+  "Raise Globale": {
+    ...GENERIC_PACK,
+    GER40: "DE40",
+    NAS100: "NAS100",
+    US30: "US30",
+  },
 };
 
 /**

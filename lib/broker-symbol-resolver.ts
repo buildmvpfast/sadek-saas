@@ -86,9 +86,21 @@ function ecnStpCandidates(standardSymbol: string): string[] {
     );
   }
 
-  if (s === "US30") out.push("DJ30", "DJ30.s", "US30", "US30.cash", "US30.cash-ECN");
-  if (s === "NAS100") out.push("NAS100", "NAS100.s", "USTEC", "US100");
-  if (s === "GER40") out.push("GER40", "GER40.s", "DE40", "DAX");
+  if (s === "US30") out.push("DJ30", "DJ30.s", "US30", "US30.cash", "US30.cash-ECN", "WS30");
+  if (s === "NAS100") out.push("NAS100", "NAS100.s", "USTEC", "US100", "NDX100");
+  if (s === "GER40") {
+    out.push(
+      "GER40",
+      "GER40.s",
+      "GER40.cash",
+      "DE40",
+      "DE40.cash",
+      "DAX40",
+      "DAX",
+      "GER30",
+      "DE30",
+    );
+  }
   if (s === "UK100") out.push("UK100", "UK100.s", "FTSE100");
   if (s === "SPX500") out.push("SPX500", "SPX500.s", "US500");
 
@@ -123,6 +135,130 @@ function orderByProfile(
     ];
   }
   return candidates;
+}
+
+const INDEX_STANDARDS = new Set([
+  "US30",
+  "NAS100",
+  "GER40",
+  "UK100",
+  "SPX500",
+]);
+
+function isIndexStandard(symbol: string): boolean {
+  return INDEX_STANDARDS.has(symbol.toUpperCase());
+}
+
+function compactSymbol(sym: string): string {
+  return sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+}
+
+function liveSymbolMatchesIndex(sym: string, standard: string): boolean {
+  const c = compactSymbol(sym);
+  switch (standard) {
+    case "GER40":
+      return (
+        /^(GER40|DE40|DAX40|GER30|DE30)$/.test(c) ||
+        /^GER40|^DE40|^DAX40|^GER30|^DE30/.test(c)
+      );
+    case "US30":
+      return /^(US30|DJ30|WS30|DOW30)$/.test(c) || /^(US30|DJ30)/.test(c);
+    case "NAS100":
+      return /^(NAS100|USTEC|US100|NDX100|NASDAQ100)$/.test(c) || /^NAS100|^USTEC|^US100/.test(c);
+    case "UK100":
+      return /^(UK100|FTSE100)$/.test(c) || /^UK100|^FTSE100/.test(c);
+    case "SPX500":
+      return /^(SPX500|US500|SP500)$/.test(c) || /^SPX500|^US500/.test(c);
+    default:
+      return false;
+  }
+}
+
+function scoreIndexSymbolForBroker(
+  sym: string,
+  standard: string,
+  brokerName: string | null,
+): number {
+  const c = compactSymbol(sym);
+  const b = (brokerName ?? "").toLowerCase();
+
+  if (standard === "GER40") {
+    if (/raise/i.test(b)) {
+      if (c === "DE40") return 0;
+      if (c.startsWith("DE40")) return 2;
+      if (c === "GER40") return 6;
+      if (c.startsWith("GER40")) return 8;
+      if (c.includes("DAX")) return 4;
+      return 12;
+    }
+    if (/vtmarket/i.test(b)) {
+      if (/GER40\.S$/i.test(sym)) return 0;
+      if (/\.S$/i.test(sym)) return 3;
+    }
+    if (c === "GER40") return 0;
+    if (c.startsWith("GER40")) return 2;
+    if (c === "DE40") return 4;
+    return 10;
+  }
+
+  if (standard === "NAS100") {
+    if (/raise/i.test(b)) {
+      if (c === "NAS100" && !/[.+]$/.test(sym)) return 0;
+      if (c === "USTEC") return 2;
+      if (/\+$/.test(sym)) return 20;
+      if (/\.R$/i.test(sym)) return 18;
+      if (c.startsWith("NAS100")) return 5;
+      return 12;
+    }
+    if (/vantage/i.test(b)) {
+      if (/NAS100\.R$/i.test(sym)) return 0;
+      if (/\.R$/i.test(sym)) return 4;
+      if (c === "NAS100" && !/[.+]$/.test(sym)) return 6;
+    }
+    if (/vtmarket/i.test(b)) {
+      if (/NAS100\.S$/i.test(sym)) return 0;
+      if (/\.S$/i.test(sym)) return 3;
+    }
+    if (c === "NAS100" && !/[.+]$/.test(sym)) return 0;
+    if (c === "USTEC") return 3;
+    if (/\+$/.test(sym)) return 15;
+    return 10;
+  }
+
+  if (standard === "US30") {
+    if (/raise/i.test(b)) {
+      if (c === "US30") return 0;
+      if (c === "DJ30") return 3;
+    }
+    if (/vantage/i.test(b) && c === "DJ30") return 0;
+    if (/vtmarket/i.test(b) && /DJ30\.S$/i.test(sym)) return 0;
+  }
+
+  if (c === compactSymbol(standard)) return 0;
+  if (c.startsWith(compactSymbol(standard))) return 3;
+  return 10;
+}
+
+/** Indices live triés (GER40 → DE40 sur Raise, etc.). */
+export function listRankedLiveIndexSymbols(
+  live: Set<string>,
+  standardSymbol: string,
+  brokerName: string | null,
+  exclude?: Set<string>,
+): string[] {
+  const std = standardSymbol.toUpperCase();
+  if (!isIndexStandard(std)) return [];
+
+  return Array.from(live)
+    .filter(
+      (sym) =>
+        !exclude?.has(sym) && liveSymbolMatchesIndex(sym, std),
+    )
+    .sort(
+      (a, b) =>
+        scoreIndexSymbolForBroker(a, std, brokerName) -
+        scoreIndexSymbolForBroker(b, std, brokerName),
+    );
 }
 
 function scoreGoldForBroker(sym: string, brokerName: string | null): number {
@@ -169,6 +305,17 @@ function fuzzyMatchSymbol(
   exclude?: Set<string>,
   brokerName?: string | null,
 ): string | null {
+  if (isIndexStandard(standardSymbol)) {
+    return (
+      listRankedLiveIndexSymbols(
+        available,
+        standardSymbol,
+        brokerName ?? null,
+        exclude,
+      )[0] ?? null
+    );
+  }
+
   const compact = standardSymbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   for (const sym of Array.from(available)) {
     if (exclude?.has(sym)) continue;
@@ -222,6 +369,23 @@ function pickLiveSymbol(
       return fuzzy;
     }
     return null;
+  }
+
+  if (isIndexStandard(standardSymbol)) {
+    const ranked = listRankedLiveIndexSymbols(
+      live,
+      standardSymbol,
+      brokerName ?? null,
+      exclude,
+    );
+    if (ranked[0]) return ranked[0];
+
+    for (const c of candidates) {
+      if (exclude?.has(c)) continue;
+      const hit = findInLiveSet(c, live);
+      if (hit && !exclude?.has(hit)) return hit;
+    }
+    return fuzzyMatchSymbol(live, standardSymbol, exclude, brokerName);
   }
 
   for (const c of candidates) {
@@ -411,6 +575,16 @@ export async function resolveBrokerSymbol(
         if (ranked[0]) return ranked[0];
       }
 
+      if (isIndexStandard(normalizedSymbol)) {
+        const rankedIndex = listRankedLiveIndexSymbols(
+          live.symbols,
+          normalizedSymbol,
+          brokerName,
+          exclude,
+        );
+        if (rankedIndex[0]) return rankedIndex[0];
+      }
+
       for (const name of namesOrdered) {
         const mapped = staticBrokerSymbol(name, normalizedSymbol);
         if (!mapped || exclude.has(mapped)) continue;
@@ -459,14 +633,43 @@ export async function resolveBrokerSymbol(
         const ranked = listRankedLiveGoldSymbols(live.symbols, brokerName, exclude);
         if (ranked[0]) return ranked[0];
       }
+
+      if (isIndexStandard(normalizedSymbol)) {
+        const rankedIndex = listRankedLiveIndexSymbols(
+          live.symbols,
+          normalizedSymbol,
+          brokerName,
+          exclude,
+        );
+        if (rankedIndex[0]) return rankedIndex[0];
+      }
     }
   }
 
   const fallback =
     ordered.find((c) => !exclude.has(c)) ?? normalizedSymbol;
-  return applyBrokerGoldOverride(
+  const finalized = applyBrokerGoldOverride(
     finalizeBrokerSymbol(fallback, normalizedSymbol, ordered),
     normalizedSymbol,
     brokerName,
   );
+
+  if (token && accountId) {
+    const live = await getLiveSymbols(accountId, token, options?.refreshSymbols ?? false);
+    if (live.ok && live.symbols.size > 0) {
+      const hit = findInLiveSet(finalized, live.symbols);
+      if (hit) return hit;
+      if (isIndexStandard(normalizedSymbol)) {
+        const rankedIndex = listRankedLiveIndexSymbols(
+          live.symbols,
+          normalizedSymbol,
+          brokerName,
+          exclude,
+        );
+        if (rankedIndex[0]) return rankedIndex[0];
+      }
+    }
+  }
+
+  return finalized;
 }
