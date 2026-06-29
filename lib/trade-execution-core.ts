@@ -12,13 +12,12 @@ import {
   postMetaApiClosePositionVolume,
   postMetaApiTradeWithStopsFallback,
   postMetaApiMarketReliable,
-  postMetaApiPendingOrderReliable,
-  isMetaApiMarketAction,
-  isMetaApiPendingAction,
+  postMetaApiPendingReliable,
+  isPendingOrderAction,
 } from "@/lib/metaapi-trade-client";
 import { openPriceFromTradeData } from "@/lib/metaapi-stops";
 import { parseLocaleNumber } from "@/lib/locale-number";
-import { resolvePendingOrderKind, type PendingOrderKind } from "@/lib/order-type";
+import { resolvePendingOrderKind } from "@/lib/order-type";
 import { snapVolumeForMetaApiSymbol } from "@/lib/trade-volume";
 import {
   resolveBrokerSymbol,
@@ -70,13 +69,11 @@ export type PendingTradeRow = {
         entry_price?: number | string | null;
         order_type?: string | null;
         symbol?: string | null;
-        stop_loss?: number | string | null;
       }
     | {
         entry_price?: number | string | null;
         order_type?: string | null;
         symbol?: string | null;
-        stop_loss?: number | string | null;
       }[]
     | null;
 };
@@ -352,7 +349,7 @@ async function recoverOrSkipDuplicateMarket(
 }
 
 type PreparedMarketOrder = {
-  kind: PendingOrderKind;
+  kind: "market";
   order: Record<string, unknown>;
   brokerSymbol: string;
   standardSymbol: string;
@@ -570,9 +567,8 @@ async function prepareTradeExecution(
     order.takeProfitUnits = "ABSOLUTE_PRICE";
   }
 
-  const slRaw = trade.stop_loss ?? signalRow?.stop_loss;
-  if (slRaw != null && slRaw !== "") {
-    const sl = parseLocaleNumber(slRaw);
+  if (trade.stop_loss) {
+    const sl = parseLocaleNumber(trade.stop_loss);
     if (Number.isFinite(sl)) order.stopLoss = sl;
   }
   if (trade.take_profit) {
@@ -580,17 +576,7 @@ async function prepareTradeExecution(
     if (Number.isFinite(tp)) order.takeProfit = tp;
   }
 
-  return {
-    ok: true,
-    prepared: {
-      kind: orderKind,
-      order,
-      brokerSymbol,
-      standardSymbol,
-      brokerName,
-      symbolProfile: profile,
-    },
-  };
+  return { ok: true, prepared: { kind: "market", order, brokerSymbol, standardSymbol, brokerName, symbolProfile: profile } };
 }
 
 function isRetryableSymbolError(error?: string | null): boolean {
@@ -603,21 +589,6 @@ function isRetryableSymbolError(error?: string | null): boolean {
       error,
     )
   );
-}
-
-async function postMetaApiOrderForPrepared(
-  metaApiAccountId: string,
-  order: Record<string, unknown>,
-  token: string,
-): Promise<Awaited<ReturnType<typeof postMetaApiTradeWithStopsFallback>>> {
-  const action = String(order.actionType ?? "");
-  if (isMetaApiMarketAction(action)) {
-    return postMetaApiMarketReliable(metaApiAccountId, order, token);
-  }
-  if (isMetaApiPendingAction(action)) {
-    return postMetaApiPendingOrderReliable(metaApiAccountId, order, token);
-  }
-  return postMetaApiTradeWithStopsFallback(metaApiAccountId, order, token);
 }
 
 async function postTradeWithSymbolRetry(
@@ -676,11 +647,15 @@ async function postTradeWithSymbolRetry(
     tried.add(symbol);
 
     const order = { ...prepared.order, symbol };
-    const result = await postMetaApiOrderForPrepared(
-      metaApiAccountId,
-      order,
-      token,
-    );
+    const action = String(prepared.order.actionType ?? "");
+    const isMarket =
+      action === "ORDER_TYPE_BUY" || action === "ORDER_TYPE_SELL";
+    const isPending = isPendingOrderAction(action);
+    const result = isMarket
+      ? await postMetaApiMarketReliable(metaApiAccountId, order, token)
+      : isPending
+        ? await postMetaApiPendingReliable(metaApiAccountId, order, token)
+        : await postMetaApiTradeWithStopsFallback(metaApiAccountId, order, token);
 
     lastResult = result;
     if (result.ok) return { ...result, symbol };
@@ -703,11 +678,15 @@ async function postTradeWithSymbolRetry(
   );
   if (alt && !tried.has(alt)) {
     const order = { ...prepared.order, symbol: alt };
-    const result = await postMetaApiOrderForPrepared(
-      metaApiAccountId,
-      order,
-      token,
-    );
+    const action = String(prepared.order.actionType ?? "");
+    const isMarket =
+      action === "ORDER_TYPE_BUY" || action === "ORDER_TYPE_SELL";
+    const isPending = isPendingOrderAction(action);
+    const result = isMarket
+      ? await postMetaApiMarketReliable(metaApiAccountId, order, token)
+      : isPending
+        ? await postMetaApiPendingReliable(metaApiAccountId, order, token)
+        : await postMetaApiTradeWithStopsFallback(metaApiAccountId, order, token);
     return { ...result, symbol: alt };
   }
 
@@ -798,7 +777,7 @@ export async function executeOnePendingTrade(
       return { ok: true };
     }
 
-    if (prepared.prepared.kind === "MARKET") {
+    if (prepared.prepared.kind === "market") {
       const guard = await recoverOrSkipDuplicateMarket(
         supabase,
         trade,
@@ -871,15 +850,6 @@ export async function executeOnePendingTrade(
       data,
       parseLocaleNumber(trade.entry_price) ?? null,
     );
-    const orderId =
-      data.orderId != null
-        ? String(data.orderId)
-        : data.numericOrderId != null
-          ? String(data.numericOrderId)
-          : null;
-    const isPendingOrder = isMetaApiPendingAction(
-      String(prepared.prepared.order.actionType ?? ""),
-    );
 
     const { error: updErr } = await supabase
       .from("telegram_trades")
@@ -889,9 +859,9 @@ export async function executeOnePendingTrade(
         entry_price: fillPrice,
         position_id: positionId,
         symbol: result.symbol,
-        error_message: isPendingOrder
-          ? `Ordre ${prepared.prepared.kind} pending #${orderId ?? positionId ?? "?"}`
-          : orderId,
+        error_message:
+          (data.orderId != null ? String(data.orderId) : null) ||
+          (data.numericOrderId != null ? String(data.numericOrderId) : null),
       })
       .eq("id", trade.id)
       .eq("status", "executing");

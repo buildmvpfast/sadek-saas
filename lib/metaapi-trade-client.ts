@@ -272,12 +272,15 @@ export async function postMetaApiTradeWithStopsFallback(
   accountId: string,
   body: MetaApiTradeBody,
   token: string,
-  options?: { allowStripStops?: boolean },
 ): Promise<PostMetaApiTradeResult> {
-  const allowStripStops = options?.allowStripStops !== false;
+  const actionType = String(body.actionType ?? "");
+  if (isPendingOrderAction(actionType)) {
+    return postMetaApiPendingReliable(accountId, body, token);
+  }
+
   const hasSlTp = body.stopLoss != null || body.takeProfit != null;
   const attempts: MetaApiTradeBody[] = [body];
-  if (hasSlTp && allowStripStops) {
+  if (hasSlTp) {
     attempts.push(stripStops(body, true, false));
     attempts.push(stripStops(body, false, true));
     attempts.push(stripStops(body, true, true));
@@ -308,55 +311,6 @@ export async function postMetaApiTradeWithStopsFallback(
     return { ...last, error: `${last.error} (après retry sans SL/TP)` };
   }
   return last;
-}
-
-export function isMetaApiMarketAction(actionType: string): boolean {
-  const a = actionType.toUpperCase();
-  return a === "ORDER_TYPE_BUY" || a === "ORDER_TYPE_SELL";
-}
-
-export function isMetaApiPendingAction(actionType: string): boolean {
-  return /ORDER_TYPE_(?:BUY|SELL)_(?:LIMIT|STOP)/i.test(actionType);
-}
-
-/** LIMIT/STOP : SL/TP obligatoires si fournis — pas d'ouverture nue sans stops. */
-export async function postMetaApiPendingOrderReliable(
-  accountId: string,
-  body: MetaApiTradeBody,
-  token: string,
-): Promise<PostMetaApiTradeResult> {
-  const action = String(body.actionType ?? "");
-  const side = parseStopSide(action);
-  const openPrice = body.openPrice as number | undefined;
-  const stopLoss = body.stopLoss as number | undefined;
-  const takeProfit = body.takeProfit as number | undefined;
-
-  const order: MetaApiTradeBody = {
-    ...body,
-    stopLossUnits: "ABSOLUTE_PRICE",
-    takeProfitUnits: "ABSOLUTE_PRICE",
-  };
-
-  if (openPrice != null && Number.isFinite(openPrice)) {
-    const sanitized = sanitizeStopsForOpenPrice(
-      side,
-      openPrice,
-      stopLoss,
-      takeProfit,
-      0,
-    );
-    if (sanitized.stopLoss != null) order.stopLoss = sanitized.stopLoss;
-    else delete order.stopLoss;
-    if (sanitized.takeProfit != null) order.takeProfit = sanitized.takeProfit;
-    else delete order.takeProfit;
-  }
-
-  const result = await postMetaApiTrade(accountId, order, token);
-  if (result.ok) return result;
-
-  return postMetaApiTradeWithStopsFallback(accountId, order, token, {
-    allowStripStops: false,
-  });
 }
 
 export type MetaApiSymbolQuote = { bid: number; ask: number };
@@ -415,10 +369,27 @@ function isGoldBrokerSymbol(symbol: string): boolean {
   return c === "GOLD" || c.startsWith("XAUUSD") || c.startsWith("XAU");
 }
 
+function isIndexBrokerSymbol(symbol: string): boolean {
+  const raw = symbol.toUpperCase();
+  const c = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  return (
+    /^(NAS100|USTEC|US100|US30|DJ30|WS30|GER40|DE40|DAX40|UK100|SPX500|US500)/.test(
+      c,
+    ) || /NAS|DJ30|US30|GER40|DE40|UK100|SPX500|USTEC|US100/i.test(raw)
+  );
+}
+
+export function isPendingOrderAction(actionType: string): boolean {
+  return /ORDER_TYPE_(?:BUY|SELL)_(?:STOP|LIMIT)/i.test(actionType);
+}
+
 function minStopDistance(refPrice: number, symbol?: string): number {
   if (symbol && isGoldBrokerSymbol(symbol)) {
     // Signaux canal : SL/TP souvent 3–20 $ — pas 50 pts imposés
     return Math.max(refPrice * 0.00002, 0.05);
+  }
+  if (symbol && isIndexBrokerSymbol(symbol)) {
+    return Math.max(refPrice * 0.00003, 1);
   }
   if (refPrice > 2000) return Math.max(refPrice * 0.002, 5);
   if (refPrice > 1000) return Math.max(refPrice * 0.001, 2);
@@ -450,8 +421,6 @@ function buildMarketOrderWithValidatedStops(
 ): BuiltMarketOrderResult {
   const action = String(body.actionType ?? "");
   const side = parseStopSide(action);
-  const symbol = String(body.symbol ?? "");
-  const refPrice = side === "BUY" ? quote?.ask : quote?.bid;
   const stopLoss = body.stopLoss as number | undefined;
   const takeProfit = body.takeProfit as number | undefined;
 
@@ -459,8 +428,40 @@ function buildMarketOrderWithValidatedStops(
     return { ok: true, order: { ...body } };
   }
 
+  if (quote == null) {
+    return { ok: true, order: { ...body } };
+  }
+
+  const refPrice = side === "BUY" ? quote.ask : quote.bid;
   if (refPrice == null || !Number.isFinite(refPrice)) {
     return { ok: true, order: { ...body } };
+  }
+
+  return {
+    ok: true,
+    order: applyStopsForReferencePrice(body, refPrice),
+  };
+}
+
+function withAbsoluteStopUnits(body: MetaApiTradeBody): MetaApiTradeBody {
+  const order: MetaApiTradeBody = { ...body };
+  if (order.stopLoss != null) order.stopLossUnits = "ABSOLUTE_PRICE";
+  if (order.takeProfit != null) order.takeProfitUnits = "ABSOLUTE_PRICE";
+  return order;
+}
+
+function applyStopsForReferencePrice(
+  body: MetaApiTradeBody,
+  refPrice: number,
+): MetaApiTradeBody {
+  const action = String(body.actionType ?? "");
+  const side = parseStopSide(action);
+  const symbol = String(body.symbol ?? "");
+  const stopLoss = body.stopLoss as number | undefined;
+  const takeProfit = body.takeProfit as number | undefined;
+
+  if (stopLoss == null && takeProfit == null) {
+    return withAbsoluteStopUnits({ ...body });
   }
 
   const dist = minStopDistance(refPrice, symbol);
@@ -479,7 +480,7 @@ function buildMarketOrderWithValidatedStops(
     dist,
   );
 
-  const order: MetaApiTradeBody = { ...body };
+  const order = withAbsoluteStopUnits({ ...body });
 
   if (stopLoss != null) {
     const slDirOk = buy ? stopLoss < refPrice : stopLoss > refPrice;
@@ -515,7 +516,69 @@ function buildMarketOrderWithValidatedStops(
     }
   }
 
-  return { ok: true, order };
+  return order;
+}
+
+function buildPendingOrderWithValidatedStops(
+  body: MetaApiTradeBody,
+): BuiltMarketOrderResult {
+  const openPriceRaw = body.openPrice;
+  const openPrice =
+    typeof openPriceRaw === "number"
+      ? openPriceRaw
+      : parseFloat(String(openPriceRaw ?? ""));
+
+  if (!Number.isFinite(openPrice) || openPrice <= 0) {
+    return { ok: true, order: withAbsoluteStopUnits({ ...body }) };
+  }
+
+  return {
+    ok: true,
+    order: applyStopsForReferencePrice(body, openPrice),
+  };
+}
+
+/**
+ * LIMIT/STOP : SL/TP validés vs openPrice — jamais d'ordre pending sans SL/TP silencieux.
+ */
+export async function postMetaApiPendingReliable(
+  accountId: string,
+  body: MetaApiTradeBody,
+  token: string,
+): Promise<PostMetaApiTradeResult> {
+  const built = buildPendingOrderWithValidatedStops(body);
+  let result = await postMetaApiTrade(accountId, built.order, token);
+  if (result.ok) return result;
+
+  if (
+    STOPS_RELATED.test(result.error || "") &&
+    (body.stopLoss != null || body.takeProfit != null)
+  ) {
+    const openPrice =
+      typeof body.openPrice === "number"
+        ? body.openPrice
+        : parseFloat(String(body.openPrice ?? ""));
+    if (Number.isFinite(openPrice) && openPrice > 0) {
+      const side = parseStopSide(String(body.actionType ?? ""));
+      const clamped = clampStopsToBrokerMaxDistance(
+        side,
+        openPrice,
+        body.stopLoss as number,
+        body.takeProfit as number,
+      );
+      const retryOrder = applyStopsForReferencePrice(
+        {
+          ...body,
+          stopLoss: clamped.stopLoss ?? body.stopLoss,
+          takeProfit: clamped.takeProfit ?? body.takeProfit,
+        },
+        openPrice,
+      );
+      result = await postMetaApiTrade(accountId, retryOrder, token);
+    }
+  }
+
+  return result;
 }
 
 /**
