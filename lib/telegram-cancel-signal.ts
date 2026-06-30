@@ -19,7 +19,7 @@ export function isCancelOrCutCommand(messageText: string): boolean {
   }
 
   return (
-    /\b(?:annulez?|cancel(?:ler|led|ez)?|coupe[rz]?|cut|retire[rz]?|efface[rz]?|supprime[rz]?|delete|cl[oô]ture[rz]?)\b/i.test(
+    /\b(?:annul(?:er|ez|e|ons|ation)?|cancel(?:ler|led|ez|lation)?|coupe[rz]?|cut|retire[rz]?|efface[rz]?|supprime[rz]?|delete|cl[oô]ture[rz]?)\b/i.test(
       t,
     ) ||
     /\b(?:sort(?:er|ez|ir|ie|ons)|sors(?:ez|-en)?)\b/i.test(t) ||

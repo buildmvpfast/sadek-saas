@@ -391,6 +391,15 @@ export default function SettingsPage() {
           {/* Lots fixes par instrument */}
           {settings.position_sizing_type === 'lot' && (
             <>
+              <div className="bg-blue-50 border-2 border-blue-400 p-4 rounded-xl">
+                <p className="text-sm font-bold" style={{ color: '#9b30a8' }}>
+                  ℹ️ <strong>À savoir :</strong> chaque lot indiqué correspond au{' '}
+                  <strong>volume total par signal</strong>, et non au lot de chaque take
+                  profit. Si un signal comporte plusieurs TP, ce volume est réparti entre
+                  les positions ouvertes (ex. 0,06 lot pour 3 TP → ~0,02 par position).
+                </p>
+              </div>
+
               {/* Métaux */}
               <div className="card-white">
                 <h2 className="text-2xl font-black mb-6" style={{ color: '#9b30a8' }}>
