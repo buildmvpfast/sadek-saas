@@ -126,3 +126,57 @@ export function clampStopsToBrokerMaxDistance(
   }
   return out;
 }
+
+function isGoldBrokerSymbol(symbol?: string): boolean {
+  if (!symbol) return false;
+  const c = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  return c === "GOLD" || c.startsWith("XAUUSD") || c.startsWith("XAU");
+}
+
+function isIndexBrokerSymbol(symbol?: string): boolean {
+  if (!symbol) return false;
+  const raw = symbol.toUpperCase();
+  const c = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  return (
+    /^(NAS100|USTEC|US100|US30|DJ30|GER40|DE40|UK100|SPX500)/.test(c) ||
+    /NAS|DJ30|US30|GER40|DE40|UK100|SPX500|USTEC/i.test(raw)
+  );
+}
+
+export function minStopDistanceForSymbol(
+  refPrice: number,
+  symbol?: string,
+): number {
+  if (symbol && isGoldBrokerSymbol(symbol)) {
+    return Math.max(refPrice * 0.00002, 0.05);
+  }
+  if (symbol && isIndexBrokerSymbol(symbol)) {
+    return Math.max(refPrice * 0.00003, 1);
+  }
+  if (refPrice > 2000) return Math.max(refPrice * 0.002, 5);
+  if (refPrice > 1000) return Math.max(refPrice * 0.001, 2);
+  if (refPrice > 10) return Math.max(refPrice * 0.0001, 0.01);
+  return 0.00005;
+}
+
+/** SL breakeven valide vs prix live (SELL: SL > ask + dist ; BUY: SL < bid - dist). */
+export function computeBreakEvenStopLoss(
+  side: StopSide,
+  entry: number,
+  quote: { bid: number; ask: number },
+  brokerSymbol: string,
+): number | null {
+  if (!Number.isFinite(entry) || entry <= 0) return null;
+  const dist = minStopDistanceForSymbol(entry, brokerSymbol);
+  const buy = side === "BUY";
+
+  if (buy) {
+    const maxSl = quote.bid - dist;
+    if (entry >= maxSl) return null;
+    return entry;
+  }
+
+  const minSl = quote.ask + dist;
+  if (entry <= minSl) return null;
+  return entry;
+}

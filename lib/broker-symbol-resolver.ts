@@ -59,6 +59,78 @@ function isCrossGoldSymbol(sym: string): boolean {
   return /^XAU(?!USD)/i.test(c);
 }
 
+const CRYPTO_STANDARDS = new Set(["BTC", "ETH", "SOL30"]);
+
+function isCryptoStandard(symbol: string): boolean {
+  return CRYPTO_STANDARDS.has(symbol.toUpperCase());
+}
+
+function isUsdCryptoSymbol(sym: string, standard: string): boolean {
+  const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  const s = standard.toUpperCase();
+  if (s === "BTC") return c === "BTCUSD" || c === "BTC";
+  if (s === "ETH") return c === "ETHUSD" || c === "ETH";
+  if (s === "SOL30") return c === "SOL30" || c === "SOLUSD" || c === "SOL";
+  return false;
+}
+
+function isCrossCryptoSymbol(sym: string, standard: string): boolean {
+  if (!isCryptoStandard(standard)) return false;
+  const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  return (
+    c.startsWith(standard.toUpperCase()) && !isUsdCryptoSymbol(sym, standard)
+  );
+}
+
+function scoreCryptoForBroker(
+  sym: string,
+  standard: string,
+  _brokerName: string | null,
+): number {
+  const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  const s = standard.toUpperCase();
+  if (s === "BTC") {
+    if (c === "BTCUSD") return 0;
+    if (c === "BTC") return 2;
+    return 50;
+  }
+  if (s === "ETH") {
+    if (c === "ETHUSD") return 0;
+    if (c === "ETH") return 2;
+    return 50;
+  }
+  if (s === "SOL30") {
+    if (c === "SOL30") return 0;
+    if (c === "SOLUSD") return 2;
+    return 50;
+  }
+  return 10;
+}
+
+/** BTCUSD / ETHUSD uniquement — pas BTCBCH, BTCEUR, etc. */
+export function listRankedLiveCryptoSymbols(
+  live: Set<string>,
+  standardSymbol: string,
+  brokerName: string | null,
+  exclude?: Set<string>,
+): string[] {
+  const std = standardSymbol.toUpperCase();
+  if (!isCryptoStandard(std)) return [];
+
+  return Array.from(live)
+    .filter(
+      (sym) =>
+        !exclude?.has(sym) &&
+        isUsdCryptoSymbol(sym, std) &&
+        !isCrossCryptoSymbol(sym, std),
+    )
+    .sort(
+      (a, b) =>
+        scoreCryptoForBroker(a, std, brokerName) -
+        scoreCryptoForBroker(b, std, brokerName),
+    );
+}
+
 function ecnStpCandidates(standardSymbol: string): string[] {
   const s = standardSymbol.toUpperCase();
   const out: string[] = [];
@@ -316,14 +388,26 @@ function fuzzyMatchSymbol(
     );
   }
 
+  if (isCryptoStandard(standardSymbol)) {
+    return (
+      listRankedLiveCryptoSymbols(
+        available,
+        standardSymbol,
+        brokerName ?? null,
+        exclude,
+      )[0] ?? null
+    );
+  }
+
   const compact = standardSymbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   for (const sym of Array.from(available)) {
     if (exclude?.has(sym)) continue;
     if (standardSymbol === "GOLD" && !isUsdGoldSymbol(sym)) continue;
-    const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-    if (c === compact || c.startsWith(compact) || compact.startsWith(c)) {
-      return sym;
+    if (isCryptoStandard(standardSymbol) && !isUsdCryptoSymbol(sym, standardSymbol)) {
+      continue;
     }
+    const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+    if (c === compact) return sym;
   }
   if (standardSymbol === "GOLD") {
     const gold = Array.from(available).filter(
@@ -369,6 +453,24 @@ function pickLiveSymbol(
       return fuzzy;
     }
     return null;
+  }
+
+  if (isCryptoStandard(standardSymbol)) {
+    const ranked = listRankedLiveCryptoSymbols(
+      live,
+      standardSymbol,
+      brokerName ?? null,
+      exclude,
+    );
+    if (ranked[0]) return ranked[0];
+
+    for (const c of candidates) {
+      if (exclude?.has(c)) continue;
+      if (!isUsdCryptoSymbol(c, standardSymbol)) continue;
+      const hit = findInLiveSet(c, live);
+      if (hit && !exclude?.has(hit)) return hit;
+    }
+    return fuzzyMatchSymbol(live, standardSymbol, exclude, brokerName);
   }
 
   if (isIndexStandard(standardSymbol)) {
@@ -435,7 +537,32 @@ function finalizeBrokerSymbol(
     return xau;
   }
 
+  if (
+    isCryptoStandard(normalizedSymbol) &&
+    (isCrossCryptoSymbol(picked, normalizedSymbol) ||
+      !isUsdCryptoSymbol(picked, normalizedSymbol))
+  ) {
+    const usd =
+      ordered.find((c) => isUsdCryptoSymbol(c, normalizedSymbol)) ??
+      (normalizedSymbol === "BTC"
+        ? "BTCUSD"
+        : normalizedSymbol === "ETH"
+          ? "ETHUSD"
+          : normalizedSymbol === "SOL30"
+            ? "SOL30"
+            : picked);
+    return usd;
+  }
+
   if (stdOnly.has(picked) && picked === normalizedSymbol) {
+    if (normalizedSymbol === "BTC") {
+      const btc = ordered.find((c) => isUsdCryptoSymbol(c, "BTC"));
+      if (btc) return btc;
+    }
+    if (normalizedSymbol === "ETH") {
+      const eth = ordered.find((c) => isUsdCryptoSymbol(c, "ETH"));
+      if (eth) return eth;
+    }
     const alt = ordered.find((c) => c !== picked);
     if (alt) return alt;
   }

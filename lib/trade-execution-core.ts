@@ -24,6 +24,7 @@ import {
   invalidateSymbolCache,
   listRankedLiveGoldSymbols,
   listRankedLiveIndexSymbols,
+  listRankedLiveCryptoSymbols,
 } from "@/lib/broker-symbol-resolver";
 import { normalizeSymbol } from "@/lib/symbol-normalizer";
 import {
@@ -258,6 +259,27 @@ async function siblingAlreadyExecuted(
   return (count ?? 0) > 0;
 }
 
+/** Symbole broker d'un sibling déjà exécuté (multi-TP même signal/compte). */
+async function siblingExecutedBrokerSymbol(
+  supabase: SupabaseClient,
+  trade: PendingTradeRow,
+): Promise<string | null> {
+  if (!trade.signal_id || !trade.mt5_account_id) return null;
+  const { data } = await supabase
+    .from("telegram_trades")
+    .select("symbol")
+    .eq("signal_id", trade.signal_id)
+    .eq("mt5_account_id", trade.mt5_account_id)
+    .eq("status", "executed")
+    .neq("id", trade.id)
+    .not("symbol", "is", null)
+    .order("executed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const sym = data?.symbol ? String(data.symbol).trim() : "";
+  return sym || null;
+}
+
 /** Autre signal même sens exécuté sur le compte récemment (multi-TP même signal OK). */
 async function blockedByRecentSignalOnAccount(
   supabase: SupabaseClient,
@@ -355,6 +377,7 @@ type PreparedMarketOrder = {
   standardSymbol: string;
   brokerName: string | null;
   symbolProfile: "auto" | "ecn" | "stp";
+  pinnedSymbol?: string | null;
 };
 
 type PreparedPartialClose = {
@@ -368,6 +391,31 @@ type PreparedPartialClose = {
 type PrepareResult =
   | { ok: true; prepared: PreparedMarketOrder | PreparedPartialClose }
   | { ok: false; error: string; paused?: boolean };
+
+const GENERIC_STANDARD_SYMBOLS = new Set([
+  "GOLD",
+  "XAUUSD",
+  "BTC",
+  "ETH",
+  "SOL30",
+  "US30",
+  "NAS100",
+  "GER40",
+  "UK100",
+  "SPX500",
+]);
+
+/** Symbole broker déjà résolu à la création du trade (ex. BTCUSD, DE40, XAUUSD-VIP). */
+function isConcreteStoredBrokerSymbol(
+  dbSymbol: string,
+  standardSymbol: string,
+): boolean {
+  const db = dbSymbol.trim().toUpperCase();
+  const std = standardSymbol.trim().toUpperCase();
+  if (!db || db === std) return false;
+  if (GENERIC_STANDARD_SYMBOLS.has(db)) return false;
+  return true;
+}
 
 async function prepareTradeExecution(
   supabase: SupabaseClient,
@@ -390,8 +438,13 @@ async function prepareTradeExecution(
   const brokerName = mt5Account?.broker_name ?? null;
   const profile =
     (mt5Account?.symbol_profile as "auto" | "ecn" | "stp" | null) ?? "auto";
-  let brokerSymbol = String(trade.symbol);
-  if (brokerName) {
+
+  const pinnedSymbol = await siblingExecutedBrokerSymbol(supabase, trade);
+  const dbSymbol = String(trade.symbol ?? "").trim();
+  const dbIsConcrete = isConcreteStoredBrokerSymbol(dbSymbol, standardSymbol);
+  let brokerSymbol = pinnedSymbol || dbSymbol || standardSymbol;
+
+  if (!pinnedSymbol && !dbIsConcrete && brokerName) {
     brokerSymbol = await resolveBrokerSymbol(
       standardSymbol,
       brokerName,
@@ -425,22 +478,12 @@ async function prepareTradeExecution(
         brokerSymbol,
         token,
       );
-      if (!quote) {
-        invalidateSymbolCache(metaApiAccountId);
-        brokerSymbol = await resolveBrokerSymbol(
-          standardSymbol,
-          brokerName,
-          supabase,
-          {
-            metaApiAccountId,
-            metaApiToken: token,
-            symbolProfile: profile,
-            excludeSymbols: [brokerSymbol],
-            refreshSymbols: true,
-          },
-        );
+      if (!quote && dbSymbol && dbSymbol !== brokerSymbol) {
+        brokerSymbol = dbSymbol;
       }
     }
+  } else if (dbIsConcrete && !pinnedSymbol) {
+    brokerSymbol = dbSymbol;
   }
 
   const rawVol = Number(trade.volume) > 0 ? Number(trade.volume) : 0.01;
@@ -576,13 +619,24 @@ async function prepareTradeExecution(
     if (Number.isFinite(tp)) order.takeProfit = tp;
   }
 
-  return { ok: true, prepared: { kind: "market", order, brokerSymbol, standardSymbol, brokerName, symbolProfile: profile } };
+  return {
+    ok: true,
+    prepared: {
+      kind: "market",
+      order,
+      brokerSymbol,
+      standardSymbol,
+      brokerName,
+      symbolProfile: profile,
+      pinnedSymbol,
+    },
+  };
 }
 
 function isRetryableSymbolError(error?: string | null): boolean {
   if (!error) return false;
   return (
-    /UNKNOWN_SYMBOL|ERR_MARKET_UNKNOWN|4301|invalid symbol|unknown symbol|ERR_QUOTE_SYMBOL_MISMATCH/i.test(
+    /UNKNOWN_SYMBOL|ERR_MARKET_UNKNOWN|4301|invalid symbol|unknown symbol/i.test(
       error,
     ) ||
     /SYMBOL_TRADE_MODE_DISABLED|TRADE_MODE_DISABLED|trade disabled for selected symbol/i.test(
@@ -596,6 +650,7 @@ async function postTradeWithSymbolRetry(
   metaApiAccountId: string,
   prepared: PreparedMarketOrder,
   token: string,
+  pinnedSymbol?: string | null,
 ): Promise<
   Awaited<ReturnType<typeof postMetaApiTradeWithStopsFallback>> & {
     symbol: string;
@@ -606,13 +661,17 @@ async function postTradeWithSymbolRetry(
   const isGold =
     prepared.standardSymbol === "GOLD" ||
     prepared.standardSymbol === "XAUUSD";
+  const isCrypto = ["BTC", "ETH", "SOL30"].includes(prepared.standardSymbol);
 
   invalidateSymbolCache(metaApiAccountId);
   const live = await fetchMetaApiSymbolNames(metaApiAccountId, token);
   const isIndex = ["US30", "NAS100", "GER40", "UK100", "SPX500"].includes(
     prepared.standardSymbol,
   );
-  if (live.ok && isGold) {
+
+  if (pinnedSymbol) {
+    candidates.push(pinnedSymbol);
+  } else if (live.ok && isGold) {
     for (const sym of listRankedLiveGoldSymbols(
       live.symbols,
       prepared.brokerName,
@@ -620,7 +679,16 @@ async function postTradeWithSymbolRetry(
       if (!candidates.includes(sym)) candidates.push(sym);
     }
   }
-  if (live.ok && isIndex) {
+  if (!pinnedSymbol && live.ok && isCrypto) {
+    for (const sym of listRankedLiveCryptoSymbols(
+      live.symbols,
+      prepared.standardSymbol,
+      prepared.brokerName,
+    )) {
+      if (!candidates.includes(sym)) candidates.push(sym);
+    }
+  }
+  if (!pinnedSymbol && live.ok && isIndex) {
     for (const sym of listRankedLiveIndexSymbols(
       live.symbols,
       prepared.standardSymbol,
@@ -662,6 +730,10 @@ async function postTradeWithSymbolRetry(
     if (!isRetryableSymbolError(result.error)) {
       return { ...result, symbol };
     }
+  }
+
+  if (pinnedSymbol) {
+    return { ...lastResult, symbol: pinnedSymbol };
   }
 
   const alt = await resolveBrokerSymbol(
@@ -818,6 +890,7 @@ export async function executeOnePendingTrade(
       metaApiAccountId,
       prepared.prepared,
       token,
+      prepared.prepared.pinnedSymbol,
     );
 
     if (!result.ok) {

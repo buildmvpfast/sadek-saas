@@ -155,6 +155,10 @@ export async function POST(request: NextRequest) {
         supabase,
         channel.id,
         replyToMessageId,
+        {
+          signalType: slTpUpdate.signalTypeFilter,
+          symbol: slTpUpdate.symbolFilter,
+        },
       );
 
       if (!signalIdToUpdate) {

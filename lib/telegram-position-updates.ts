@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   fetchMetaApiPositionsJson,
+  fetchMetaApiSymbolQuote,
   findMatchingOpenPosition,
   parseMetaApiOpenPositions,
   postMetaApiModifyPosition,
@@ -8,12 +9,33 @@ import {
 } from "@/lib/metaapi-trade-client";
 import { looksLikeNewOpeningSignal } from "@/lib/order-type";
 import { parseLocaleNumber } from "@/lib/locale-number";
+import { normalizeSymbol } from "@/lib/symbol-normalizer";
+import { computeBreakEvenStopLoss, type StopSide } from "@/lib/metaapi-stops";
+
+export function parseBeDirectionFilter(
+  messageText: string,
+): "BUY" | "SELL" | null {
+  const hasBuy = /\b(?:buy|achat|long)\b/i.test(messageText);
+  const hasSell = /\b(?:sell|vente|short)\b/i.test(messageText);
+  if (hasSell && !hasBuy) return "SELL";
+  if (hasBuy && !hasSell) return "BUY";
+  return null;
+}
+
+export function parseBeSymbolFilter(messageText: string): string | null {
+  const m = messageText.match(
+    /\b(gold|xau\s*\/?\s*usd|or|nas100|ustec|ger40|de40|us30|dj30|eurusd|gbpusd|btc)\b/i,
+  );
+  return m?.[1] ? normalizeSymbol(m[1]) : null;
+}
 
 export function detectSlTpUpdateMessage(messageText: string): {
   isBeUpdate: boolean;
   nextStopLoss: number | null;
   takeProfits: number[];
   hasUpdate: boolean;
+  signalTypeFilter: "BUY" | "SELL" | null;
+  symbolFilter: string | null;
 } {
   if (looksLikeNewOpeningSignal(messageText)) {
     return {
@@ -21,6 +43,8 @@ export function detectSlTpUpdateMessage(messageText: string): {
       nextStopLoss: null,
       takeProfits: [],
       hasUpdate: false,
+      signalTypeFilter: null,
+      symbolFilter: null,
     };
   }
 
@@ -55,7 +79,14 @@ export function detectSlTpUpdateMessage(messageText: string): {
     isBeUpdate || nextStopLoss !== null || takeProfits.length > 0,
   );
 
-  return { isBeUpdate, nextStopLoss, takeProfits, hasUpdate };
+  return {
+    isBeUpdate,
+    nextStopLoss,
+    takeProfits,
+    hasUpdate,
+    signalTypeFilter: parseBeDirectionFilter(messageText),
+    symbolFilter: parseBeSymbolFilter(messageText),
+  };
 }
 
 /** Signal cible : reply Telegram ou dernier signal avec positions ouvertes (24h). */
@@ -63,6 +94,10 @@ export async function resolveSignalIdForPositionUpdate(
   supabase: SupabaseClient,
   channelId: string,
   replyToMessageId?: number | null,
+  filters?: {
+    signalType?: "BUY" | "SELL" | null;
+    symbol?: string | null;
+  },
 ): Promise<string | null> {
   if (replyToMessageId) {
     const { data } = await supabase
@@ -77,13 +112,26 @@ export async function resolveSignalIdForPositionUpdate(
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { data: recentSignals } = await supabase
     .from("telegram_signals")
-    .select("id, parsed_at")
+    .select("id, parsed_at, signal_type, symbol")
     .eq("channel_id", channelId)
     .gte("parsed_at", since)
     .order("parsed_at", { ascending: false })
-    .limit(15);
+    .limit(20);
 
   for (const sig of recentSignals ?? []) {
+    if (
+      filters?.signalType &&
+      String(sig.signal_type ?? "").toUpperCase() !== filters.signalType
+    ) {
+      continue;
+    }
+    if (
+      filters?.symbol &&
+      normalizeSymbol(String(sig.symbol ?? "")) !==
+        normalizeSymbol(filters.symbol)
+    ) {
+      continue;
+    }
     const { count } = await supabase
       .from("telegram_trades")
       .select("id", { count: "exact", head: true })
@@ -190,6 +238,8 @@ export async function applySlTpUpdatesForSignal(
     isBeUpdate: boolean;
     nextStopLoss: number | null;
     takeProfits: number[];
+    signalTypeFilter?: "BUY" | "SELL" | null;
+    symbolFilter?: string | null;
   },
 ): Promise<{ updated: number; skipped: number }> {
   const { data: executedTrades, error: tradesError } = await supabase
@@ -242,10 +292,19 @@ export async function applySlTpUpdatesForSignal(
       error_message: string | null;
       mt5_accounts: { metaapi_account_id: string } | { metaapi_account_id: string }[];
       telegram_signals:
-        | { entry_price: string | number | null }
-        | { entry_price: string | number | null }[]
+        | { entry_price: string | number | null; signal_type?: string; symbol?: string }
+        | { entry_price: string | number | null; signal_type?: string; symbol?: string }[]
         | null;
     };
+
+    const side = String(row.signal_type ?? "").toUpperCase() as StopSide;
+    if (
+      update.signalTypeFilter &&
+      side !== update.signalTypeFilter
+    ) {
+      skipped++;
+      continue;
+    }
 
     const mt5 = Array.isArray(row.mt5_accounts)
       ? row.mt5_accounts[0]
@@ -267,7 +326,7 @@ export async function applySlTpUpdatesForSignal(
       metaToken,
       positionsCache,
     );
-    const livePosition = matchLivePosition(positions, row);
+    let livePosition = matchLivePosition(positions, row);
 
     let positionId = parseStoredPositionId(row.position_id, row.error_message);
     if (!positionId && livePosition) {
@@ -275,23 +334,71 @@ export async function applySlTpUpdatesForSignal(
     }
 
     if (!positionId) {
-      console.warn(
-        `⏭️ BE/SL trade ${row.id}: position_id introuvable (${row.symbol})`,
-      );
+      if (
+        livePosition &&
+        !parseStoredPositionId(row.position_id, row.error_message)
+      ) {
+        console.warn(
+          `⏭️ BE/SL trade ${row.id}: position fermée (stale position_id)`,
+        );
+      } else {
+        console.warn(
+          `⏭️ BE/SL trade ${row.id}: position_id introuvable (${row.symbol})`,
+        );
+      }
       skipped++;
       continue;
     }
 
+    if (!livePosition) {
+      livePosition =
+        positions.find((p) => p.id === positionId) ?? null;
+    }
+    if (!livePosition) {
+      console.warn(`⏭️ BE/SL trade ${row.id}: position ${positionId} fermée`);
+      skipped++;
+      continue;
+    }
+
+    const modifySymbol = livePosition.symbol || row.symbol;
+
     let updatedStopLoss: number | null = null;
     if (update.isBeUpdate) {
-      updatedStopLoss = resolveOpenPriceForBe(
+      const entry = resolveOpenPriceForBe(
         row.entry_price,
         signalRow?.entry_price ?? null,
         livePosition,
       );
-      if (updatedStopLoss == null) {
+      if (entry == null) {
         console.warn(
           `⏭️ BE trade ${row.id}: prix d'entrée introuvable (DB + MetaAPI)`,
+        );
+        skipped++;
+        continue;
+      }
+
+      const quote = await fetchMetaApiSymbolQuote(
+        metaApiAccountId,
+        modifySymbol,
+        metaToken,
+      );
+      if (!quote) {
+        console.warn(
+          `⏭️ BE trade ${row.id}: quote indisponible pour ${modifySymbol}`,
+        );
+        skipped++;
+        continue;
+      }
+
+      updatedStopLoss = computeBreakEvenStopLoss(
+        side,
+        entry,
+        quote,
+        modifySymbol,
+      );
+      if (updatedStopLoss == null) {
+        console.warn(
+          `⏭️ BE trade ${row.id}: position pas en profit suffisant (SELL ask / BUY bid)`,
         );
         skipped++;
         continue;
