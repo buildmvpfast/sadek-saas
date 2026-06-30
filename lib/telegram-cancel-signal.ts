@@ -253,12 +253,11 @@ export async function cancelOrCloseSignalTrades(
               error_message: "Fermé par commande Telegram",
             })
             .eq("id", trade.id);
-        } else {
-          result.errors.push(
-            `${mt5?.broker_name ?? metaApiAccountId} #${pid}: ${closeRes.error}`,
-          );
+          continue;
         }
-        continue;
+        result.errors.push(
+          `${mt5?.broker_name ?? metaApiAccountId} #${pid}: ${closeRes.error}`,
+        );
       }
 
       const posRes = await fetchMetaApiPositionsJson(metaApiAccountId, token);

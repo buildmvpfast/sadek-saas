@@ -295,7 +295,15 @@ export async function postMetaApiClosePosition(
   positionId: string,
   token: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  let last = "";
+  const tradeBody = {
+    actionType: "POSITION_CLOSE_ID",
+    positionId: String(positionId),
+  };
+  const tradeResult = await postMetaApiTrade(accountId, tradeBody, token);
+  if (tradeResult.ok) return { ok: true };
+
+  let last = tradeResult.error ?? "Fermeture trade refusée";
+
   for (const url of metaApiClosePositionUrls(accountId, positionId)) {
     try {
       const response = await fetch(url, {
