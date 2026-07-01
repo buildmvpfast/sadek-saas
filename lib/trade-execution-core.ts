@@ -412,9 +412,13 @@ function isConcreteStoredBrokerSymbol(
 ): boolean {
   const db = dbSymbol.trim().toUpperCase();
   const std = standardSymbol.trim().toUpperCase();
-  if (!db || db === std) return false;
+  if (!db) return false;
   if (GENERIC_STANDARD_SYMBOLS.has(db)) return false;
-  return true;
+  if (db === std) return false;
+  if (std === "BTC" && db.startsWith("BTCUSD")) return true;
+  if (std === "ETH" && db.startsWith("ETHUSD")) return true;
+  if (normalizeSymbol(db) === std && db !== std) return true;
+  return db.length > std.length;
 }
 
 async function prepareTradeExecution(
@@ -671,6 +675,12 @@ async function postTradeWithSymbolRetry(
 
   if (pinnedSymbol) {
     candidates.push(pinnedSymbol);
+  } else if (
+    isCrypto &&
+    prepared.brokerSymbol &&
+    !/^(BTC|ETH|SOL30)$/i.test(prepared.brokerSymbol)
+  ) {
+    candidates.push(prepared.brokerSymbol);
   } else if (live.ok && isGold) {
     for (const sym of listRankedLiveGoldSymbols(
       live.symbols,

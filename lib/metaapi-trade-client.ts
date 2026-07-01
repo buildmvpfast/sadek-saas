@@ -331,6 +331,12 @@ export async function fetchMetaApiSymbolQuote(
   if (/^GOLD$/i.test(symbol)) {
     variants.push("XAUUSD", "XAUUSD+", "XAUUSD-VIP");
   }
+  if (/^BTC$/i.test(symbol) || /^BTCUSD/i.test(symbol)) {
+    variants.push("BTCUSD", "BTC");
+  }
+  if (/^ETH$/i.test(symbol) || /^ETHUSD/i.test(symbol)) {
+    variants.push("ETHUSD", "ETH");
+  }
 
   let lastErr = "";
   let lastTlsErr = "";

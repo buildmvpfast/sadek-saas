@@ -68,9 +68,9 @@ function isCryptoStandard(symbol: string): boolean {
 function isUsdCryptoSymbol(sym: string, standard: string): boolean {
   const c = sym.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   const s = standard.toUpperCase();
-  if (s === "BTC") return c === "BTCUSD" || c === "BTC";
-  if (s === "ETH") return c === "ETHUSD" || c === "ETH";
-  if (s === "SOL30") return c === "SOL30" || c === "SOLUSD" || c === "SOL";
+  if (s === "BTC") return c === "BTCUSD" || /^BTCUSD/i.test(sym);
+  if (s === "ETH") return c === "ETHUSD" || /^ETHUSD/i.test(sym);
+  if (s === "SOL30") return c === "SOL30" || c === "SOLUSD";
   return false;
 }
 
@@ -91,12 +91,10 @@ function scoreCryptoForBroker(
   const s = standard.toUpperCase();
   if (s === "BTC") {
     if (c === "BTCUSD") return 0;
-    if (c === "BTC") return 2;
     return 50;
   }
   if (s === "ETH") {
     if (c === "ETHUSD") return 0;
-    if (c === "ETH") return 2;
     return 50;
   }
   if (s === "SOL30") {
@@ -134,11 +132,13 @@ export function listRankedLiveCryptoSymbols(
 function ecnStpCandidates(standardSymbol: string): string[] {
   const s = standardSymbol.toUpperCase();
   const out: string[] = [];
-  const bases = [s];
+  const bases: string[] = [];
 
   if (s === "GOLD") bases.push("XAUUSD");
-  if (s === "BTC") bases.push("BTCUSD");
-  if (s === "ETH") bases.push("ETHUSD");
+  else if (s === "BTC") bases.push("BTCUSD");
+  else if (s === "ETH") bases.push("ETHUSD");
+  else if (s === "SOL30") bases.push("SOL30");
+  else bases.push(s);
 
   for (const b of bases) {
     out.push(
@@ -540,7 +540,8 @@ function finalizeBrokerSymbol(
   if (
     isCryptoStandard(normalizedSymbol) &&
     (isCrossCryptoSymbol(picked, normalizedSymbol) ||
-      !isUsdCryptoSymbol(picked, normalizedSymbol))
+      !isUsdCryptoSymbol(picked, normalizedSymbol) ||
+      picked === normalizedSymbol)
   ) {
     const usd =
       ordered.find((c) => isUsdCryptoSymbol(c, normalizedSymbol)) ??
@@ -668,7 +669,9 @@ export async function resolveBrokerSymbol(
   }
 
   candidates.push(...ecnStpCandidates(normalizedSymbol));
-  candidates.push(normalizedSymbol);
+  if (normalizedSymbol === "BTC") candidates.push("BTCUSD");
+  else if (normalizedSymbol === "ETH") candidates.push("ETHUSD");
+  else candidates.push(normalizedSymbol);
 
   const ordered = orderByProfile(
     Array.from(new Set(candidates)).filter((c) => !exclude.has(c)),
@@ -710,6 +713,35 @@ export async function resolveBrokerSymbol(
           exclude,
         );
         if (rankedIndex[0]) return rankedIndex[0];
+      }
+
+      if (isCryptoStandard(normalizedSymbol)) {
+        for (const name of namesOrdered) {
+          const mapped = staticBrokerSymbol(name, normalizedSymbol);
+          if (!mapped || exclude.has(mapped)) continue;
+          if (!isUsdCryptoSymbol(mapped, normalizedSymbol)) continue;
+          const hit = findInLiveSet(mapped, live.symbols);
+          if (hit && !exclude.has(hit)) return hit;
+        }
+
+        const rankedCrypto = listRankedLiveCryptoSymbols(
+          live.symbols,
+          normalizedSymbol,
+          brokerName,
+          exclude,
+        );
+        if (rankedCrypto[0]) return rankedCrypto[0];
+
+        for (const name of namesOrdered) {
+          const mapped = staticBrokerSymbol(name, normalizedSymbol);
+          if (
+            mapped &&
+            !exclude.has(mapped) &&
+            isUsdCryptoSymbol(mapped, normalizedSymbol)
+          ) {
+            return mapped;
+          }
+        }
       }
 
       for (const name of namesOrdered) {
